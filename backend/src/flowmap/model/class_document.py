@@ -1,10 +1,3 @@
-"""
-Output shape of service.topic.extract_class_documents -- one entry per
-project class, its raw term bag straight from class_document.sc (method/
-member/annotation/inherited-type/identifier/comment/string-literal names),
-pre-preprocessing. Consumed by domain.topic_modelling's embedding/clustering pipeline.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field

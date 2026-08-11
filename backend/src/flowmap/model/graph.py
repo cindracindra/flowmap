@@ -1,11 +1,3 @@
-"""
-Graph shape shared across every stage of the CFG pipeline: the raw
-extraction (inter_cfg.sc / processor.extract_intermethod_cfg), the noise-
-filtered pass (processor.filter_intermethod_cfg), and the flattened trace
-(processor.flatten_intermethod_cfg). Which optional fields are populated
-depends on the stage -- see each field's comment.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -18,9 +10,7 @@ from .node import Node
 
 @dataclass(slots=True)
 class Graph:
-    # Full name of the method this graph is rooted at. None for a whole-
-    # codebase graph (extract_full_intermethod_cfg) -- there's no single
-    # root; see `roots` below instead.
+    # Full name of the method this graph is rooted at.
     entryPoint: str | None = None
 
     nodes: list[Node] = field(default_factory=list)
@@ -33,29 +23,19 @@ class Graph:
     rootId: str | None = None
 
     # classify_roots_and_orphans only (whole-codebase graph): ids of
-    # "entry" nodes with no caller but at least one callee -- candidate
-    # application entry points. Not populated by any single-entry-point
-    # stage, where the graph's own entryPoint already answers this.
+    # "entry" nodes with no caller but at least one callee.
     roots: list[str] = field(default_factory=list)
 
     # classify_roots_and_orphans only: ids of "entry" nodes with neither a
-    # caller nor a callee -- unreachable from anything this pass can see,
-    # and reaching nothing itself.
+    # caller nor a callee.
     orphans: list[str] = field(default_factory=list)
 
-    # Extraction only (full_cfg.sc's emitBranchGroup): one entry per
-    # IF/TRY control structure encountered across every method in this
-    # graph. Method-level metadata, not per-node -- carried through
-    # filter_noise_cfg/flatten_cfg unchanged (a branch group's shape
-    # doesn't change when nodes are filtered/cloned; only the nodes whose
-    # branchGroupId points at it do). See branch.py.
     branchGroups: list[BranchGroup] = field(default_factory=list)
 
     @property
     def deadEndIds(self) -> list[str]:
         """Derived from each node's own `deadEnd` flag, not stored
-        separately -- a node is the only source of truth for its own
-        dead-end status (see Node.deadEnd)."""
+        separately (see Node.deadEnd)."""
         return [n.id for n in self.nodes if n.deadEnd]
 
     @classmethod

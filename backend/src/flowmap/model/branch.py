@@ -1,33 +1,31 @@
-"""
-Branch-group manifest: one entry per IF/TRY control structure found during
-extraction (full_cfg.sc's emitBranchGroup). Kept as a graph-level list,
-separate from Node/Edge -- an arm can be "empty" (zero calls in it,
-DESIGN.md #4.1) and has no node of its own to carry this on, so the arm's
-existence lives here instead. A non-empty arm's `firstCallId` is a
-cross-reference to a Node carrying the matching `branchGroupId`/`armLabel`
-(see node.py) -- EVERY call in that arm carries the same tag, not just the
-first; `firstCallId` here is only which one the panel should anchor its
-initial highlight on.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
 
 
+@dataclass(frozen=True, slots=True)
+class BranchArmRef:
+    groupId: str
+    armLabel: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BranchArmRef:
+        return cls(groupId=data["groupId"], armLabel=data["armLabel"])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"groupId": self.groupId, "armLabel": self.armLabel}
+
+
 @dataclass(slots=True)
 class BranchArm:
     label: str
 
-    # None when `empty` is True -- an empty arm has no call node of its
-    # own to point to.
+    # None when `empty` -- arm has no call node of its own to point to.
     firstCallId: str | None = None
 
     # No further detail is recorded for an empty arm (no throw/return/
-    # fallthrough/continues breakdown) -- deliberately dropped after
-    # discussion, since the panel only needs to know there's nothing
-    # operationally significant in it, not how it technically ends.
+    # fallthrough/continues breakdown).
     empty: bool = False
 
     @classmethod
@@ -47,12 +45,9 @@ class BranchArm:
 
 @dataclass(slots=True)
 class BranchGroup:
-    # full_cfg.sc's `cs${cs.id}` -- stable across filter/flatten stages,
-    # matches the `branchGroupId` tagged on each arm's first-call Node.
     id: str
 
-    # Joern's controlStructureType: "IF" or "TRY" today -- SWITCH/FOR/
-    # WHILE/DO aren't split into arms yet (see full_cfg.sc).
+    # Joern's controlStructureType.
     kind: str
 
     conditionCode: str | None = None

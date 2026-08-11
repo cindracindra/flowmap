@@ -1,8 +1,3 @@
-"""
-Output shape of phaser.build_phase_tree. See PHASING_RULES.md for what
-each transition reason means and why -- this module is just the shape.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -21,16 +16,12 @@ TransitionReason = Literal[
 
 @dataclass(slots=True)
 class Transition:
-    # The node this decision was evaluated against. Usually the real
-    # predecessor; when crossing back out of a callee, the callee's own
-    # original call site instead (see PHASING_RULES.md R7). None only for
-    # the rare case of an elided entry with more than one live branch of
-    # its own (PHASING_RULES.md R2) -- there's no real node to attribute
-    # it to.
+    # The node this decision was evaluated against.
     subject: str | None
     reason: TransitionReason
-    # 0 for "dead-end" (never went through the cascade at all -- see R4),
-    # otherwise which cascade level decided it (PHASING_RULES.md R1-R7).
+    
+    # 0 for "dead-end" (never went through the cascade at all),
+    # otherwise which cascade level decided it.
     level: Literal[0, 1, 2, 3]
 
     @classmethod
