@@ -1,0 +1,118 @@
+.env
+.env.*
+*.env
+.envrc
+
+# Generic credential material, anywhere in the tree
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.jks
+credentials.json
+service-account*.json
+*secret*.json
+*secret*.ya?ml
+.netrc
+.htpasswd
+
+# ===========================================================================
+# Python
+# ===========================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Packaging output -- anchored to repo root so real source dirs named
+# build/ or dist/ deeper in the tree are not swallowed.
+/build/
+/dist/
+/sdist/
+/wheels/
+/develop-eggs/
+/downloads/
+/eggs/
+.eggs/
+*.egg-info/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+/env/
+
+# Test / type / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.ipynb_checkpoints/
+
+# ===========================================================================
+# Frontend (Vite + TypeScript)
+# ===========================================================================
+node_modules/
+/frontend/dist/
+/frontend/dist-ssr/
+*.local
+*.tsbuildinfo
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===========================================================================
+# Joern / CPG artifacts (regenerated from source, large)
+# ===========================================================================
+# Joern writes workspace/cpg.bin/ relative to wherever it is invoked, so this
+# is deliberately unanchored -- it catches all current locations (/workspace/,
+# backend/src/flowmap/workspace/, test/integration/workspace/) and future ones.
+# None of these dirs contain source; they hold project.json, overlays, cpg.bin.
+workspace/
+*.cpg
+*.odb
+
+# ===========================================================================
+# Editors & OS
+# ===========================================================================
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+desktop.ini
+.idea/
+*.swp
+*.swo
+*~
+
+# VS Code: keep shared config, drop per-machine files (incl. .vscode/.env)
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Claude Code: keep shared config, drop local overrides
+.claude/
+
+# ===========================================================================
+# Superseded / scratch work
+# ===========================================================================
+# Earlier experiments kept locally for reference, not part of the build.
+/old/
+
+# ===========================================================================
+# Misc
+# ===========================================================================
+*.log
+/tmp/
+*.md

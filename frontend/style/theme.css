@@ -1,0 +1,31 @@
+/*
+ * Plain CSS custom properties for the graph canvas — the one part of the UI
+ * Radix Themes has no component for. Everything else (panels, buttons, tabs,
+ * text) uses Radix's own theme tokens, configured in main.tsx.
+ */
+:root {
+    --canvas-background: #0C0B09;
+    --canvas-dot: #27231C;
+    --canvas-border: #27231C;
+    --canvas-card: #131210;
+    --canvas-muted: #6B6459;
+    --canvas-foreground: #E8E0D4;
+
+    --node-entry-fill: #1E1406;
+    --node-entry-stroke: #D4863A;
+    --node-call-fill: #0D1A19;
+    --node-call-stroke: #4AADA8;
+    --node-leaf-fill: #16130E;
+    --node-leaf-stroke: #8FB87A;
+    --node-dead-end-stroke: #C0392B;
+
+    --edge-sequence: #C96B4A;
+    --edge-invoke: #4AADA8;
+    --edge-fallback: #A07BC8;
+
+    --phase-1: #D4863A;
+    --phase-2: #4AADA8;
+    --phase-3: #8FB87A;
+    --phase-4: #C96B4A;
+    --phase-5: #A07BC8;
+}

@@ -1,0 +1,48 @@
+{
+  "entryPoint": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+  "phases": [
+    {
+      "nodes": [
+        "c30064771076~2"
+      ],
+      "opened_by": {
+        "reason": "dead-end",
+        "level": 0,
+        "subject": "c30064771072~1"
+      },
+      "transitions": []
+    },
+    {
+      "nodes": [
+        "c30064771279~6",
+        "c30064771147~9",
+        "c30064771153~10",
+        "c30064771126~12",
+        "c30064771278~5"
+      ],
+      "opened_by": null,
+      "transitions": [
+        {
+          "reason": "dead-end",
+          "level": 0
+        },
+        {
+          "reason": "dead-end",
+          "level": 0
+        }
+      ]
+    },
+    {
+      "nodes": [
+        "c30064771280~7",
+        "c30064771140~16"
+      ],
+      "opened_by": {
+        "reason": "class-related",
+        "level": 3,
+        "subject": "c30064771279~6"
+      },
+      "transitions": []
+    }
+  ]
+}

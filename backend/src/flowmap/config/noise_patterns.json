@@ -1,0 +1,46 @@
+{
+  "call_site_noise": {
+    "contains": [
+      "<operator>",
+      "<clinit>",
+      "<unresolvedNamespace>",
+      "<unknownFullName>",
+      "<empty>"
+    ],
+    "synthetic": {
+      "accessor_prefix": "access$",
+      "lambda_infix_regex": "^lambda\\$.*\\$\\d+$",
+      "anonymous_class_suffix_regex": "\\$\\d+$"
+    }
+  },
+  "jdk_leaf_omit_prefixes": [
+    "java.",
+    "javax.",
+    "jdk.",
+    "sun.",
+    "com.sun."
+  ],
+  "jdk_call_site_strip_prefixes": [
+    "java.util.",
+    "java.io."
+  ],
+  "angle_bracket_markers": [
+    "<operator>",
+    "<clinit>",
+    "<unresolvedNamespace>",
+    "<unknownFullName>",
+    "<empty>",
+    "<init>"
+  ],
+  "resolve_not_strip": [
+    "<init>"
+  ],
+  "_notes": {
+    "call_site_noise": "Joern-synthetic bookkeeping, stripped as call SITES by filter_intermethod_cfg (and folded into the plain-method-name-list filter via _is_noise). 'contains' is CONFIRMED against test_code/java_project's CPG as a safe contains-match anywhere in a normalised name (never a real Java identifier): <operator>.* appears extremely frequently (assignment, alloc, fieldAccess, addition, subtraction, multiplication, modulo, lessThan/greaterThan/lessEqualsThan, equals/notEquals, logicalOr/logicalNot, postIncrement, assignmentPlus/Minus, indexAccess, sizeOf, arrayInitializer, conditional, throw); <clinit> appears once, from MathUtils' static state. <unresolvedNamespace>/<unknownFullName>/<empty> were NOT OBSERVED in the sample project (too small/fully resolved to force Joern to give up on a call target) but are retained per instruction -- expected on any project with missing classpath jars or unresolved dependencies; needs re-validation against a project that actually exercises this before trusting the exact string form. 'synthetic' (accessor_prefix/lambda_infix_regex/anonymous_class_suffix_regex) was also NOT OBSERVED (confirmed via source grep: zero lambdas, zero anonymous inner classes in the sample) but is retained per instruction since the sample can't disprove they occur elsewhere -- see DESIGN.md's noise-filtering reference section for the full mechanics (what generates each pattern, and why anonymous_class_suffix_regex MUST stay anchored to a trailing digit run rather than a bare '$' contains-match, confirmed against this project's own legitimate nested enum 'com.example.cpgtest.model.User$Role').",
+    "jdk_leaf_omit_prefixes": "java.util/java.io/java.nio/etc. -- the JDK STANDARD LIBRARY, not third-party -- a plain prefix denylist is safe to blanket-exclude regardless of project, since these are language plumbing rather than architecturally meaningful calls. CONFIRMED these prefixes cover roughly half of test_code/java_project's call targets (java.util.Map, java.sql.PreparedStatement, java.io.File, java.nio.file.Path, ...). Matched as a fullName PREFIX check, not contains-match, so it can't accidentally match a project class that merely mentions 'java' mid-package. Used for _is_jdk_builtin (an ORIGIN check -- decides whether an EXTERNAL callee's invoke edge/leaf gets omitted at extraction, and filters plain method-name lists) and is DELIBERATELY NOT used by filter_intermethod_cfg to strip call SITES wholesale -- see jdk_call_site_strip_prefixes below for the one JDK subset that IS stripped as call sites. Renamed from 'jdk_package_prefixes' to name the role (leaf omission) rather than just the pattern shape.",
+    "jdk_call_site_strip_prefixes": "JDK call SITES that get stripped as call nodes by filter_intermethod_cfg (not just omitted from invoke-edge expansion), because they were judged to add visual noise without adding architecturally meaningful information to the flow map, even under the general 'keep JDK call sites visible' policy in DESIGN.md's noise-filtering reference section. 'java.util.' (Map.get, List.add, HashMap.<init>, Optional.of, Arrays.asList, ...): container/collection bookkeeping, the original member of this list. 'java.io.' (System.out.println, PrintStream.print*, ...) ADDED 2026-07-31, deliberate decision reversing this list's original 'java.io/java.nio calls are still real, meaningful operations' stance for java.io specifically -- println-style output calls were judged closer to noise than to meaningful flow for this project's purposes; java.nio (e.g. Files.readAllBytes) was NOT included in this change and remains visible, so this is not a blanket 'all JDK I/O' decision, just java.io. specifically. Revisit if java.io. turns out to hide something meaningful (e.g. a real file-write call, not just console logging) -- this prefix is coarse and doesn't distinguish 'debug println' from 'meaningful I/O', unlike java.util. where the whole namespace really is bookkeeping. Safe to bridge via the same noise mechanism as call_site_noise: every stripped call already has no invoke edge (isNoiseOrJdk in inter_cfg.sc omits it at extraction, since both java.util. and java.io. match jdk_leaf_omit_prefixes' 'java.' too), so there's nothing but 'sequence'/'data' edges to bridge around it. Renamed from 'data_structure_prefixes' to name it as the subset relationship it actually is (a strip-scoped carve-out of jdk_leaf_omit_prefixes), not a standalone category.",
+    "angle_bracket_markers": "A flat, standalone list of every Joern-synthetic '<...>' bookkeeping token known to this system -- the union of call_site_noise.contains PLUS <init> (which call_site_noise.contains deliberately excludes; see resolve_not_strip below). NOT read by the CFG pipeline itself (extract_intermethod_cfg / filter_intermethod_cfg source their own lists directly from call_site_noise). This key exists for OTHER consumers that want to blanket-match 'anything starting with <' regardless of the resolve/strip distinction the CFG pipeline cares about -- e.g. combine this with synthetic_call_patterns for a filter that isn't trying to preserve constructor visibility. If you add a new angle-bracket marker to call_site_noise.contains or resolve_not_strip, add it here too -- this list is intentionally NOT derived programmatically from the other two, so keep them in sync by hand.",
+    "resolve_not_strip": "<init> (constructor) is CONFIRMED present on every class in the sample project (e.g. Account.<init>, User.<init>). Mirrors how the Python list handles __init__: never blanket-exclude it, resolve it to the owning class's real name -- constructor logic is architecturally meaningful and dropping it silently loses information. Documentation only: no code reads this key directly -- it exists to record WHY <init> is absent from call_site_noise.contains (and present in angle_bracket_markers above) so a future edit doesn't 'fix' that as an oversight.",
+    "third_party_still_deferred": "GENUINE third-party libraries and frameworks (e.g. org.springframework.*, routing layers, JS/native interop) are DELIBERATELY NOT covered by jdk_leaf_omit_prefixes and remain out of scope -- those are the cross-boundary touchpoints that must stay visible, per the original concern that raised this whole topic. Do not extend jdk_leaf_omit_prefixes to cover them; that would need its own separate, deliberate decision. Known caveat: standard-library scripting bridges like javax.script.* (JSR-223, e.g. Nashorn calling into JS) DO match the 'javax.' prefix and would be treated as JDK noise today, even though that's arguably a genuine cross-language touchpoint -- not yet observed/decided, flagged here rather than silently accepted."
+  }
+}

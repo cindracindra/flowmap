@@ -1,0 +1,271 @@
+{
+  "nodes": [
+    {
+      "id": "m107374182400~0",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "line": 53,
+      "origId": "m107374182400"
+    },
+    {
+      "id": "c30064771072~1",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.AccountService.transfer:void(int,int,double)",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "bank.transfer(fromId, toId, 5000.0)",
+      "line": 55,
+      "origId": "c30064771072"
+    },
+    {
+      "id": "c30064771076~2",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.getMessage:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "e.getMessage()",
+      "line": 57,
+      "origId": "c30064771076",
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182436~3",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.AccountService.transfer:void(int,int,double)",
+      "line": 13,
+      "origId": "m107374182436"
+    },
+    {
+      "id": "m107374182440~4",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "line": 28,
+      "origId": "m107374182440"
+    },
+    {
+      "id": "c30064771278~5",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "new IllegalArgumentException(\"Both accounts must exist\")",
+      "line": 34,
+      "origId": "c30064771278",
+      "deadEnd": true
+    },
+    {
+      "id": "c30064771279~6",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "from.withdraw(amount)",
+      "line": 37,
+      "origId": "c30064771279"
+    },
+    {
+      "id": "c30064771280~7",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "to.deposit(amount)",
+      "line": 38,
+      "origId": "c30064771280"
+    },
+    {
+      "id": "m107374182411~8",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "line": 36,
+      "origId": "m107374182411"
+    },
+    {
+      "id": "c30064771147~9",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "code": "new IllegalArgumentException(\"Withdrawal amount must be positive\")",
+      "line": 38,
+      "origId": "c30064771147",
+      "deadEnd": true
+    },
+    {
+      "id": "c30064771153~10",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "code": "new InsufficientFundsException(\"Account \" + id + \" has insufficient funds for withdrawal of \" + amount)",
+      "line": 41,
+      "origId": "c30064771153",
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182405~11",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "line": 5,
+      "origId": "m107374182405"
+    },
+    {
+      "id": "c30064771126~12",
+      "type": "call",
+      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "code": "super(message);",
+      "line": 6,
+      "origId": "c30064771126"
+    },
+    {
+      "id": "m107374182468~13",
+      "type": "leaf",
+      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
+      "origId": "m107374182468"
+    },
+    {
+      "id": "m107374182479~14",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182479"
+    },
+    {
+      "id": "m107374182410~15",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "line": 29,
+      "origId": "m107374182410"
+    },
+    {
+      "id": "c30064771140~16",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "code": "new IllegalArgumentException(\"Deposit amount must be positive\")",
+      "line": 31,
+      "origId": "c30064771140",
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182479~17",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182479"
+    },
+    {
+      "id": "m107374182479~18",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182479"
+    },
+    {
+      "id": "m107374182503~19",
+      "type": "leaf",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.getMessage:java.lang.String()",
+      "origId": "m107374182503"
+    }
+  ],
+  "edges": [
+    {
+      "from": "m107374182400~0",
+      "to": "c30064771072~1",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182436~3",
+      "to": "c30064771076~2",
+      "type": "sequence",
+      "returnFrom": "c30064771072~1"
+    },
+    {
+      "from": "c30064771072~1",
+      "to": "m107374182436~3",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182440~4",
+      "to": "c30064771278~5",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182440~4",
+      "to": "c30064771279~6",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~8",
+      "to": "c30064771147~9",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~8",
+      "to": "c30064771153~10",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182405~11",
+      "to": "c30064771126~12",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771126~12",
+      "to": "m107374182468~13",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771153~10",
+      "to": "m107374182405~11",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771147~9",
+      "to": "m107374182479~14",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771279~6",
+      "to": "m107374182411~8",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182411~8",
+      "to": "c30064771280~7",
+      "type": "sequence",
+      "returnFrom": "c30064771279~6",
+      "fallback": true
+    },
+    {
+      "from": "m107374182410~15",
+      "to": "c30064771140~16",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771140~16",
+      "to": "m107374182479~17",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771280~7",
+      "to": "m107374182410~15",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771278~5",
+      "to": "m107374182479~18",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771072~1",
+      "to": "m107374182440~4",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182440~4",
+      "to": "c30064771076~2",
+      "type": "sequence",
+      "returnFrom": "c30064771072~1",
+      "fallback": true
+    },
+    {
+      "from": "c30064771076~2",
+      "to": "m107374182503~19",
+      "type": "invoke"
+    }
+  ],
+  "entryPoint": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+  "rootId": "m107374182400~0"
+}

@@ -1,0 +1,174 @@
+{
+  "nodes": [
+    {
+      "id": "m107374182400",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doA:void()",
+      "line": 23
+    },
+    {
+      "id": "c30064771072",
+      "type": "call",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
+      "code": "this.doHelper()",
+      "line": 24
+    },
+    {
+      "id": "c30064771073",
+      "type": "call",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
+      "code": "this.doX()",
+      "line": 25
+    },
+    {
+      "id": "m107374182401",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "line": 28
+    },
+    {
+      "id": "c30064771074",
+      "type": "call",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "code": "this.doHelper()",
+      "line": 29
+    },
+    {
+      "id": "c30064771075",
+      "type": "call",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "code": "this.doY()",
+      "line": 30
+    },
+    {
+      "id": "m107374182402",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "line": 33
+    },
+    {
+      "id": "c30064771076",
+      "type": "call",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "code": "this.doInner()",
+      "line": 34
+    },
+    {
+      "id": "m107374182403",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "line": 37,
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182404",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
+      "line": 41,
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182405",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "line": 45
+    },
+    {
+      "id": "c30064771084",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "code": "new IllegalArgumentException(\"doY\")",
+      "line": 46,
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182411",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)"
+    },
+    {
+      "id": "m107374182407",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
+      "line": 54,
+      "deadEnd": true
+    }
+  ],
+  "edges": [
+    {
+      "from": "c30064771072",
+      "to": "m107374182402",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771073",
+      "to": "m107374182404",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771074",
+      "to": "m107374182402",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771075",
+      "to": "m107374182405",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771076",
+      "to": "m107374182403",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771084",
+      "to": "m107374182411",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182400",
+      "to": "c30064771072",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771072",
+      "to": "c30064771073",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182401",
+      "to": "c30064771074",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771074",
+      "to": "c30064771075",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182402",
+      "to": "c30064771076",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182405",
+      "to": "c30064771084",
+      "type": "sequence"
+    }
+  ],
+  "roots": [
+    "m107374182400",
+    "m107374182401",
+    "m107374182407"
+  ],
+  "orphans": [
+    "m107374182406",
+    "m107374182408"
+  ]
+}
