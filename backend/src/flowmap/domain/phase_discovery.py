@@ -50,10 +50,10 @@ def compute_back_edges(
     return frozenset((u, v) for u, v in flow_graph.edges() if dominates(v, u))
 
 
-def diverges(node_id: str, sequence_graph: nx.DiGraph) -> bool:
-    """
-    Real fork: more than one LIVE (non-dead-end) successor.
-    """
+def forks_into_live_paths(node_id: str, sequence_graph: nx.DiGraph) -> bool:
+    """Returns True if there are multiple live (non-dead-end) successors 
+    of a node in the sequence graph."""
+
     if node_id not in sequence_graph:
         return False
     live = [
@@ -64,12 +64,12 @@ def diverges(node_id: str, sequence_graph: nx.DiGraph) -> bool:
     return len(live) > 1
 
 
-def converges(
+def merges_excluding_back_edges(
     node_id: str, sequence_graph: nx.DiGraph, back_edges: frozenset[tuple[str, str]]
 ) -> bool:
-    """
-    Real merge: more than one incoming edge, excluding loop back-edges.
-    """
+    """Returns True if a node has more than one incoming edge in the 
+    sequence graph, excluding loop back-edges."""
+
     if node_id not in sequence_graph:
         return False
     return (
@@ -119,7 +119,7 @@ def same_callee(sequence_graph: nx.DiGraph, call_a: str, call_b: str) -> bool:
 def _flow_graph(sequence_graph: nx.DiGraph, invoke_graph: nx.DiGraph) -> nx.DiGraph:
     """
     Sequence edges plus invoke edges into internally-traversed entries,
-    for dominance/reachability purposes only -- diverges/converges
+    for dominance/reachability purposes only -- the fork/merge predicates
     themselves still only ever consult sequence_graph, so invoke-edge
     multiplicity (polymorphism) never reads as a gate.
     """
@@ -139,7 +139,7 @@ def _is_gate(
     """Level 1: does the edge INTO node_id carry real structural evidence
     -- the predecessor forking, or node_id itself being a genuine merge
     point? Evaluated on the real endpoints, per PHASING_RULES.md R7."""
-    return diverges(real_predecessor, sequence_graph) or converges(
+    return forks_into_live_paths(real_predecessor, sequence_graph) or merges_excluding_back_edges(
         node_id, sequence_graph, back_edges
     )
 
@@ -366,7 +366,7 @@ def _resolve_phases(
 
         if sequence_graph.nodes[node_id]["type"] == "entry":
             # R2: never a phase member. Its own divergence is still real
-            # gate evidence for its children (diverges(), used inside
+            # gate evidence for its children (forks_into_live_paths(), used inside
             # visit_children via each child's own predecessor check); it
             # just has no subject of its own to attribute a transition to.
             visit_children(node_id, None, None)

@@ -79,7 +79,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   }
 
   // Emits ONE group for a whole if / else-if / else chain.
-  def emitIfChain(head: ControlStructure, armTags: ArmTags): Unit = {
+  def emitIfChain(head: ControlStructure, methodFullName: String, armTags: ArmTags): Unit = {
     val groupId = s"cs${head.id}"
     val arms = ujson.Arr()
     var current = head
@@ -105,13 +105,14 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     }
     branchGroups += ujson.Obj(
       "id" -> groupId, "kind" -> "IF",
+      "method" -> methodFullName,
       "line" -> head.lineNumber.getOrElse(-1),
       "arms" -> arms
     )
   }
 
   // Emits ONE group for try block
-  def emitTryGroup(cs: ControlStructure, armTags: ArmTags): Unit = {
+  def emitTryGroup(cs: ControlStructure, methodFullName: String, armTags: ArmTags): Unit = {
     val groupId = s"cs${cs.id}"
     val armRoots = cs.astChildren.l
     val arms = ujson.Arr()
@@ -130,6 +131,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     }
     branchGroups += ujson.Obj(
       "id" -> groupId, "kind" -> "TRY",
+      "method" -> methodFullName,
       "line" -> cs.lineNumber.getOrElse(-1),
       "arms" -> arms
     )
@@ -164,11 +166,15 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val controlStructures = method.controlStructure.l
     val ifs = controlStructures.filter(_.controlStructureType == "IF")
     val chainedIfIds = ifs.flatMap(cs => elseChainNext(cs).map(_.id)).toSet
+    // Each group records its owning method: a group is method-level
+    // metadata with no node of its own, so nothing else identifies where
+    // it lives once the graph is sliced (a group whose every arm is empty
+    // has no tagged node to recover it from either).
     ifs.filterNot(cs => chainedIfIds.contains(cs.id)).foreach { head =>
-      emitIfChain(head, armTags)
+      emitIfChain(head, method.fullName, armTags)
     }
     controlStructures.filter(_.controlStructureType == "TRY").foreach { cs =>
-      emitTryGroup(cs, armTags)
+      emitTryGroup(cs, method.fullName, armTags)
     }
 
     // first call(s) reached from method entry, skipping non-call nodes

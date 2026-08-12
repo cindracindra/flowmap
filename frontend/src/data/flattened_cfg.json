@@ -5,7 +5,8 @@
       "type": "entry",
       "calleeFullName": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
       "line": 53,
-      "origId": "m107374182400"
+      "origId": "m107374182400",
+      "depth": 0
     },
     {
       "id": "c30064771072~1",
@@ -14,7 +15,14 @@
       "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
       "code": "bank.transfer(fromId, toId, 5000.0)",
       "line": 55,
-      "origId": "c30064771072"
+      "origId": "c30064771072",
+      "depth": 0,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        }
+      ]
     },
     {
       "id": "c30064771076~2",
@@ -24,139 +32,184 @@
       "code": "e.getMessage()",
       "line": 57,
       "origId": "c30064771076",
-      "deadEnd": true
+      "depth": 0,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch1"
+        }
+      ]
     },
     {
-      "id": "m107374182436~3",
-      "type": "entry",
-      "calleeFullName": "com.example.cpgtest.service.AccountService.transfer:void(int,int,double)",
-      "line": 13,
-      "origId": "m107374182436"
-    },
-    {
-      "id": "m107374182440~4",
+      "id": "m107374182440~3",
       "type": "entry",
       "calleeFullName": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
       "line": 28,
-      "origId": "m107374182440"
+      "origId": "m107374182440",
+      "depth": 1
     },
     {
-      "id": "c30064771278~5",
+      "id": "c30064771278~4",
       "type": "call",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
       "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
       "code": "new IllegalArgumentException(\"Both accounts must exist\")",
       "line": 34,
       "origId": "c30064771278",
+      "terminus": "throw",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640268~3",
+          "armLabel": "if"
+        }
+      ],
       "deadEnd": true
     },
     {
-      "id": "c30064771279~6",
+      "id": "c30064771279~5",
       "type": "call",
       "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
       "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
       "code": "from.withdraw(amount)",
       "line": 37,
-      "origId": "c30064771279"
+      "origId": "c30064771279",
+      "depth": 1
     },
     {
-      "id": "c30064771280~7",
+      "id": "c30064771280~6",
       "type": "call",
       "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
       "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
       "code": "to.deposit(amount)",
       "line": 38,
-      "origId": "c30064771280"
+      "origId": "c30064771280",
+      "terminus": "fallthrough",
+      "depth": 1
     },
     {
-      "id": "m107374182411~8",
+      "id": "m107374182411~7",
       "type": "entry",
       "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
       "line": 36,
-      "origId": "m107374182411"
+      "origId": "m107374182411",
+      "depth": 2
     },
     {
-      "id": "c30064771147~9",
+      "id": "c30064771147~8",
       "type": "call",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
       "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
       "code": "new IllegalArgumentException(\"Withdrawal amount must be positive\")",
       "line": 38,
       "origId": "c30064771147",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640264~7",
+          "armLabel": "if"
+        }
+      ],
       "deadEnd": true
     },
     {
-      "id": "c30064771153~10",
+      "id": "c30064771153~9",
       "type": "call",
       "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
       "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
       "code": "new InsufficientFundsException(\"Account \" + id + \" has insufficient funds for withdrawal of \" + amount)",
       "line": 41,
       "origId": "c30064771153",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640265~7",
+          "armLabel": "if"
+        }
+      ],
       "deadEnd": true
     },
     {
-      "id": "m107374182405~11",
+      "id": "m107374182405~10",
       "type": "entry",
       "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
       "line": 5,
-      "origId": "m107374182405"
+      "origId": "m107374182405",
+      "depth": 3
     },
     {
-      "id": "c30064771126~12",
+      "id": "c30064771126~11",
       "type": "call",
       "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
       "callerMethod": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
       "code": "super(message);",
       "line": 6,
-      "origId": "c30064771126"
+      "origId": "c30064771126",
+      "terminus": "fallthrough",
+      "depth": 3
     },
     {
-      "id": "m107374182468~13",
+      "id": "m107374182468~12",
       "type": "leaf",
       "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
-      "origId": "m107374182468"
+      "origId": "m107374182468",
+      "depth": 4
     },
     {
-      "id": "m107374182479~14",
+      "id": "m107374182479~13",
       "type": "leaf",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "origId": "m107374182479"
+      "origId": "m107374182479",
+      "depth": 3
     },
     {
-      "id": "m107374182410~15",
+      "id": "m107374182410~14",
       "type": "entry",
       "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
       "line": 29,
-      "origId": "m107374182410"
+      "origId": "m107374182410",
+      "depth": 2
     },
     {
-      "id": "c30064771140~16",
+      "id": "c30064771140~15",
       "type": "call",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
       "callerMethod": "com.example.cpgtest.model.Account.deposit:void(double)",
       "code": "new IllegalArgumentException(\"Deposit amount must be positive\")",
       "line": 31,
       "origId": "c30064771140",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640263~14",
+          "armLabel": "if"
+        }
+      ],
       "deadEnd": true
+    },
+    {
+      "id": "m107374182479~16",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182479",
+      "depth": 3
     },
     {
       "id": "m107374182479~17",
       "type": "leaf",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "origId": "m107374182479"
+      "origId": "m107374182479",
+      "depth": 2
     },
     {
-      "id": "m107374182479~18",
-      "type": "leaf",
-      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "origId": "m107374182479"
-    },
-    {
-      "id": "m107374182503~19",
+      "id": "m107374182503~18",
       "type": "leaf",
       "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.getMessage:java.lang.String()",
-      "origId": "m107374182503"
+      "origId": "m107374182503",
+      "depth": 1
     }
   ],
   "edges": [
@@ -166,95 +219,84 @@
       "type": "sequence"
     },
     {
-      "from": "m107374182436~3",
-      "to": "c30064771076~2",
+      "from": "m107374182440~3",
+      "to": "c30064771278~4",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182440~3",
+      "to": "c30064771279~5",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~7",
+      "to": "c30064771147~8",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~7",
+      "to": "c30064771153~9",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182405~10",
+      "to": "c30064771126~11",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771126~11",
+      "to": "m107374182468~12",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771153~9",
+      "to": "m107374182405~10",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771147~8",
+      "to": "m107374182479~13",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771279~5",
+      "to": "m107374182411~7",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182411~7",
+      "to": "c30064771280~6",
       "type": "sequence",
-      "returnFrom": "c30064771072~1"
-    },
-    {
-      "from": "c30064771072~1",
-      "to": "m107374182436~3",
-      "type": "invoke"
-    },
-    {
-      "from": "m107374182440~4",
-      "to": "c30064771278~5",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182440~4",
-      "to": "c30064771279~6",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182411~8",
-      "to": "c30064771147~9",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182411~8",
-      "to": "c30064771153~10",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182405~11",
-      "to": "c30064771126~12",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771126~12",
-      "to": "m107374182468~13",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771153~10",
-      "to": "m107374182405~11",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771147~9",
-      "to": "m107374182479~14",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771279~6",
-      "to": "m107374182411~8",
-      "type": "invoke"
-    },
-    {
-      "from": "m107374182411~8",
-      "to": "c30064771280~7",
-      "type": "sequence",
-      "returnFrom": "c30064771279~6",
+      "returnFrom": "c30064771279~5",
       "fallback": true
     },
     {
-      "from": "m107374182410~15",
-      "to": "c30064771140~16",
+      "from": "m107374182410~14",
+      "to": "c30064771140~15",
       "type": "sequence"
     },
     {
-      "from": "c30064771140~16",
+      "from": "c30064771140~15",
+      "to": "m107374182479~16",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771280~6",
+      "to": "m107374182410~14",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771278~4",
       "to": "m107374182479~17",
       "type": "invoke"
     },
     {
-      "from": "c30064771280~7",
-      "to": "m107374182410~15",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771278~5",
-      "to": "m107374182479~18",
-      "type": "invoke"
-    },
-    {
       "from": "c30064771072~1",
-      "to": "m107374182440~4",
+      "to": "m107374182440~3",
       "type": "invoke"
     },
     {
-      "from": "m107374182440~4",
+      "from": "m107374182440~3",
       "to": "c30064771076~2",
       "type": "sequence",
       "returnFrom": "c30064771072~1",
@@ -262,10 +304,119 @@
     },
     {
       "from": "c30064771076~2",
-      "to": "m107374182503~19",
+      "to": "m107374182503~18",
       "type": "invoke"
     }
   ],
   "entryPoint": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
-  "rootId": "m107374182400~0"
+  "rootId": "m107374182400~0",
+  "branchGroups": [
+    {
+      "id": "cs47244640264~7",
+      "kind": "IF",
+      "method": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "line": 37,
+      "branchPointIds": [
+        "m107374182411~7"
+      ],
+      "returnsTo": [
+        "c30064771280~6"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "throw",
+          "conditionCode": "amount <= 0",
+          "firstCallId": "c30064771147~8"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640265~7",
+      "kind": "IF",
+      "method": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "line": 40,
+      "branchPointIds": [
+        "m107374182411~7"
+      ],
+      "returnsTo": [
+        "c30064771280~6"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "throw",
+          "conditionCode": "amount > balance",
+          "firstCallId": "c30064771153~9"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640263~14",
+      "kind": "IF",
+      "method": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "line": 30,
+      "branchPointIds": [
+        "m107374182410~14"
+      ],
+      "returnsTo": [
+        "c30064771076~2"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "throw",
+          "conditionCode": "amount <= 0",
+          "firstCallId": "c30064771140~15"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640268~3",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "line": 33,
+      "branchPointIds": [
+        "m107374182440~3"
+      ],
+      "returnsTo": [
+        "c30064771076~2"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "throw",
+          "conditionCode": "from == null || to == null",
+          "firstCallId": "c30064771278~4"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640256~0",
+      "kind": "TRY",
+      "method": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "line": 54,
+      "branchPointIds": [
+        "c30064771072~1"
+      ],
+      "arms": [
+        {
+          "label": "try",
+          "empty": false,
+          "terminus": "continues",
+          "firstCallId": "c30064771072~1"
+        },
+        {
+          "label": "catch1",
+          "empty": false,
+          "terminus": "continues",
+          "firstCallId": "c30064771076~2"
+        }
+      ]
+    }
+  ]
 }

@@ -53,9 +53,11 @@ class Node:
     # call that isn't part of any branch arm.
     branchArms: list[BranchArmRef] = field(default_factory=list)
 
-    # flatten_intermethod_cfg only: 0-1 BFS depth (sequence edges cost 0,
-    # invoke edges cost 1) computed against the PRE-flatten filtered
-    # graph, looked up here by origId at clone time. 
+    # flatten_cfg only: the invoke-nesting level THIS CLONE was created
+    # at (0 at the root, +1 per invoke edge crossed), stamped as the
+    # flattener recurses -- not a property of the original node, which is
+    # cloned once per call site and so exists at several levels at once.
+    # Optional only for graphs that predate the field.
     depth: int | None = None
 
     @classmethod

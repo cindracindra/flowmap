@@ -23,20 +23,22 @@ export interface FlowNode {
   // walk found no further call. See Terminus's comment for why only
   // "throw" should be treated as a hard stop in the UI.
   terminus?: Terminus;
-  // call only, extraction stage: set on EVERY call inside a branch arm
-  // (not just its first) -- cross-references BranchGroup.id /
-  // BranchArm.label below. A node's own membership in an arm is always a
-  // direct fact here, never something to infer from graph position.
-  branchGroupId?: string;
-  armLabel?: string;
-  // flatten stage: 0-1 BFS depth computed server-side against the
-  // pre-flatten filtered graph (sequence=0, invoke=1) and stamped onto
-  // each flattened node by origId -- see cfg_pipeline.py's
-  // `_compute_depths`/`flatten_cfg`. Prefer this over recomputing depth
-  // client-side: a fallback/returnFrom-tagged "sequence" edge has no
-  // edge-type-based cost that gives the right answer for what crossing
-  // it means (DESIGN.md §8's "Sixth bug"/"Seventh bug", and the
-  // 2026-08-10 session-log entry, §0).
+  // call only, extraction stage: every (group, arm) this call belongs to,
+  // set on EVERY call inside a branch arm, not just its first. A node's
+  // membership is always a direct fact here, never something to infer
+  // from graph position. Absent (not []) when the call is in no arm.
+  //
+  // A LIST because a call inside an `if` inside a `try` is in both arms
+  // at once -- test membership, never read [0].
+  branchArms?: BranchArmRef[];
+  // flatten stage: the invoke-nesting level this CLONE was created at,
+  // stamped server-side as the flattener builds it -- see
+  // cfg_pipeline.py's `clone`. Every "invoke" edge therefore satisfies
+  // target.depth === source.depth + 1, by construction. Prefer this over
+  // recomputing depth client-side: a fallback/returnFrom-tagged
+  // "sequence" edge has no edge-type-based cost that gives the right
+  // answer for what crossing it means (DESIGN.md §8's "Sixth bug"/
+  // "Seventh bug", and the 2026-08-10 session-log entry, §0).
   depth?: number;
 }
 
@@ -50,30 +52,80 @@ export interface FlowEdge {
   fallback?: boolean;
 }
 
+// Mirrors model/branch.py's BranchArmRef -- one (group, arm) membership
+// carried on a node.
+export interface BranchArmRef {
+  groupId: string;
+  armLabel: string;
+}
+
+// Matches full_cfg.sc's armTerminus / model/branch.py's ArmTerminus. No
+// "fallthrough": that's node-level only (FlowNode.terminus). An arm that
+// runs off its own end and rejoins the flow is "continues".
+export type ArmTerminus = "throw" | "return" | "continues";
+
 // Mirrors model/branch.py. One entry per IF/TRY control structure found
 // during extraction; SWITCH/FOR/WHILE/DO aren't split into arms yet.
 export interface BranchArm {
   label: string;
-  // Absent when `empty` is true. Every call in this arm carries this
-  // group/arm on its own FlowNode.branchGroupId/armLabel -- firstCallId
-  // is only which one to anchor the panel's initial highlight on. After
-  // flattening, match via FlowNode.origId, not FlowNode.id -- flattening
-  // clones nodes per call site, and a single branch group can correspond
-  // to multiple flattened instances if its method is inlined more than
-  // once.
+  // The arm's head: its first call in CFG order, recomputed server-side
+  // against the surviving nodes (the extraction value is AST order, which
+  // picks the wrong node whenever a call is nested inside another
+  // expression). Absent when `empty`.
+  //
+  // Match it against FlowNode.id directly, at every stage. On a flattened
+  // graph this is already the CLONE's id, because flattening scopes each
+  // group to the instance it belongs to (`cs20` -> `cs20~7`) and rewrites
+  // the ids inside it. Do NOT match on origId: a method inlined at two
+  // call sites has two copies of this branch sharing one origId, so it
+  // matches both.
   firstCallId?: string;
-  // No further detail recorded for an empty arm -- the panel only needs
-  // to know there's nothing operationally significant in it, not how it
-  // technically ends (throw/return/fallthrough/continues).
+  // No surviving call in this arm. Recomputed post-filter, so it means
+  // "nothing operationally significant left", not "no calls in the
+  // source" -- pair with `terminus` to tell a skip from a stop.
   empty: boolean;
+  // How this arm exits -- present for EVERY arm, empty ones included.
+  // This is what separates an empty arm the panel can offer as a real
+  // "skip to X" ("continues") from one that never rejoins the flow at all
+  // ("return"/"throw"), which look identical post-filter: both leave
+  // zero nodes behind.
+  terminus?: ArmTerminus;
+  // The `if`/`else if` condition selecting this arm -- per ARM, not per
+  // group, because an else-if chain is one group with a different
+  // condition per arm. Absent on `else` and on every TRY arm.
+  conditionCode?: string;
 }
 
 export interface BranchGroup {
+  // Extraction id (`cs20`) before flattening; instance-scoped
+  // (`cs20~7`) after, since a method inlined at three call sites puts
+  // three copies of the same branch in the trace. Every node id held
+  // inside the group is re-pointed at that instance's clones to match.
   id: string;
   kind: string; // "IF" | "TRY" today
-  conditionCode?: string;
+  // Full name of the method this control structure lives in.
+  method?: string;
   line?: number;
   arms: BranchArm[];
+  // Where the fork hangs off, i.e. the node(s) to attach the panel to (a
+  // group is not itself a node). Computed against the filtered graph.
+  // Absent when no arm has a surviving head to work back from -- such a
+  // group has nothing to render.
+  //
+  // A LIST because a TRY forks at the END of its try body, once per tail:
+  // `try { a(); if (x) b(); else c(); } catch ...` can divert to the
+  // handler from both b() and c(). An IF always has exactly one.
+  branchPointIds?: string[];
+  // Where the arms rejoin -- the earliest node EVERY live path out of the
+  // branch reaches, computed at the flatten stage (before that, a branch
+  // ending its method has no edge to where it continues). Absent when
+  // they never rejoin, e.g. a guard whose only arm throws.
+  convergesAt?: string;
+  // Flatten stage: where this instance of the enclosing method returns to.
+  // An arm whose terminus is "return" leaves the method, so its arrow
+  // points HERE, not at convergesAt -- with code after the branch the two
+  // differ, since the normal path runs it and the returning arm skips it.
+  returnsTo?: string[];
 }
 
 export interface FlowGraph {

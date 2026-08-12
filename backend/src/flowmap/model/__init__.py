@@ -1,4 +1,4 @@
-from .branch import BranchArm, BranchArmRef, BranchGroup
+from .branch import ArmTerminus, BranchArm, BranchArmRef, BranchGroup
 from .class_document import ClassDocument
 from .edge import Edge, EdgeType
 from .graph import Graph
@@ -19,6 +19,7 @@ __all__ = [
     "BranchGroup",
     "BranchArm",
     "BranchArmRef",
+    "ArmTerminus",
     "Phase",
     "Transition",
     "TransitionReason",

@@ -1,16 +1,14 @@
 import dataclasses
 import itertools
-from collections import deque
+from collections import Counter, deque
 
-from model import Edge, Graph, Node
+from model import BranchArm, BranchArmRef, BranchGroup, Edge, Graph, Node
 from domain.util import is_noise, is_jdk_call_site_strip
 
 
 def classify_roots_and_orphans(graph: Graph) -> Graph:
-    """
-    Returns a new Graph with `roots`/`orphans` populated from `graph`'s own
-    "invoke" edges.
-    """
+    """Returns a new Graph with `roots`/`orphans` populated from `graph`'s own
+    "invoke" edges."""
 
     nodes_by_id = {n.id: n for n in graph.nodes}
     entry_id_by_fullname = {
@@ -46,11 +44,10 @@ def classify_roots_and_orphans(graph: Graph) -> Graph:
 
 
 def find_roots_above(graph: Graph, anchor_id: str) -> list[str]:
-    """
-    Walks "invoke" edges backward from an "entry" node (anchor_id) to
-    find every true root -- an entry node with no caller -- that can
-    reach it.
-    """
+    """Walks "invoke" edges backward from an "entry" node (anchor_id) 
+    to find every true root -- an entry node with no caller -- that can
+    reach it."""
+
     entry_ids = {n.id for n in graph.nodes if n.type == "entry"}
     if anchor_id not in entry_ids:
         raise ValueError(f"{anchor_id!r} is not an 'entry' node in this graph")
@@ -68,7 +65,7 @@ def find_roots_above(graph: Graph, anchor_id: str) -> list[str]:
 
     def walk_up(entry_id: str) -> None:
         if entry_id in visiting:
-            return  # cycle -- nothing further up along this path
+            return
         visiting.add(entry_id)
 
         caller_entry_ids: set[str] = set()
@@ -91,22 +88,9 @@ def find_roots_above(graph: Graph, anchor_id: str) -> list[str]:
 
 
 def slice_from_root(graph: Graph, root_id: str) -> Graph:
-    """
-    Extracts the forward-reachable subgraph from root_id (an "entry"
-    node id) out of the full-codebase graph -- the same
-    {"entryPoint", "nodes", "edges"} shape a single-entry-point Joern
-    extraction produces, just computed here from the already-built full
-    graph instead of a fresh query. Drops straight into
-    filter_intermethod_cfg -> flatten_intermethod_cfg -> build_phase_tree
-    unchanged.
+    """Extracts the forward-reachable subgraph from root_id (an 
+    "entry" node id) out of the full-codebase graph."""
 
-    "sequence"/"invoke" edges drive reachability; "data" edges never do
-    (matching full_cfg.sc's own extraction, where a data edge only ever
-    connects two call nodes that are already reachable via
-    sequence/invoke on their own) -- included in the output only when
-    both endpoints are already reached, never used to pull in a node
-    that wouldn't otherwise be part of the slice.
-    """
     nodes_by_id = {n.id: n for n in graph.nodes}
     root = nodes_by_id[root_id]
     if root.type != "entry":
@@ -128,18 +112,26 @@ def slice_from_root(graph: Graph, root_id: str) -> Graph:
 
     sliced_nodes = [nodes_by_id[i] for i in reached]
     sliced_edges = [e for e in graph.edges if e.source in reached and e.target in reached]
-    return Graph(entryPoint=root.calleeFullName, nodes=sliced_nodes, edges=sliced_edges)
+
+    sliced_method_names = {n.calleeFullName for n in sliced_nodes if n.type == "entry"}
+    tagged_group_ids = {t.groupId for n in sliced_nodes for t in n.branchArms}
+    sliced_groups = [
+        g for g in graph.branchGroups
+        if (g.method in sliced_method_names if g.method is not None
+            else g.id in tagged_group_ids)
+    ]
+
+    return Graph(
+        entryPoint=root.calleeFullName,
+        nodes=sliced_nodes,
+        edges=sliced_edges,
+        branchGroups=sliced_groups,
+    )
 
 
 def slice_anchored_cfg(graph: Graph, method_full_name: str) -> list[Graph]:
-    """
-    The whole chain(s) the method named method_full_name participates in,
-    each independently feedable to filter_intermethod_cfg ->
-    flatten_intermethod_cfg -> build_phase_tree as its own coherent unit --
-    see find_roots_above's docstring for why this can be more than one
-    Graph (a shared anchor with multiple independent top-level callers has
-    multiple disjoint chains, not one).
-    """
+    """Extract sliced subgraph(s) given a method's full name."""
+
     entry_id_by_fullname = {n.calleeFullName: n.id for n in graph.nodes if n.type == "entry"}
     anchor_id = entry_id_by_fullname.get(method_full_name)
     if anchor_id is None:
@@ -165,19 +157,9 @@ def _resolve_kept_targets(
     memo: dict[str, list[str]],
     visiting: frozenset[str],
 ) -> list[str]:
-    """
-    Follows outgoing edges of ONE type starting at node_id, through any
-    run of excluded nodes, until reaching kept node(s) -- or nothing, if
-    the chain dead-ends entirely inside excluded territory (or cycles
-    without ever reaching a kept node).
+    """Follows outgoing edges until reaching kept node(s) -- or nothing, 
+    if the chain dead-ends entirely inside excluded territory."""
 
-    Returned as an ORDER-PRESERVING list, not a set: when an excluded run
-    fans out to more than one surviving descendant (e.g. a noise
-    if-condition with two real branches), the caller's emitted edge order
-    should still reflect the original left-to-right branch order, not an
-    arbitrary set-iteration order. Duplicates are fine here -- deduped by
-    the caller (_bridge_edges) while preserving first occurrence.
-    """
     if node_id not in excluded_ids:
         return [node_id]
     if node_id in memo:
@@ -195,16 +177,10 @@ def _resolve_kept_targets(
 
 
 def _bridge_edges(typed_edges: list[Edge], excluded_ids: set[str]) -> list[Edge]:
-    """
-    Rebuilds ONE edge type's edges with excluded nodes spliced out: for
-    every surviving edge whose source is a kept node, its target is
-    resolved past any run of excluded nodes to the nearest kept
-    descendant(s) (see _resolve_kept_targets), so A -> B -> C collapses
-    to A -> C when B is excluded, instead of leaving a dangling A -> B
-    with C unreachable. Edges whose source is itself excluded aren't
-    re-emitted directly -- they're already folded into the resolution for
-    whatever kept node points at that excluded source.
-    """
+    """Rebuilds edges with excluded nodes spliced out: for every 
+    surviving edge whose source is a kept node, its target is resolved
+    to the nearest kept descendant(s)."""
+
     adjacency_out = _adjacency_out(typed_edges)
 
     memo: dict[str, list[str]] = {}
@@ -222,83 +198,182 @@ def _bridge_edges(typed_edges: list[Edge], excluded_ids: set[str]) -> list[Edge]
     return bridged
 
 
-def _migrate_branch_tags(
-    all_nodes: list[Node], kept_nodes: list[Node], sequence_edges: list[Edge], excluded_ids: set[str]
-) -> list[Node]:
+def _reachable_non_members(
+    start: str, own_arm: set[str], group_members: set[str], flow_out: dict[str, list[str]]
+) -> set[str]:
     """
-    A node carrying branchGroupId/armLabel (full_cfg.sc's emitBranchGroup
-    tags a branch arm's first call) can itself be excluded as noise here
-    -- e.g. `result = service.fetch();` as an arm's first statement:
-    Joern's first call in that arm's AST subtree is `<operator>.assignment`
-    (the real call is nested inside it as an argument), so that's the node
-    Scala tags, and it's also exactly the shape filter_noise_cfg strips.
-    Bridging already reconnects the EDGES around a gap like this (see
-    _bridge_edges); this migrates the NODE-level tag the same way, onto
-    the nearest surviving "sequence" descendant -- same reasoning
-    DESIGN.md §2.5 documents for divergence evidence migrating onto the
-    nearest surviving predecessor when its own node is excluded, just
-    forward instead of backward and for a node tag instead of edge
-    fan-out.
+    Every node forward-reachable from `start` that belongs to NO arm of
+    this group -- everywhere this one path out of the branch can get to
+    once it leaves the branch.
 
-    Never overwrites a node that already carries its OWN branchGroupId --
-    only a tag with nowhere left to live (its origin node was excluded)
-    gets moved. If an excluded node's resolution fans out to more than one
-    surviving descendant (possible in principle, not observed in any real
-    example so far), or if two different excluded, differently-tagged
-    nodes resolve to the SAME survivor, the tag is deliberately left off
-    rather than guessing which one should win.
+    `flow_out` must include invoke edges into inlined callees, not just
+    sequence edges: flattening REPLACES a call site's own sequence edge to
+    its successor with a return edge from the callee's tail, so on a
+    flattened graph an arm that calls anything only reaches what follows
+    it by going through the callee.
+
+    Traversal stops at any node in a SIBLING arm rather than passing
+    through it. Without that, one arm inherits its sibling's exits and
+    every group looks like it converges: Joern's cfgNext doesn't model
+    exception control flow (DESIGN.md #4.3), so a try arm's last call has
+    a plain sequence edge straight into the catch arm (confirmed live:
+    `bank.transfer(...)` -> `e.getMessage()`).
     """
-    tagged_excluded = {
-        n.id: (n.branchGroupId, n.armLabel)
-        for n in all_nodes
-        if n.id in excluded_ids and n.branchGroupId is not None
-    }
-    if not tagged_excluded:
-        return kept_nodes
-
-    adjacency_out = _adjacency_out(sequence_edges)
-    memo: dict[str, list[str]] = {}
-    migrated: dict[str, tuple[str, str]] = {}
-    conflicted: set[str] = set()
-    for excluded_id, tag in tagged_excluded.items():
-        for target_id in _resolve_kept_targets(excluded_id, excluded_ids, adjacency_out, memo, frozenset()):
-            if target_id in migrated and migrated[target_id] != tag:
-                conflicted.add(target_id)
+    reached: set[str] = set()
+    non_members: set[str] = set()
+    stack = [start]
+    while stack:
+        node_id = stack.pop()
+        if node_id in reached:
+            continue
+        reached.add(node_id)
+        if node_id not in group_members:
+            non_members.add(node_id)
+        for target in flow_out.get(node_id, []):
+            if target in group_members and target not in own_arm:
                 continue
-            migrated[target_id] = tag
-    for target_id in conflicted:
-        migrated.pop(target_id, None)
+            stack.append(target)
+    return non_members
 
-    return [
-        dataclasses.replace(n, branchGroupId=migrated[n.id][0], armLabel=migrated[n.id][1])
-        if n.id in migrated and n.branchGroupId is None
-        else n
-        for n in kept_nodes
-    ]
+
+def _walk_order(
+    adjacency: dict[str, list[str]], starts: list[str], nodes: list[Node]
+) -> dict[str, int]:
+    """
+    Visit index per node, BFS outward from `starts`. This is the only
+    honest source of "which call comes first" -- extraction's own arm
+    ordering is AST order, and the two disagree whenever a call is nested
+    inside another expression (`throw new Foo(bar())` runs bar(), then the
+    constructor, then the throw, so the AST-first call is the CFG-last
+    one).
+
+    The caller supplies the adjacency because the right edges differ by
+    stage: a pre-flatten graph is one disjoint SEQUENCE component per
+    method, walked from every entry; a flattened trace is one component
+    whose flow crosses invoke edges into inlined callees, walked from the
+    root. Walking a flattened graph on sequence edges alone leaves almost
+    everything unreached (a call site's own sequence edge is replaced by
+    the callee's return edge), and unreached nodes get arbitrary indices.
+    """
+    order: dict[str, int] = {}
+    counter = itertools.count()
+    for start in starts:
+        if start in order:
+            continue
+        order[start] = next(counter)
+        frontier: deque[str] = deque([start])
+        while frontier:
+            current = frontier.popleft()
+            for target in adjacency.get(current, []):
+                if target not in order:
+                    order[target] = next(counter)
+                    frontier.append(target)
+
+    # Anything the walk never reached (an orphaned component) still needs
+    # an index so callers can sort without special-casing.
+    for node in nodes:
+        if node.id not in order:
+            order[node.id] = next(counter)
+    return order
+
+
+def _recompute_branch_geometry(
+    nodes: list[Node], edges: list[Edge], groups: list[BranchGroup]
+) -> list[BranchGroup]:
+    """
+    Re-derives what a branch group's shape depends on which nodes actually
+    survived: each arm's `empty`/`firstCallId`, and the group's
+    `branchPointIds`.
+
+    Arm membership needs no inference -- full_cfg.sc tags every call in an
+    arm, so an arm's surviving content is just the nodes carrying its tag.
+    Only the ORDER has to be recovered from the graph (see
+    _walk_order).
+
+    Runs even when nothing was filtered out: extraction's `firstCallId` is
+    AST-first, which is the wrong node for a CFG view regardless of
+    whether any noise was stripped.
+
+    `convergesAt` is deliberately NOT computed here. Sequence edges don't
+    cross methods at this stage, so a branch that is the last thing in its
+    method -- a guard clause, an if/else ending a method -- converges on
+    the CALLER's next call, which no edge reaches until flatten_cfg
+    synthesizes the returnFrom edge. It is also per-call-site by nature: a
+    method inlined twice converges in two different places, which one
+    pre-clone value cannot express. It belongs to the flatten stage.
+    """
+    if not groups:
+        return groups
+
+    sequence_edges = [e for e in edges if e.type == "sequence"]
+    order = _walk_order(
+        _adjacency_out(sequence_edges), [n.id for n in nodes if n.type == "entry"], nodes
+    )
+    sequence_out = _adjacency_out(sequence_edges)
+    sequence_in: dict[str, list[str]] = {}
+    for edge in sequence_edges:
+        sequence_in.setdefault(edge.target, []).append(edge.source)
+
+    members: dict[tuple[str, str], set[str]] = {}
+    for node in nodes:
+        for tag in node.branchArms:
+            members.setdefault((tag.groupId, tag.armLabel), set()).add(node.id)
+
+    rank = lambda node_id: order.get(node_id, len(order))  # noqa: E731
+
+    rebuilt: list[BranchGroup] = []
+    for group in groups:
+        arms: list[BranchArm] = []
+        for arm in group.arms:
+            surviving = members.get((group.id, arm.label), set())
+            head = min(surviving, key=rank) if surviving else None
+            arms.append(dataclasses.replace(
+                arm, empty=not surviving, firstCallId=head,
+            ))
+
+        # The fork hangs off whatever leads INTO an arm without being part
+        # of THAT arm. Excluding the arm's own members is what stops a loop
+        # inside an arm from nominating its own tail (which points back at
+        # its head) as the branch point. Excluding the whole GROUP would be
+        # wrong: a try/catch forks at the end of the try body, so the catch
+        # arm's predecessors are try-arm members and are exactly the nodes
+        # wanted.
+        candidates: set[str] = set()
+        for arm in arms:
+            if arm.firstCallId is None:
+                continue
+            own_arm = members.get((group.id, arm.label), set())
+            candidates |= {
+                pred for pred in sequence_in.get(arm.firstCallId, ())
+                if pred not in own_arm
+            }
+
+        # Of those, the ones that genuinely fork. An IF's condition has the
+        # arms as its successors; a TRY's try-tail has the handler and the
+        # normal continuation. What this rules out is the method entry,
+        # which leads into the try arm without being where anything splits.
+        # When nothing forks there is no visible split -- the other path
+        # has no surviving node (a guard at the end of a method, a try
+        # whose method ends right after the catch). One anchor is enough
+        # then, and it is the LATEST candidate: for a try that's the try
+        # tail rather than the method entry, which is where the exception
+        # would divert from.
+        forking = {c for c in candidates if len(set(sequence_out.get(c, ()))) > 1}
+        if forking:
+            branch_points = sorted(forking, key=rank)
+        else:
+            branch_points = [max(candidates, key=rank)] if candidates else []
+
+        rebuilt.append(dataclasses.replace(
+            group, arms=arms, branchPointIds=branch_points,
+        ))
+    return rebuilt
 
 
 def _tag_dead_ends(nodes: list[Node]) -> list[Node]:
-    """
-    deadEnd=True iff this node's own `terminus` (set at extraction time by
-    full_cfg.sc's classifyTerminus -- see node.py) is "throw": ground
-    truth from the CFG walk itself. Previously reconstructed from a
-    before/after bridging diff (whether a node lost its sole sequence
-    successor once noise nodes were stripped) -- replaced because that
-    diff couldn't tell a proven throw apart from an ordinary tail call
-    whose successor happened to be a noise-stripped node with nothing
-    behind it (e.g. `e.getMessage()` before `System.out.println(...)`,
-    itself stripped as java.io. noise -- confirmed tagged deadEnd=True
-    under the old reconstruction despite DESIGN.md's own §8-area
-    description of that node as "a pure return", not a throw). See the
-    2026-08-10 session-log entry, §0, for the full trace of that bug and
-    why every deadEnd consumer (phase_discovery.py's diverges/converges/
-    visit R4, cfg_pipeline.py's inline()) only ever wanted the throw-only
-    meaning in the first place.
+    """deadEnd=True iff this node's own `terminus` (set at extraction 
+    time by full_cfg.sc's classifyTerminus) is "throw"."""
 
-    A node whose JSON predates this field (terminus absent) simply gets
-    deadEnd=None here, same as before this field existed -- no crash, just
-    a degraded (non-)signal until the graph is regenerated.
-    """
     return [
         dataclasses.replace(n, deadEnd=True) if n.terminus == "throw" else n
         for n in nodes
@@ -310,16 +385,12 @@ def filter_noise_cfg(cfg: Graph) -> Graph:
     Drops noise/JDK-bookkeeping "call" nodes, bridging around each gap so
     the surrounding flow stays connected (e.g. A -> B -> C with B
     excluded becomes A -> C). Also tags each surviving node whose
-    terminus is a proven throw with deadEnd=True -- see PHASING_RULES.md
-    for why phaser needs this distinguished from an ordinary excluded
-    node, and `_tag_dead_ends` above for where that fact comes from --
-    and migrates any branchGroupId/armLabel tag whose own node got
-    excluded onto the nearest surviving descendant (`_migrate_branch_tags`
-    above).
+    terminus is a proven throw with deadEnd=True, and re-derives each
+    branch group against what survived (_recompute_branch_geometry).
 
-    Matches against each node's calleeFullName (its resolved target),
-    never code (its source text) -- code was tried first and found
-    unreliable.
+    A node's own branchArms tags are never moved: full_cfg.sc tags every
+    call in an arm, so anything genuinely inside one is already tagged,
+    and the only place a migrated tag could land is outside the arm.
     """
     excluded_ids = {
         n.id for n in cfg.nodes
@@ -328,7 +399,11 @@ def filter_noise_cfg(cfg: Graph) -> Graph:
         and (is_noise(n.calleeFullName) or is_jdk_call_site_strip(n.calleeFullName))
     }
     if not excluded_ids:
-        return dataclasses.replace(cfg, nodes=_tag_dead_ends(cfg.nodes))
+        return dataclasses.replace(
+            cfg,
+            nodes=_tag_dead_ends(cfg.nodes),
+            branchGroups=_recompute_branch_geometry(cfg.nodes, cfg.edges, cfg.branchGroups),
+        )
 
     throw_ids = {
         n.id for n in cfg.nodes
@@ -345,15 +420,11 @@ def filter_noise_cfg(cfg: Graph) -> Graph:
 
     edge_types = sorted({e.type for e in cfg.edges})
     kept_edges: list[Edge] = []
-    sequence_typed_edges: list[Edge] = []
     for edge_type in edge_types:
         typed_edges = [e for e in cfg.edges if e.type == edge_type]
         if edge_type == "sequence":
             typed_edges = [e for e in typed_edges if e.source not in throw_ids]
-            sequence_typed_edges = typed_edges
         kept_edges.extend(_bridge_edges(typed_edges, excluded_ids))
-
-    kept_nodes = _migrate_branch_tags(cfg.nodes, kept_nodes, sequence_typed_edges, excluded_ids)
 
     # A node excluded nowhere above can still end up disconnected: a
     # "leaf" whose only edge was FROM an excluded call has no surviving
@@ -381,46 +452,139 @@ def filter_noise_cfg(cfg: Graph) -> Graph:
         if n.id in connected_ids or n.id in root_ids
     ]
 
-    return dataclasses.replace(cfg, nodes=kept_nodes, edges=kept_edges)
+    return dataclasses.replace(
+        cfg,
+        nodes=kept_nodes,
+        edges=kept_edges,
+        branchGroups=_recompute_branch_geometry(kept_nodes, kept_edges, cfg.branchGroups),
+    )
 
 
-def _compute_depths(cfg: Graph, root_id: str) -> dict[str, int]:
+def _scope_group_to_instance(
+    group: BranchGroup, suffix: str, local_clone: dict[str, str],
+    continuations: list[str],
+) -> BranchGroup:
     """
-    0-1 BFS over `cfg`'s own "sequence" (cost 0) and "invoke" (cost 1)
-    edges, keyed by ORIGINAL (pre-clone) node id. Deliberately run against
-    the PRE-flatten graph, not the flattened one: a flattened graph's
-    "sequence" edges include fallback/returnFrom-attributed ones with no
-    edge-type-based cost that gives the right depth for what crossing them
-    means (a "return" conceptually pops back down, not "stay at the same
-    level") -- DESIGN.md's "Sixth bug"/"Seventh bug" (§8) already found
-    and fixed this once on the old Python visualizer; frontend/src/lib/
-    layout.ts's own `computeDepths` reintroduced it by recomputing fresh
-    on the flattened graph instead of inheriting this. Mirrors
-    layout.ts's algorithm exactly (same reasoning, just the Python side of
-    it): 0-cost edges pushed to the front of the deque so they're
-    processed before any 1-cost alternative reaches the same node first.
+    One inlined instance's copy of a branch group: `cs20` -> `cs20~7`,
+    with every node id it holds re-pointed at that instance's clones.
+
+    An arm whose head wasn't cloned here is empty FOR THIS INSTANCE --
+    the trace simply doesn't contain it, whatever the pre-flatten graph
+    said.
     """
-    adjacency: dict[str, list[tuple[str, int]]] = {}
-    for e in cfg.edges:
-        if e.type not in ("sequence", "invoke"):
+    arms = [
+        dataclasses.replace(
+            arm,
+            firstCallId=local_clone.get(arm.firstCallId) if arm.firstCallId else None,
+            empty=local_clone.get(arm.firstCallId) is None if arm.firstCallId else True,
+        )
+        for arm in group.arms
+    ]
+    return dataclasses.replace(
+        group,
+        id=f"{group.id}~{suffix}",
+        arms=arms,
+        branchPointIds=[
+            local_clone[p] for p in group.branchPointIds if p in local_clone
+        ],
+        # Where this instance returns to, for a "return" arm's arrow and
+        # for the zero-call-arm case in _resolve_convergence.
+        returnsTo=list(continuations),
+        convergesAt=None,  # needs the whole trace -- see _resolve_convergence
+    )
+
+
+def _resolve_convergence(
+    nodes: list[Node], edges: list[Edge], groups: list[BranchGroup], root_id: str
+) -> list[BranchGroup]:
+    """
+    Fills in each group's `convergesAt` -- the earliest node that EVERY
+    live path out of the branch reaches.
+
+    Only answerable here, not at filter time: a branch that ends its
+    method converges on the CALLER's next call, and nothing connects the
+    two until flattening synthesizes the returnFrom edge. It's per
+    instance for the same reason -- the same branch inlined at two call
+    sites rejoins in two different places.
+
+    "Every path", not "two or more". They coincide at two arms but not at
+    three: for `if / else if / else` where two arms continue past the
+    branch and the third returns, a two-or-more rule picks the statement
+    after the branch, which the returning arm never reaches. The real
+    meeting point is further on, where the method itself returns to.
+
+    An arm that throws contributes no path at all -- nothing follows a
+    throw. A returning arm DOES contribute one: post-flatten it continues
+    into its caller, which is exactly what this stage can see and the
+    filter stage cannot.
+    """
+    sequence_out = _adjacency_out([e for e in edges if e.type == "sequence"])
+    entry_ids = {n.id for n in nodes if n.type == "entry"}
+    flow_out = _adjacency_out([
+        e for e in edges
+        if e.type == "sequence" or (e.type == "invoke" and e.target in entry_ids)
+    ])
+    order = _walk_order(flow_out, [root_id], nodes)
+    rank = lambda node_id: order.get(node_id, len(order))  # noqa: E731
+
+    members: dict[tuple[str, str], set[str]] = {}
+    for node in nodes:
+        for tag in node.branchArms:
+            members.setdefault((tag.groupId, tag.armLabel), set()).add(node.id)
+
+    resolved: list[BranchGroup] = []
+    for group in groups:
+        if not group.branchPointIds:
+            resolved.append(group)
             continue
-        cost = 1 if e.type == "invoke" else 0
-        adjacency.setdefault(e.source, []).append((e.target, cost))
 
-    depths: dict[str, int] = {root_id: 0}
-    frontier: deque[str] = deque([root_id])
-    while frontier:
-        node_id = frontier.popleft()
-        node_depth = depths[node_id]
-        for target, cost in adjacency.get(node_id, []):
-            candidate = node_depth + cost
-            if target not in depths or candidate < depths[target]:
-                depths[target] = candidate
-                if cost == 0:
-                    frontier.appendleft(target)
-                else:
-                    frontier.append(target)
-    return depths
+        group_members = {
+            node_id for arm in group.arms
+            for node_id in members.get((group.id, arm.label), ())
+        }
+        paths = [
+            _reachable_non_members(
+                arm.firstCallId, members.get((group.id, arm.label), set()),
+                group_members, flow_out,
+            )
+            for arm in group.arms
+            if arm.firstCallId is not None and arm.terminus != "throw"
+        ]
+        # Whatever the fork reaches without entering an arm: the implicit
+        # else, or the normal continuation past a try.
+        paths.extend(
+            _reachable_non_members(successor, set(), group_members, flow_out)
+            for branch_point in group.branchPointIds
+            for successor in sequence_out.get(branch_point, ())
+            if successor not in group_members
+        )
+        # ...unless the branch is the LAST thing in its method, where no
+        # edge represents the skip at all -- a zero-call arm produces no
+        # node and no edge (DESIGN.md #4.1). What it really does is fall
+        # out of the method, so the instance's own continuation IS that
+        # path. Only for an empty arm that CONTINUES: for a throwing or
+        # returning one it would double-count the surviving route and
+        # invent a convergence that isn't there.
+        if any(arm.empty and arm.terminus == "continues" for arm in group.arms):
+            if group.returnsTo:
+                paths.append(set(group.returnsTo))
+
+        # A single path has nothing to converge WITH -- that's a
+        # continuation, not a merge.
+        converges_at = None
+        if len(paths) > 1:
+            reached_by = Counter(node_id for path in paths for node_id in path)
+            # After every fork: a loop's back edge makes nodes BEFORE the
+            # branch reachable from each arm, and those are the loop
+            # header, not a convergence.
+            last_fork = max(rank(b) for b in group.branchPointIds)
+            shared = [
+                node_id for node_id, count in reached_by.items()
+                if count == len(paths) and rank(node_id) > last_fork
+            ]
+            converges_at = min(shared, key=rank) if shared else None
+        resolved.append(dataclasses.replace(group, convergesAt=converges_at))
+    return resolved
 
 
 def flatten_cfg(cfg: Graph) -> Graph:
@@ -450,21 +614,19 @@ def flatten_cfg(cfg: Graph) -> Graph:
       - A callee whose whole inlined subtree never reaches the
         continuation it was given falls back to wiring the callee's own
         entry directly to it, tagged fallback=True.
-      - Each clone's `depth` is looked up by origId against depths
-        computed once, up front, on the PRE-flatten `cfg` -- see
-        `_compute_depths`'s docstring for why this can't be recomputed
-        correctly on the flattened graph's own edges.
+      - Each clone's `depth` is the invoke-nesting level it is created
+        at, stamped from `inline`'s own recursion -- see `clone`.
+      - Branch groups are cloned per instance too, `cs20` -> `cs20~7`,
+        with every id inside them re-pointed at this instance's clones --
+        see `_scope_group_to_instance`. Without it, a method inlined at
+        three call sites yields three copies of its groups all sharing
+        one id, so "render group cs20" is ambiguous.
     """
     nodes_by_id = {n.id: n for n in cfg.nodes}
 
     root_original_id = next(
         n.id for n in cfg.nodes if n.type == "entry" and n.calleeFullName == cfg.entryPoint
     )
-    # Computed once, up front, against the PRE-flatten graph -- see
-    # _compute_depths's docstring for why depth can't be recomputed
-    # correctly on the flattened graph's own edges instead.
-    depths_by_original_id = _compute_depths(cfg, root_original_id)
-
     sequence_out: dict[str, list[str]] = {}
     invoke_out: dict[str, list[str]] = {}
     data_out: dict[str, list[str]] = {}
@@ -473,8 +635,14 @@ def flatten_cfg(cfg: Graph) -> Graph:
         if bucket is not None:
             bucket.setdefault(e.source, []).append(e.target)
 
+    groups_by_method: dict[str, list[BranchGroup]] = {}
+    for group in cfg.branchGroups:
+        if group.method is not None:
+            groups_by_method.setdefault(group.method, []).append(group)
+
     flat_nodes: dict[str, Node] = {}
     flat_edges: list[Edge] = []
+    flat_groups: list[BranchGroup] = []
     seen_edges: set[tuple[str, str, str]] = set()
     id_counter = itertools.count()
 
@@ -496,11 +664,29 @@ def flatten_cfg(cfg: Graph) -> Graph:
             )
         )
 
-    def clone(original_id: str) -> str:
+    def clone(original_id: str, depth: int) -> str:
+        """
+        `depth` is the invoke-nesting level this particular clone is
+        created at, passed down `inline`'s recursion rather than derived
+        from any edge. It cannot be a property of the ORIGINAL node:
+        a method invoked from two call sites at different nesting levels
+        is cloned once per call site, and those clones belong in
+        different columns. Anything keyed by original id (a shortest-path
+        BFS over the pre-flatten graph, say) has one slot for N clones
+        and necessarily collapses them onto the shallowest caller's
+        level, rendering a call that doesn't advance a column at all.
+
+        Not derivable from the FLATTENED graph's edges either, which is
+        what makes the clone tree the only place this is unambiguous:
+        a fallback/returnFrom-attributed "sequence" edge means "the
+        containing method just returned", which no edge cost expresses
+        (a tail-call chain three deep pops back to the ORIGINAL caller's
+        level, not one per edge) -- DESIGN.md's "Sixth bug"/"Seventh bug"
+        (§8) found that twice on the old Python visualizer.
+        """
         new_id = f"{original_id}~{next(id_counter)}"
         flat_nodes[new_id] = dataclasses.replace(
-            nodes_by_id[original_id], id=new_id, origId=original_id,
-            depth=depths_by_original_id.get(original_id),
+            nodes_by_id[original_id], id=new_id, origId=original_id, depth=depth,
         )
         return new_id
 
@@ -509,6 +695,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
         continuations: list[str],
         return_from: str | None,
         visited_methods: frozenset[str],
+        depth: int,
     ) -> tuple[str, bool]:
         """
         Clones and wires ONE method's own reachable body (recursing into
@@ -528,12 +715,21 @@ def flatten_cfg(cfg: Graph) -> Graph:
         tail-call chain rooted here propagated through to something that
         did (recursively OR'd, never reset partway through a tail chain --
         propagating unchanged IS what makes a tail call a tail call).
+
+        `depth` is this method's own invoke-nesting level (0 at the root).
+        Every clone it makes is stamped with it -- see `clone`.
         """
         local_clone: dict[str, str] = {}
 
-        def get_or_clone(original_id: str) -> str:
+        def get_or_clone(original_id: str, at_depth: int = depth) -> str:
+            # One method body is one column: "sequence" edges don't nest,
+            # so the whole walk below shares this method's own `depth`.
+            # Only crossing an "invoke" edge deepens, which is why the
+            # leaf-target call site is the one place that overrides
+            # `at_depth` (its internal-target counterpart deepens by
+            # recursing into `inline` with depth + 1 instead).
             if original_id not in local_clone:
-                local_clone[original_id] = clone(original_id)
+                local_clone[original_id] = clone(original_id, at_depth)
             return local_clone[original_id]
 
         entry_new_id = get_or_clone(entry_original_id)
@@ -560,7 +756,13 @@ def flatten_cfg(cfg: Graph) -> Graph:
             leaf_targets = [t for t in invoke_targets if nodes_by_id[t].type != "entry"]
 
             for leaf_target in leaf_targets:
-                emit_edge(this_new_id, get_or_clone(leaf_target), "invoke")
+                # An external callee has no body to inline, but the call
+                # still nests -- so it deepens exactly like an internal
+                # one, just without recursing. Safe to keep in
+                # `local_clone` at a different depth than its neighbours:
+                # a leaf is only ever an "invoke" target, never reached by
+                # a "sequence" edge, so no id is requested at two depths.
+                emit_edge(this_new_id, get_or_clone(leaf_target, depth + 1), "invoke")
 
             if internal_targets:
                 is_new_continuation = False
@@ -610,7 +812,8 @@ def flatten_cfg(cfg: Graph) -> Graph:
                     callee_return_from = return_from
                 for target in internal_targets:
                     callee_entry_new, callee_consumed = inline(
-                        target, callee_continuations, callee_return_from, deeper_visited
+                        target, callee_continuations, callee_return_from,
+                        deeper_visited, depth + 1,
                     )
                     emit_edge(this_new_id, callee_entry_new, "invoke")
                     if is_new_continuation:
@@ -667,21 +870,51 @@ def flatten_cfg(cfg: Graph) -> Graph:
                 if data_target in local_clone:
                     emit_edge(this_new_id, local_clone[data_target], "data")
 
+        # This instance's own copy of its method's branch groups. The
+        # suffix is the entry clone's -- unique per inline() call, so it
+        # identifies the instance the way no single node id can (every
+        # node gets its own counter value).
+        instance_groups = groups_by_method.get(method_name, ())
+        if instance_groups:
+            suffix = entry_new_id.rsplit("~", 1)[-1]
+            scoped_ids = {g.id for g in instance_groups}
+            for group in instance_groups:
+                flat_groups.append(
+                    _scope_group_to_instance(group, suffix, local_clone, continuations)
+                )
+            # Each clone's own tags must move with them, or the group ids
+            # on the nodes stop matching the groups. A fresh list per
+            # node: `clone` copies the field by reference, so rewriting in
+            # place would corrupt every other instance.
+            for new_id in local_clone.values():
+                node = flat_nodes[new_id]
+                if not node.branchArms:
+                    continue
+                flat_nodes[new_id] = dataclasses.replace(node, branchArms=[
+                    BranchArmRef(f"{t.groupId}~{suffix}", t.armLabel)
+                    if t.groupId in scoped_ids else t
+                    for t in node.branchArms
+                ])
+
         return entry_new_id, continuation_consumed
 
-    # root_original_id/depths_by_original_id were computed at the top of
-    # this function, before `clone` needed them.
     # Root has no outer continuation ([]) -- nothing to fall back to, so
-    # its own "consumed" status is moot and discarded.
-    root_new_id, _ = inline(root_original_id, [], None, frozenset())
+    # its own "consumed" status is moot and discarded -- and sits at
+    # nesting level 0, the origin every other depth counts up from.
+    root_new_id, _ = inline(root_original_id, [], None, frozenset(), 0)
+
+    nodes = list(flat_nodes.values())
+    # A group with no `method` can't be attributed to an instance, so it
+    # rides through unscoped rather than being dropped (only reachable
+    # with a graph extracted before groups carried `method`).
+    groups = _resolve_convergence(nodes, flat_edges, flat_groups, root_new_id)
+    groups += [g for g in cfg.branchGroups if g.method is None]
 
     return Graph(
         entryPoint=cfg.entryPoint,
         rootId=root_new_id,
-        nodes=list(flat_nodes.values()),
+        nodes=nodes,
         edges=flat_edges,
-        # Method-level metadata, untouched by flattening -- see
-        # branch.py/graph.py.
-        branchGroups=cfg.branchGroups,
+        branchGroups=groups,
     )
 

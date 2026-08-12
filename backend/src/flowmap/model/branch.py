@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
+
+
+ArmTerminus = Literal["throw", "return", "continues"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,12 +24,25 @@ class BranchArmRef:
 class BranchArm:
     label: str
 
-    # None when `empty` -- arm has no call node of its own to point to.
+    # The arm's head: its FIRST call in CFG order. None when `empty`.
+    #
+    # At extraction this is the arm's first call in AST order, which is not
+    # the same thing -- `throw new Foo(bar())` evaluates bar(), then the
+    # constructor, then the throw, so the AST-first call is the CFG-LAST
+    # one. filter_noise_cfg recomputes it (see _recompute_branch_geometry)
+    # against the surviving nodes in real flow order; treat the extraction
+    # value as provisional.
     firstCallId: str | None = None
 
-    # No further detail is recorded for an empty arm (no throw/return/
-    # fallthrough/continues breakdown).
+    # No surviving call in this arm.
     empty: bool = False
+
+    # How this arm exits -- set for every arm, empty ones included.
+    terminus: ArmTerminus | None = None
+
+    # The `if`/`else if` condition that selects this arm. Absent on an
+    # `else` arm (no condition of its own) and on every TRY arm.
+    conditionCode: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BranchArm:
@@ -34,10 +50,16 @@ class BranchArm:
             label=data["label"],
             firstCallId=data.get("firstCallId"),
             empty=data.get("empty", False),
+            terminus=data.get("terminus"),
+            conditionCode=data.get("conditionCode"),
         )
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {"label": self.label, "empty": self.empty}
+        if self.terminus is not None:
+            result["terminus"] = self.terminus
+        if self.conditionCode is not None:
+            result["conditionCode"] = self.conditionCode
         if self.firstCallId is not None:
             result["firstCallId"] = self.firstCallId
         return result
@@ -50,27 +72,63 @@ class BranchGroup:
     # Joern's controlStructureType.
     kind: str
 
-    conditionCode: str | None = None
+    # Owning method's full name
+    method: str | None = None
+
     line: int | None = None
     arms: list[BranchArm] = field(default_factory=list)
+
+    # filter_noise_cfg: the node(s) the fork hangs off, i.e. where the
+    # panel attaches. A group is not a node, so without this it has
+    # nowhere to be drawn. Empty when no arm has a surviving head to work
+    # back from.
+    #
+    # A LIST because a TRY has one fork per try tail: an exception can
+    # divert to the handler from the end of any path through the try body,
+    # so `try { a(); if (x) b(); else c(); } catch ...` forks at BOTH b()
+    # and c(). An IF always has exactly one.
+    branchPointIds: list[str] = field(default_factory=list)
+
+    # NOT POPULATED YET -- belongs to flatten_cfg, see below.
+    #
+    # Where the arms rejoin: the "X" in an empty arm's "skip to X". Can't
+    # be computed at filter time, where sequence edges don't cross methods:
+    # a branch that ends its method converges on the CALLER's next call,
+    # which no edge reaches until flattening synthesizes the returnFrom
+    # edge. It's also per-call-site -- a method inlined twice converges in
+    # two different places -- so it can't be one pre-clone value either.
+    convergesAt: str | None = None
+
+    # flatten_cfg only: where the enclosing method instance returns to.
+    # An arm whose terminus is "return" leaves the method entirely, so its
+    # arrow points here, NOT at convergesAt -- with code after the branch
+    # the two differ (the normal path runs it, the returning arm skips it).
+    returnsTo: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BranchGroup:
         return cls(
             id=data["id"],
             kind=data["kind"],
-            conditionCode=data.get("conditionCode"),
+            method=data.get("method"),
             line=data.get("line"),
             arms=[BranchArm.from_dict(a) for a in data.get("arms", [])],
+            branchPointIds=list(data.get("branchPointIds", [])),
+            convergesAt=data.get("convergesAt"),
+            returnsTo=list(data.get("returnsTo", [])),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        result: dict[str, Any] = {
-            "id": self.id, "kind": self.kind,
-            "arms": [a.to_dict() for a in self.arms],
-        }
-        if self.conditionCode is not None:
-            result["conditionCode"] = self.conditionCode
+        result: dict[str, Any] = {"id": self.id, "kind": self.kind}
+        if self.method is not None:
+            result["method"] = self.method
         if self.line is not None:
             result["line"] = self.line
+        if self.branchPointIds:
+            result["branchPointIds"] = self.branchPointIds
+        if self.convergesAt is not None:
+            result["convergesAt"] = self.convergesAt
+        if self.returnsTo:
+            result["returnsTo"] = self.returnsTo
+        result["arms"] = [a.to_dict() for a in self.arms]
         return result

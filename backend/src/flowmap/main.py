@@ -59,9 +59,9 @@ if __name__ == "__main__":
     load_dotenv()
 
     cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
-    # if not cpg_output_path.exists():
-    #     parse_project(SOURCE_DIR, cpg_output_path)
-    parse_project(SOURCE_DIR, cpg_output_path)
+    if not cpg_output_path.exists():
+        parse_project(SOURCE_DIR, cpg_output_path)
+    # parse_project(SOURCE_DIR, cpg_output_path)
 
     session = JoernSession(port=8080)
     
@@ -161,7 +161,7 @@ if __name__ == "__main__":
     filtered_cfg_path = Path(OUTPUT_DIR) / "filtered_cfg.json"
     export_to_json(filtered_cfg_path, [cfg.to_dict() for cfg in filtered_cfg])
 
-    flattened_cfg_path = Path(OUTPUT_DIR) / "flattened_cgf.json"
+    flattened_cfg_path = Path(OUTPUT_DIR) / "flattened_cfg.json"
     export_to_json(flattened_cfg_path, [cfg.to_dict() for cfg in flattened_cfg])
 
     phase_tree_path = Path(OUTPUT_DIR) / "phase_tree.json"

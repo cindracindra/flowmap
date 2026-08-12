@@ -21,7 +21,10 @@ from backend.src.flowmap.domain.cfg_pipeline import (  # noqa: E402
 )
 from backend.src.flowmap.model import Graph  # noqa: E402
 
-def node(id_, type_, callee=None, caller=None, dead=False, terminus=None, branch_group=None, arm_label=None):
+def node(id_, type_, callee=None, caller=None, dead=False, terminus=None, arms=None):
+    """`arms` is the raw `branchArms` shape full_cfg.sc emits -- a list of
+    (groupId, armLabel) pairs, since one call can be in several arms at
+    once (an `if` inside a `try`)."""
     d = {"id": id_, "type": type_}
     if callee is not None:
         d["calleeFullName"] = callee
@@ -31,10 +34,8 @@ def node(id_, type_, callee=None, caller=None, dead=False, terminus=None, branch
         d["deadEnd"] = True
     if terminus is not None:
         d["terminus"] = terminus
-    if branch_group is not None:
-        d["branchGroupId"] = branch_group
-    if arm_label is not None:
-        d["armLabel"] = arm_label
+    if arms:
+        d["branchArms"] = [{"groupId": g, "armLabel": a} for g, a in arms]
     return d
 
 
@@ -60,13 +61,13 @@ def _full_codebase_raw() -> dict:
     return {
         "nodes": [
             node("m_doA", "entry", "doA"),
-            node("c1", "call", "doHelper", "doA"),
+            node("c1", "call", "doHelper", "doA", arms=[("cs_doA", "if")]),
             node("c2", "call", "doX", "doA"),
             node("m_doProcessTwo", "entry", "doProcessTwo"),
             node("c3", "call", "doHelper", "doProcessTwo"),
             node("c4", "call", "doY", "doProcessTwo"),
             node("m_doHelper", "entry", "doHelper"),
-            node("c5", "call", "doInner", "doHelper"),
+            node("c5", "call", "doInner", "doHelper", arms=[("cs_helper", "try")]),
             node("m_unused", "entry", "unusedMethod"),
             node("leaf_doX", "leaf", "doX"),
             node("leaf_doY", "leaf", "doY"),
@@ -83,6 +84,29 @@ def _full_codebase_raw() -> dict:
             edge("c4", "leaf_doY", "invoke"),
             edge("m_doHelper", "c5"),
             edge("c5", "leaf_doInner", "invoke"),
+        ],
+        # Method-level metadata, reached by no edge -- one group in each
+        # of the two independent chains, plus one in the method they
+        # SHARE, which is what makes slice scoping observable.
+        "branchGroups": [
+            {
+                "id": "cs_doA", "kind": "IF", "method": "doA", "line": 3,
+                "arms": [{
+                    "label": "if", "empty": False, "terminus": "continues",
+                    "conditionCode": "x > 0", "firstCallId": "c1",
+                }],
+            },
+            {
+                "id": "cs_two", "kind": "IF", "method": "doProcessTwo", "line": 8,
+                "arms": [{"label": "if", "empty": True, "terminus": "return"}],
+            },
+            {
+                "id": "cs_helper", "kind": "TRY", "method": "doHelper", "line": 12,
+                "arms": [
+                    {"label": "try", "empty": False, "terminus": "continues", "firstCallId": "c5"},
+                    {"label": "catch1", "empty": True, "terminus": "throw"},
+                ],
+            },
         ],
     }
 
@@ -106,6 +130,17 @@ class WholeCodebaseGraphShapeTests(unittest.TestCase):
         self.assertNotIn("orphans", raw)
         self.assertIn("nodes", raw)
         self.assertIn("edges", raw)
+
+    def test_extraction_fields_survive_a_round_trip_unchanged(self):
+        # Guards the whole extraction contract in one place: anything
+        # full_cfg.sc emits and the model doesn't read is silently lost,
+        # with no error anywhere to notice it by. This is exactly how the
+        # node `branchArms` list, and both arm-level fields, went missing.
+        original = _full_codebase_raw()
+        round_tripped = Graph.from_dict(original).to_dict()
+        self.assertEqual(round_tripped["branchGroups"], original["branchGroups"])
+        self.assertEqual(round_tripped["nodes"], original["nodes"])
+        self.assertEqual(round_tripped["edges"], original["edges"])
 
 
 class ClassifyRootsAndOrphansTests(unittest.TestCase):
@@ -222,6 +257,28 @@ class SliceFromRootTests(unittest.TestCase):
     def test_rejects_non_entry_root(self):
         with self.assertRaises(ValueError):
             slice_from_root(self.graph, "c1")
+
+    def test_branch_groups_are_carried_over_scoped_to_the_slice(self):
+        # branchGroups is reached by no edge, so without explicit carry-over
+        # it vanishes here and every downstream stage sees none. Scoped by
+        # owning method: doA's slice gets its own group and the shared
+        # callee's, never doProcessTwo's.
+        sliced = slice_from_root(self.graph, "m_doA")
+        self.assertEqual({g.id for g in sliced.branchGroups}, {"cs_doA", "cs_helper"})
+
+        arm = next(g for g in sliced.branchGroups if g.id == "cs_doA").arms[0]
+        self.assertEqual(arm.terminus, "continues")
+        self.assertEqual(arm.conditionCode, "x > 0")
+
+    def test_group_lacking_a_method_falls_back_to_tagged_nodes(self):
+        # Graphs extracted before groups carried `method`. Scoping by node
+        # tags still places cs_doA (c1 carries it); a group no node in the
+        # slice claims is dropped rather than blindly carried.
+        raw = _full_codebase_raw()
+        for group in raw["branchGroups"]:
+            del group["method"]
+        sliced = slice_from_root(Graph.from_dict(raw), "m_doA")
+        self.assertEqual({g.id for g in sliced.branchGroups}, {"cs_doA", "cs_helper"})
 
 
 class SliceAnchoredCfgTests(unittest.TestCase):
@@ -391,24 +448,52 @@ class FilterNoiseCfgTests(unittest.TestCase):
             {(e.source, e.target, e.type) for e in filtered.edges},
         )
 
-    def test_branch_tag_migrates_when_its_own_node_is_noise(self):
-        # else { result = service.fetch(); }
-        # Joern's first call in this arm's AST subtree is
-        # <operator>.assignment (the real call is nested inside it as an
-        # argument), so that's the node full_cfg.sc's emitBranchGroup
-        # tags with branchGroupId/armLabel -- and also exactly the shape
-        # filter_noise_cfg strips as noise. The tag should end up on
-        # c_fetch (the surviving descendant), not disappear with
-        # op_assign.
+    def test_a_stripped_arm_leaves_no_tag_on_whatever_follows_it(self):
+        # if (x) { log(); }  -- the arm's ONLY call is stripped, so the
+        # arm has nothing left. c_next is the convergence point AFTER the
+        # branch, not part of it: bridging correctly reconnects the edge,
+        # but the tag must NOT travel with it.
+        #
+        # This is why tag migration was removed. full_cfg.sc tags every
+        # call in an arm, so a node genuinely inside one is always tagged
+        # natively -- leaving "outside the arm" as the only place a
+        # migrated tag could ever land. Confirmed live on the real graph:
+        # a `return account.getBalance()` after a try block was picking up
+        # that try's tag.
         graph = Graph.from_dict({
             "entryPoint": "run",
             "nodes": [
                 node("e", "entry", "run"),
-                node(
-                    "op_assign", "call", "<operator>.assignment", "run",
-                    branch_group="cs1", arm_label="else",
-                ),
-                node("c_fetch", "call", "Service.fetch", "run"),
+                node("c_log", "call", "java.io.PrintStream.println", "run", arms=[("cs1", "if")]),
+                node("c_next", "call", "Service.fetch", "run"),
+            ],
+            "edges": [
+                edge("e", "c_log"),
+                edge("c_log", "c_next"),
+            ],
+        })
+        filtered = filter_noise_cfg(graph)
+
+        self.assertEqual({n.id for n in filtered.nodes}, {"e", "c_next"})
+        c_next = next(n for n in filtered.nodes if n.id == "c_next")
+        self.assertEqual(c_next.branchArms, [])
+        # The edge itself is still bridged -- only the tag is withheld.
+        self.assertIn(
+            ("e", "c_next", "sequence"),
+            {(e.source, e.target, e.type) for e in filtered.edges},
+        )
+
+    def test_a_surviving_arm_member_keeps_its_own_tags(self):
+        # The other half: an arm whose first call is stripped but which
+        # has a second, surviving call needs no migration at all -- that
+        # call was tagged natively at extraction.
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e", "entry", "run"),
+                node("op_assign", "call", "<operator>.assignment", "run", arms=[("cs1", "try")]),
+                node("c_fetch", "call", "Service.fetch", "run",
+                     arms=[("cs1", "try"), ("cs2", "if")]),
             ],
             "edges": [
                 edge("e", "op_assign"),
@@ -417,43 +502,345 @@ class FilterNoiseCfgTests(unittest.TestCase):
         })
         filtered = filter_noise_cfg(graph)
 
-        self.assertEqual({n.id for n in filtered.nodes}, {"e", "c_fetch"})
         c_fetch = next(n for n in filtered.nodes if n.id == "c_fetch")
-        self.assertEqual(c_fetch.branchGroupId, "cs1")
-        self.assertEqual(c_fetch.armLabel, "else")
+        self.assertEqual(
+            {(t.groupId, t.armLabel) for t in c_fetch.branchArms},
+            {("cs1", "try"), ("cs2", "if")},
+        )
 
-    def test_branch_tag_not_migrated_onto_a_node_with_its_own_tag(self):
-        # op_a (excluded, tagged cs1/then) resolves to c_shared -- but
-        # c_shared already carries its OWN genuine tag (cs1/finally, as
-        # if it were itself a real arm's first call, e.g. a shared
-        # convergence point). Migration must never overwrite a node's own
-        # tag with one inherited from an excluded predecessor.
-        graph = Graph.from_dict({
+
+# --------------------------------------------------------------------------
+# _recompute_branch_geometry: everything about a group that depends on
+# which nodes survived -- arm empty/firstCallId, branchPointIds,
+# convergesAt.
+# --------------------------------------------------------------------------
+
+def _if_else_raw(**arm_overrides) -> dict:
+    """
+    if (flag) { a(); }        <- cs1/if
+    else      { b(); }        <- cs1/else
+    join();                   <- convergence
+
+    c_check is the condition call, left un-noisy so it survives to be a
+    recognisable branch point.
+    """
+    raw = {
+        "entryPoint": "run",
+        "nodes": [
+            node("e", "entry", "run"),
+            node("c_check", "call", "Flags.check", "run"),
+            node("c_a", "call", "Service.a", "run", arms=[("cs1", "if")]),
+            node("c_b", "call", "Service.b", "run", arms=[("cs1", "else")]),
+            node("c_join", "call", "Service.join", "run"),
+        ],
+        "edges": [
+            edge("e", "c_check"),
+            edge("c_check", "c_a"),
+            edge("c_check", "c_b"),
+            edge("c_a", "c_join"),
+            edge("c_b", "c_join"),
+        ],
+        "branchGroups": [{
+            "id": "cs1", "kind": "IF", "method": "run", "line": 3,
+            "arms": [
+                {"label": "if", "empty": False, "terminus": "continues",
+                 "conditionCode": "flag", "firstCallId": "c_a"},
+                {"label": "else", "empty": False, "terminus": "continues",
+                 "firstCallId": "c_b"},
+            ],
+        }],
+    }
+    raw.update(arm_overrides)
+    return raw
+
+
+class RecomputeBranchGeometryTests(unittest.TestCase):
+    def _group(self, raw: dict):
+        return filter_noise_cfg(Graph.from_dict(raw)).branchGroups[0]
+
+    def test_branch_point_of_a_plain_if_else(self):
+        group = self._group(_if_else_raw())
+        self.assertEqual(group.branchPointIds, ["c_check"])
+        # convergesAt is a flatten-stage fact -- filter can't see past the
+        # end of a method, so it is deliberately left unset here.
+        self.assertIsNone(group.convergesAt)
+
+    def test_first_call_id_is_cfg_order_not_ast_order(self):
+        # `throw new Foo(bar())` -- extraction names the THROW as the arm's
+        # first call (AST order), but the constructor runs first. The panel
+        # must anchor on the constructor, and after filtering the throw
+        # isn't even there.
+        raw = _if_else_raw()
+        raw["nodes"] = [
+            node("e", "entry", "run"),
+            node("c_check", "call", "Flags.check", "run"),
+            node("c_ctor", "call", "Foo.<init>", "run", arms=[("cs1", "if")]),
+            node("op_throw", "call", "<operator>.throw", "run",
+                 arms=[("cs1", "if")], terminus="throw"),
+            node("c_b", "call", "Service.b", "run", arms=[("cs1", "else")]),
+            node("c_join", "call", "Service.join", "run"),
+        ]
+        raw["edges"] = [
+            edge("e", "c_check"),
+            edge("c_check", "c_ctor"),
+            edge("c_ctor", "op_throw"),
+            edge("c_check", "c_b"),
+            edge("c_b", "c_join"),
+        ]
+        # AST-first, and about to be stripped as an <operator>.
+        raw["branchGroups"][0]["arms"][0]["firstCallId"] = "op_throw"
+
+        group = self._group(raw)
+        if_arm = next(a for a in group.arms if a.label == "if")
+        self.assertEqual(if_arm.firstCallId, "c_ctor")
+        self.assertFalse(if_arm.empty)
+
+    def test_arm_with_nothing_left_becomes_empty_with_no_first_call(self):
+        raw = _if_else_raw()
+        # else { y = x; } -- one assignment, stripped.
+        raw["nodes"][3] = node(
+            "c_b", "call", "<operator>.assignment", "run", arms=[("cs1", "else")]
+        )
+        group = self._group(raw)
+
+        else_arm = next(a for a in group.arms if a.label == "else")
+        self.assertTrue(else_arm.empty)
+        self.assertIsNone(else_arm.firstCallId)
+        # terminus is what still marks this as a skip rather than a stop --
+        # the "skip to X" target itself waits for the flatten stage.
+        self.assertEqual(else_arm.terminus, "continues")
+
+    def test_branch_point_of_a_single_armed_guard(self):
+        raw = _if_else_raw()
+        raw["nodes"] = [
+            node("e", "entry", "run"),
+            node("c_check", "call", "Flags.check", "run"),
+            node("c_ctor", "call", "Foo.<init>", "run",
+                 arms=[("cs1", "if")], terminus="throw"),
+            node("c_join", "call", "Service.join", "run"),
+        ]
+        raw["edges"] = [
+            edge("e", "c_check"),
+            edge("c_check", "c_ctor"),
+            edge("c_check", "c_join"),
+        ]
+        raw["branchGroups"][0]["arms"] = [
+            {"label": "if", "empty": False, "terminus": "throw",
+             "conditionCode": "flag", "firstCallId": "c_ctor"},
+        ]
+        group = self._group(raw)
+
+        self.assertEqual(group.branchPointIds, ["c_check"])
+
+    def test_branch_point_inside_a_loop_is_the_condition_not_the_header(self):
+        # while (...) { if (flag) a(); else b(); }  -- the arms hang off
+        # c_check, not off the loop header they both cycle back to.
+        raw = _if_else_raw()
+        raw["edges"] = [
+            edge("e", "c_head"),
+            edge("c_head", "c_check"),
+            edge("c_check", "c_a"),
+            edge("c_check", "c_b"),
+            edge("c_a", "c_head"),   # back edge
+            edge("c_b", "c_head"),   # back edge
+            edge("c_head", "c_join"),
+        ]
+        raw["nodes"].append(node("c_head", "call", "Iter.hasNext", "run"))
+        group = self._group(raw)
+
+        self.assertEqual(group.branchPointIds, ["c_check"])
+
+    def test_a_try_forks_at_the_end_of_its_try_body(self):
+        # Joern puts the exception edge at the END of the try body: the
+        # try's tail has two successors, the handler and the normal
+        # continuation. The method ENTRY is where the try starts, not
+        # where anything splits, so it must not win.
+        raw = {
             "entryPoint": "run",
             "nodes": [
                 node("e", "entry", "run"),
-                node("op_a", "call", "<operator>.assignment", "run", branch_group="cs1", arm_label="then"),
-                node(
-                    "c_shared", "call", "Service.fetch", "run",
-                    branch_group="cs1", arm_label="finally",
-                ),
+                node("c_try", "call", "Service.a", "run", arms=[("cs1", "try")]),
+                node("c_catch", "call", "Err.getMessage", "run", arms=[("cs1", "catch1")]),
+                node("c_after", "call", "Service.after", "run"),
             ],
             "edges": [
-                edge("e", "op_a"),
-                edge("op_a", "c_shared"),
+                edge("e", "c_try"),
+                edge("c_try", "c_catch"),    # try tail -> handler
+                edge("c_try", "c_after"),    # try tail -> normal continuation
+                edge("c_catch", "c_after"),
             ],
-        })
-        filtered = filter_noise_cfg(graph)
+            "branchGroups": [{
+                "id": "cs1", "kind": "TRY", "method": "run", "line": 3,
+                "arms": [
+                    {"label": "try", "empty": False, "terminus": "continues",
+                     "firstCallId": "c_try"},
+                    {"label": "catch1", "empty": False, "terminus": "continues",
+                     "firstCallId": "c_catch"},
+                ],
+            }],
+        }
+        group = self._group(raw)
 
-        c_shared = next(n for n in filtered.nodes if n.id == "c_shared")
-        self.assertEqual(c_shared.branchGroupId, "cs1")
-        self.assertEqual(c_shared.armLabel, "finally")
+        self.assertEqual(group.branchPointIds, ["c_try"])
 
 
 # --------------------------------------------------------------------------
 # flatten_cfg: inlines each internally-traversed callee at its own call
 # site, cloning fresh every time -- one fixture per documented rule.
 # --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# Branch groups through flatten_cfg: instance-scoped ids, and convergesAt,
+# which only becomes answerable once return edges exist.
+# --------------------------------------------------------------------------
+
+def _caller_convergence_raw() -> dict:
+    """
+    void a() { b(); c(); }
+    void b() { if (x > 10) { e(); f(); } else { y = 10; } }
+
+    The branch is the LAST thing in b(), so it converges on c() -- in the
+    CALLER. Nothing connects the two before flattening, which is why this
+    can't be a filter-stage fact. The else arm is empty (its assignment is
+    stripped as noise), so it has no node and no edge of its own either.
+    """
+    return {
+        "entryPoint": "a",
+        "nodes": [
+            node("e_a", "entry", "a"),
+            node("c_b", "call", "b", "a"),
+            node("c_c", "call", "pkg.C.run", "a"),
+            node("e_b", "entry", "b"),
+            node("c_e", "call", "pkg.E.run", "b", arms=[("cs1", "if")]),
+            node("c_f", "call", "pkg.F.run", "b", arms=[("cs1", "if")]),
+            node("leaf_c", "leaf", "pkg.C.run"),
+            node("leaf_e", "leaf", "pkg.E.run"),
+            node("leaf_f", "leaf", "pkg.F.run"),
+        ],
+        "edges": [
+            edge("e_a", "c_b"),
+            edge("c_b", "c_c"),
+            edge("c_b", "e_b", "invoke"),
+            edge("e_b", "c_e"),
+            edge("c_e", "c_f"),
+            edge("c_c", "leaf_c", "invoke"),
+            edge("c_e", "leaf_e", "invoke"),
+            edge("c_f", "leaf_f", "invoke"),
+        ],
+        "branchGroups": [{
+            "id": "cs1", "kind": "IF", "method": "b", "line": 2,
+            "branchPointIds": ["e_b"],
+            "arms": [
+                {"label": "if", "empty": False, "terminus": "continues",
+                 "conditionCode": "x > 10", "firstCallId": "c_e"},
+                {"label": "else", "empty": True, "terminus": "continues"},
+            ],
+        }],
+    }
+
+
+class FlattenBranchGroupTests(unittest.TestCase):
+    def test_group_id_and_every_id_inside_it_are_instance_scoped(self):
+        flattened = flatten_cfg(Graph.from_dict(_caller_convergence_raw()))
+        group = flattened.branchGroups[0]
+
+        self.assertTrue(group.id.startswith("cs1~"), group.id)
+        # Every id the group holds points at a CLONE, not a pre-clone node.
+        clone_ids = {n.id for n in flattened.nodes}
+        self.assertEqual(len(group.branchPointIds), 1)
+        self.assertIn(group.branchPointIds[0], clone_ids)
+        self.assertIn(group.arms[0].firstCallId, clone_ids)
+        # And the nodes' own tags were renamed to match.
+        tags = {t.groupId for n in flattened.nodes for t in n.branchArms}
+        self.assertEqual(tags, {group.id})
+
+    def test_a_method_inlined_twice_yields_two_independent_groups(self):
+        raw = _caller_convergence_raw()
+        # a() { b(); c(); b(); } -- a second, independent call site.
+        raw["nodes"].append(node("c_b2", "call", "b", "a"))
+        raw["edges"].append(edge("c_c", "c_b2"))
+        raw["edges"].append(edge("c_b2", "e_b", "invoke"))
+        flattened = flatten_cfg(Graph.from_dict(raw))
+
+        ids = [g.id for g in flattened.branchGroups]
+        self.assertEqual(len(ids), 2, ids)
+        self.assertEqual(len(set(ids)), 2, "the two instances must not share an id")
+        # Each instance's nodes carry only their own group's id.
+        for group in flattened.branchGroups:
+            members = [n for n in flattened.nodes
+                       if any(t.groupId == group.id for t in n.branchArms)]
+            self.assertTrue(members)
+            self.assertIn(group.arms[0].firstCallId, {n.id for n in members})
+
+    def test_convergence_resolves_into_the_caller(self):
+        flattened = flatten_cfg(Graph.from_dict(_caller_convergence_raw()))
+        group = flattened.branchGroups[0]
+        names = {n.id: n.calleeFullName for n in flattened.nodes}
+
+        # c() -- reached by the if arm through b's return edge, and by the
+        # empty else arm falling out of b entirely.
+        self.assertIsNotNone(group.convergesAt)
+        self.assertEqual(names[group.convergesAt], "pkg.C.run")
+
+    def test_convergence_needs_every_arm_not_just_two(self):
+        # if / else if / else where two arms continue past the branch and
+        # the third returns. The statement AFTER the branch is reached by
+        # two of the three, so a "two or more" rule picks it -- but the
+        # returning arm never gets there. The real meeting point is where
+        # the method itself returns to.
+        raw = _caller_convergence_raw()
+        raw["nodes"] += [
+            node("c_g", "call", "pkg.G.run", "b", arms=[("cs1", "elseif1")]),
+            node("c_h", "call", "pkg.H.run", "b", arms=[("cs1", "else")]),
+            node("c_after_b", "call", "pkg.AFTER.run", "b"),
+            node("leaf_g", "leaf", "pkg.G.run"),
+            node("leaf_h", "leaf", "pkg.H.run"),
+            node("leaf_after_b", "leaf", "pkg.AFTER.run"),
+        ]
+        raw["edges"] += [
+            edge("e_b", "c_g"),
+            edge("e_b", "c_h"),
+            edge("c_f", "c_after_b"),      # if arm  -> after
+            edge("c_g", "c_after_b"),      # elseif  -> after
+            edge("c_g", "leaf_g", "invoke"),
+            edge("c_h", "leaf_h", "invoke"),
+            edge("c_after_b", "leaf_after_b", "invoke"),
+        ]
+        raw["branchGroups"][0]["arms"] = [
+            {"label": "if", "empty": False, "terminus": "continues", "firstCallId": "c_e"},
+            {"label": "elseif1", "empty": False, "terminus": "continues", "firstCallId": "c_g"},
+            # returns: skips pkg.AFTER.run entirely
+            {"label": "else", "empty": False, "terminus": "return", "firstCallId": "c_h"},
+        ]
+        flattened = flatten_cfg(Graph.from_dict(raw))
+        group = flattened.branchGroups[0]
+        names = {n.id: n.calleeFullName for n in flattened.nodes}
+
+        self.assertEqual(names[group.convergesAt], "pkg.C.run")
+        self.assertNotEqual(names[group.convergesAt], "pkg.AFTER.run")
+
+    def test_returns_to_records_where_the_instance_continues(self):
+        flattened = flatten_cfg(Graph.from_dict(_caller_convergence_raw()))
+        group = flattened.branchGroups[0]
+        names = {n.id: n.calleeFullName for n in flattened.nodes}
+
+        # b()'s instance returns into c() -- the arrow target for any arm
+        # of this group whose terminus is "return".
+        self.assertEqual([names[i] for i in group.returnsTo], ["pkg.C.run"])
+
+    def test_a_throwing_arm_contributes_no_path_so_nothing_converges(self):
+        raw = _caller_convergence_raw()
+        raw["nodes"][4] = node("c_e", "call", "pkg.E.run", "b",
+                               arms=[("cs1", "if")], terminus="throw")
+        raw["nodes"][5] = node("c_f", "call", "pkg.F.run", "b")
+        raw["edges"] = [e for e in raw["edges"] if e != edge("c_e", "c_f")]
+        raw["branchGroups"][0]["arms"] = [
+            {"label": "if", "empty": False, "terminus": "throw", "firstCallId": "c_e"},
+        ]
+        flattened = flatten_cfg(Graph.from_dict(raw))
+
+        self.assertIsNone(flattened.branchGroups[0].convergesAt)
+
 
 class FlattenCfgTests(unittest.TestCase):
     def _by_orig_name(self, flattened: Graph) -> dict:
@@ -775,6 +1162,125 @@ class FlattenCfgTests(unittest.TestCase):
         self.assertEqual(len(data_edges), 1)
         self.assertEqual(names[data_edges[0].source], "Store.get")
         self.assertEqual(names[data_edges[0].target], "Store.use")
+
+
+# --------------------------------------------------------------------------
+# depth: the invoke-nesting level a CLONE was created at. The property that
+# makes it a clone-tree fact and not an original-node one is that the same
+# method reached at two nesting levels must come out in two columns.
+# --------------------------------------------------------------------------
+
+class FlattenDepthTests(unittest.TestCase):
+    def _depths_of(self, flattened: Graph, callee: str, type_: str) -> list[int]:
+        """A call SITE and the callee clone it invokes both carry the same
+        calleeFullName but sit one column apart -- filter by node type or
+        the two get mixed into one list."""
+        return sorted(
+            n.depth for n in flattened.nodes
+            if n.calleeFullName == callee and n.type == type_
+        )
+
+    def _assert_every_invoke_deepens_by_one(self, flattened: Graph) -> None:
+        """The whole point of the field: an "invoke" edge is a call, and a
+        call always advances exactly one column. A delta of 0 renders a
+        callee in its caller's own column -- the call looks like it didn't
+        nest at all."""
+        by_id = {n.id: n for n in flattened.nodes}
+        for e in flattened.edges:
+            if e.type != "invoke":
+                continue
+            source, target = by_id[e.source], by_id[e.target]
+            self.assertEqual(
+                target.depth, source.depth + 1,
+                f"{source.calleeFullName} (d={source.depth}) -> "
+                f"{target.calleeFullName} (d={target.depth})",
+            )
+
+    def test_same_method_inlined_at_two_levels_gets_two_depths(self):
+        # run(): shallow(); deep();
+        # deep():  mid();
+        # mid():   shallow();
+        # shallow() is invoked twice -- once directly from the root (depth
+        # 1) and once from two levels down (depth 3). One depth per
+        # ORIGINAL node cannot express that: a shortest-path answer keyed
+        # by original id collapses both clones onto the shallower caller.
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e_run", "entry", "run"),
+                node("c_shallow", "call", "shallow", "run"),
+                node("c_deep", "call", "deep", "run"),
+                node("e_deep", "entry", "deep"),
+                node("c_mid", "call", "mid", "deep"),
+                node("e_mid", "entry", "mid"),
+                node("c_shallow2", "call", "shallow", "mid"),
+                node("e_shallow", "entry", "shallow"),
+                node("c_work", "call", "pkg.W.work", "shallow"),
+                node("leaf_work", "leaf", "pkg.W.work"),
+            ],
+            "edges": [
+                edge("e_run", "c_shallow"),
+                edge("c_shallow", "c_deep"),
+                edge("c_shallow", "e_shallow", "invoke"),
+                edge("c_deep", "e_deep", "invoke"),
+                edge("e_deep", "c_mid"),
+                edge("c_mid", "e_mid", "invoke"),
+                edge("e_mid", "c_shallow2"),
+                edge("c_shallow2", "e_shallow", "invoke"),
+                edge("e_shallow", "c_work"),
+                edge("c_work", "leaf_work", "invoke"),
+            ],
+        })
+        flattened = flatten_cfg(graph)
+
+        # Two clones of shallow()'s entry, in different columns -- one per
+        # call site, at that call site's own level + 1.
+        self.assertEqual(self._depths_of(flattened, "shallow", "entry"), [1, 3])
+        self.assertEqual(self._depths_of(flattened, "shallow", "call"), [0, 2])
+        # ...and its whole body travels with it rather than staying put:
+        # the work() call site inside each clone, and the leaf it invokes.
+        self.assertEqual(self._depths_of(flattened, "pkg.W.work", "call"), [1, 3])
+        self.assertEqual(self._depths_of(flattened, "pkg.W.work", "leaf"), [2, 4])
+        self._assert_every_invoke_deepens_by_one(flattened)
+
+    def test_leaf_callee_deepens_even_though_it_is_never_inlined(self):
+        # An external callee has no entry node, so it never recurses
+        # through inline() -- it is cloned inside its CALLER's own body.
+        # It is still a call, and must still advance a column: validate()
+        # and log() are the same leaf reached at depths 1 and 2.
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e_run", "entry", "run"),
+                node("c_log_outer", "call", "pkg.Log.write", "run"),
+                node("c_step", "call", "step", "run"),
+                node("e_step", "entry", "step"),
+                node("c_log_inner", "call", "pkg.Log.write", "step"),
+                node("leaf_log", "leaf", "pkg.Log.write"),
+            ],
+            "edges": [
+                edge("e_run", "c_log_outer"),
+                edge("c_log_outer", "c_step"),
+                edge("c_log_outer", "leaf_log", "invoke"),
+                edge("c_step", "e_step", "invoke"),
+                edge("e_step", "c_log_inner"),
+                edge("c_log_inner", "leaf_log", "invoke"),
+            ],
+        })
+        flattened = flatten_cfg(graph)
+
+        leaf_depths = sorted(n.depth for n in flattened.nodes if n.type == "leaf")
+        self.assertEqual(leaf_depths, [1, 2])
+        self._assert_every_invoke_deepens_by_one(flattened)
+
+    def test_root_is_zero_and_every_clone_is_stamped(self):
+        graph = Graph.from_dict(_caller_convergence_raw())
+        flattened = flatten_cfg(graph)
+
+        by_id = {n.id: n for n in flattened.nodes}
+        self.assertEqual(by_id[flattened.rootId].depth, 0)
+        self.assertFalse([n.id for n in flattened.nodes if n.depth is None])
+        self._assert_every_invoke_deepens_by_one(flattened)
 
 
 if __name__ == "__main__":

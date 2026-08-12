@@ -55,7 +55,7 @@ const MONO = "'Geist Mono', ui-monospace, SFMono-Regular, monospace";
 
 // ── Static sample data ──────────────────────────────────────────────────
 // Real Joern-extracted output for one entry point (Main.runTransfer), taken
-// from test_code/java_project/output/{flattened_cgf,phase_tree}.json — see
+// from test_code/java_project/output/{flattened_cfg,phase_tree}.json — see
 // DESIGN.md §8.6 for the pipeline stage this came from. No backend API
 // exists yet, so this is loaded statically rather than fetched.
 
