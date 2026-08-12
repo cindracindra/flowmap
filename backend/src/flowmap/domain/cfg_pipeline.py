@@ -156,31 +156,38 @@ def _resolve_kept_targets(
     adjacency_out: dict[str, list[str]],
     memo: dict[str, list[str]],
     visiting: frozenset[str],
-) -> list[str]:
-    """Follows outgoing edges until reaching kept node(s) -- or nothing, 
-    if the chain dead-ends entirely inside excluded territory."""
+) -> tuple[list[str], bool]:
+    """
+    Follows outgoing edges until reaching kept node(s) -- or nothing, if
+    the chain dead-ends entirely inside excluded territory.
+    """
 
     if node_id not in excluded_ids:
-        return [node_id]
+        return [node_id], False
     if node_id in memo:
-        return memo[node_id]
+        return memo[node_id], False
     if node_id in visiting:
-        return []  # cycle entirely within excluded nodes -- nothing to bridge to
+        return [], True  # cycle entirely within excluded nodes -- nothing to bridge to
 
     resolved: list[str] = []
+    truncated = False
     for successor in adjacency_out.get(node_id, []):
-        resolved.extend(
-            _resolve_kept_targets(successor, excluded_ids, adjacency_out, memo, visiting | {node_id})
+        sub_resolved, sub_truncated = _resolve_kept_targets(
+            successor, excluded_ids, adjacency_out, memo, visiting | {node_id}
         )
-    memo[node_id] = resolved
-    return resolved
+        resolved.extend(sub_resolved)
+        truncated = truncated or sub_truncated
+    if not truncated:
+        memo[node_id] = resolved
+    return resolved, truncated
 
 
 def _bridge_edges(typed_edges: list[Edge], excluded_ids: set[str]) -> list[Edge]:
-    """Rebuilds edges with excluded nodes spliced out: for every 
-    surviving edge whose source is a kept node, its target is resolved
-    to the nearest kept descendant(s)."""
-
+    """
+    Rebuilds edges with excluded nodes spliced out: for every surviving 
+    edge whose source is a kept node, its target is resolved to the 
+    nearest kept descendant(s).
+    """
     adjacency_out = _adjacency_out(typed_edges)
 
     memo: dict[str, list[str]] = {}
@@ -189,7 +196,10 @@ def _bridge_edges(typed_edges: list[Edge], excluded_ids: set[str]) -> list[Edge]
     for edge in typed_edges:
         if edge.source in excluded_ids:
             continue
-        for target in _resolve_kept_targets(edge.target, excluded_ids, adjacency_out, memo, frozenset()):
+        targets, _ = _resolve_kept_targets(
+            edge.target, excluded_ids, adjacency_out, memo, frozenset()
+        )
+        for target in targets:
             pair = (edge.source, target)
             if pair in seen_pairs or pair[0] == pair[1]:
                 continue
@@ -526,6 +536,7 @@ def _resolve_convergence(
     ])
     order = _walk_order(flow_out, [root_id], nodes)
     rank = lambda node_id: order.get(node_id, len(order))  # noqa: E731
+    nodes_by_id = {n.id: n for n in nodes}
 
     members: dict[tuple[str, str], set[str]] = {}
     for node in nodes:
@@ -552,12 +563,28 @@ def _resolve_convergence(
         ]
         # Whatever the fork reaches without entering an arm: the implicit
         # else, or the normal continuation past a try.
-        paths.extend(
-            _reachable_non_members(successor, set(), group_members, flow_out)
-            for branch_point in group.branchPointIds
-            for successor in sequence_out.get(branch_point, ())
-            if successor not in group_members
-        )
+        #
+        # `deadEnd` is excluded for exactly the reason `terminus != "throw"`
+        # excludes an arm above -- nothing follows a throw, so it is not a
+        # live path and must not be counted as one. Applying it to arms
+        # alone is not enough: after noise filtering strips the conditions,
+        # two SEQUENTIAL branches in one method both anchor on the method
+        # entry, so this enumeration sees the sibling group's arm heads
+        # too. Confirmed live on BankAccountService.transfer, where the
+        # fee chain picked up the preceding guard's
+        # `new IllegalArgumentException(...)`: one dead path is enough to
+        # empty the every-path intersection, and a branch that plainly
+        # converges reported None.
+        implicit_continuations = 0
+        for branch_point in group.branchPointIds:
+            for successor in sequence_out.get(branch_point, ()):
+                if successor in group_members or nodes_by_id[successor].deadEnd:
+                    continue
+                paths.append(
+                    _reachable_non_members(successor, set(), group_members, flow_out)
+                )
+                implicit_continuations += 1
+
         # ...unless the branch is the LAST thing in its method, where no
         # edge represents the skip at all -- a zero-call arm produces no
         # node and no edge (DESIGN.md #4.1). What it really does is fall
@@ -565,8 +592,16 @@ def _resolve_convergence(
         # path. Only for an empty arm that CONTINUES: for a throwing or
         # returning one it would double-count the surviving route and
         # invent a convergence that isn't there.
+        #
+        # "LAST thing in its method" is what `implicit_continuations == 0`
+        # tests, and testing it is load-bearing rather than defensive: when
+        # the fork DOES have an in-method continuation, the empty arm skips
+        # to THAT, and adding the enclosing frame's continuation as a
+        # further path drags the answer a frame too high. Confirmed on the
+        # same fee chain -- without this it resolves to the caller's
+        # `report.recordSuccess(...)` instead of `from.withdraw(amount + fee)`.
         if any(arm.empty and arm.terminus == "continues" for arm in group.arms):
-            if group.returnsTo:
+            if group.returnsTo and implicit_continuations == 0:
                 paths.append(set(group.returnsTo))
 
         # A single path has nothing to converge WITH -- that's a
@@ -917,4 +952,3 @@ def flatten_cfg(cfg: Graph) -> Graph:
         edges=flat_edges,
         branchGroups=groups,
     )
-

@@ -842,6 +842,150 @@ class FlattenBranchGroupTests(unittest.TestCase):
         self.assertIsNone(flattened.branchGroups[0].convergesAt)
 
 
+# --------------------------------------------------------------------------
+# Two SEQUENTIAL branches in one method, which after noise filtering both
+# anchor on the method entry -- an IF's condition is `<operator>.*` and is
+# stripped, so walking back from either branch's arm head lands on the same
+# node. That is correct (the groups stay distinct by id and line, and render
+# back-to-back), but it puts the FIRST branch's arms in the SECOND branch's
+# view of "what the fork reaches without entering an arm", which is where
+# both bugs below lived. Modelled on BankAccountService.transfer.
+# --------------------------------------------------------------------------
+
+def _sibling_branches_raw() -> dict:
+    """
+    void caller()   { transfer(); after(); }
+    void transfer() {
+        if (from == null) { throw new EXC(); }        <- guard, arm throws
+        if (amount > P)      { premium(); }           <- fee chain, 3 arms
+        else if (amount > S) { standard(); }
+        else                 { fee = 0.0; }           <- empty, continues
+        withdraw();                                   <- fee chain converges HERE
+        deposit();
+    }
+    """
+    return {
+        "entryPoint": "caller",
+        "nodes": [
+            node("e_caller", "entry", "caller"),
+            node("c_transfer", "call", "transfer", "caller"),
+            node("c_after", "call", "pkg.AFTER.run", "caller"),
+            node("e_transfer", "entry", "transfer"),
+            node("c_guard", "call", "pkg.EXC.<init>", "transfer",
+                 dead=True, terminus="throw", arms=[("cs_guard", "if")]),
+            node("c_premium", "call", "pkg.FEE.premium", "transfer",
+                 arms=[("cs_fee", "if")]),
+            node("c_standard", "call", "pkg.FEE.standard", "transfer",
+                 arms=[("cs_fee", "elseif1")]),
+            node("c_withdraw", "call", "pkg.ACC.withdraw", "transfer"),
+            node("c_deposit", "call", "pkg.ACC.deposit", "transfer"),
+            node("leaf_after", "leaf", "pkg.AFTER.run"),
+            node("leaf_exc", "leaf", "pkg.EXC.<init>"),
+            node("leaf_premium", "leaf", "pkg.FEE.premium"),
+            node("leaf_standard", "leaf", "pkg.FEE.standard"),
+            node("leaf_withdraw", "leaf", "pkg.ACC.withdraw"),
+            node("leaf_deposit", "leaf", "pkg.ACC.deposit"),
+        ],
+        "edges": [
+            edge("e_caller", "c_transfer"),
+            edge("c_transfer", "c_after"),
+            edge("c_transfer", "e_transfer", "invoke"),
+            # Both stripped conditions collapse onto the entry, so it forks
+            # into the guard's throw, both fee arms, and the fall-through.
+            edge("e_transfer", "c_guard"),
+            edge("e_transfer", "c_premium"),
+            edge("e_transfer", "c_standard"),
+            edge("e_transfer", "c_withdraw"),
+            edge("c_premium", "c_withdraw"),
+            edge("c_standard", "c_withdraw"),
+            edge("c_withdraw", "c_deposit"),
+            edge("c_after", "leaf_after", "invoke"),
+            edge("c_guard", "leaf_exc", "invoke"),
+            edge("c_premium", "leaf_premium", "invoke"),
+            edge("c_standard", "leaf_standard", "invoke"),
+            edge("c_withdraw", "leaf_withdraw", "invoke"),
+            edge("c_deposit", "leaf_deposit", "invoke"),
+        ],
+        "branchGroups": [
+            {
+                "id": "cs_guard", "kind": "IF", "method": "transfer", "line": 3,
+                "branchPointIds": ["e_transfer"],
+                "arms": [{
+                    "label": "if", "empty": False, "terminus": "throw",
+                    "conditionCode": "from == null", "firstCallId": "c_guard",
+                }],
+            },
+            {
+                "id": "cs_fee", "kind": "IF", "method": "transfer", "line": 5,
+                "branchPointIds": ["e_transfer"],
+                "arms": [
+                    {"label": "if", "empty": False, "terminus": "continues",
+                     "conditionCode": "amount > P", "firstCallId": "c_premium"},
+                    {"label": "elseif1", "empty": False, "terminus": "continues",
+                     "conditionCode": "amount > S", "firstCallId": "c_standard"},
+                    {"label": "else", "empty": True, "terminus": "continues"},
+                ],
+            },
+        ],
+    }
+
+
+class SiblingBranchConvergenceTests(unittest.TestCase):
+    def _fee_group(self, raw: dict):
+        flattened = flatten_cfg(Graph.from_dict(raw))
+        names = {n.id: n.calleeFullName for n in flattened.nodes}
+        group = next(g for g in flattened.branchGroups if g.id.startswith("cs_fee~"))
+        return group, names
+
+    def test_the_two_groups_share_an_anchor_but_stay_distinguishable(self):
+        # The premise of the tests below, asserted so a change to branch-point
+        # derivation doesn't leave them passing for the wrong reason.
+        flattened = flatten_cfg(Graph.from_dict(_sibling_branches_raw()))
+        guard = next(g for g in flattened.branchGroups if g.id.startswith("cs_guard~"))
+        fee = next(g for g in flattened.branchGroups if g.id.startswith("cs_fee~"))
+
+        self.assertEqual(guard.branchPointIds, fee.branchPointIds)
+        self.assertNotEqual(guard.id, fee.id)
+        # ...and orderable, which is how the frontend renders them back-to-back.
+        self.assertLess(guard.line, fee.line)
+
+    def test_a_sibling_groups_throwing_arm_is_not_a_live_path(self):
+        # The guard's `new EXC()` is a non-member successor of the shared
+        # anchor, and is a proven dead end. Counting it as a path empties the
+        # every-path intersection and reports None for a branch that plainly
+        # converges.
+        group, names = self._fee_group(_sibling_branches_raw())
+
+        self.assertIsNotNone(group.convergesAt)
+        self.assertEqual(names[group.convergesAt], "pkg.ACC.withdraw")
+
+    def test_empty_arm_does_not_fall_back_when_the_fork_continues_in_method(self):
+        # The `else` arm is empty and continues, but the branch is NOT the
+        # last thing in transfer() -- the skip has a real edge to withdraw().
+        # Adding the enclosing frame's continuation as a further path drags
+        # the answer up into the caller.
+        group, names = self._fee_group(_sibling_branches_raw())
+
+        self.assertEqual(names[group.convergesAt], "pkg.ACC.withdraw")
+        self.assertNotEqual(names[group.convergesAt], "pkg.AFTER.run")
+
+    def test_the_fallback_still_applies_when_the_branch_ends_the_method(self):
+        # Same graph with everything after the fee chain removed: now the
+        # empty arm really does fall out of transfer(), and the caller's
+        # continuation IS the path it takes. Guards the fix against being
+        # written as an unconditional removal.
+        raw = _sibling_branches_raw()
+        drop = {"c_withdraw", "c_deposit", "leaf_withdraw", "leaf_deposit"}
+        raw["nodes"] = [n for n in raw["nodes"] if n["id"] not in drop]
+        raw["edges"] = [
+            e for e in raw["edges"]
+            if e["from"] not in drop and e["to"] not in drop
+        ]
+        group, names = self._fee_group(raw)
+
+        self.assertEqual(names[group.convergesAt], "pkg.AFTER.run")
+
+
 class FlattenCfgTests(unittest.TestCase):
     def _by_orig_name(self, flattened: Graph) -> dict:
         """id -> calleeFullName for every flattened node, keyed by the

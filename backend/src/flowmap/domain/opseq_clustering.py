@@ -4,7 +4,7 @@ from collections.abc import Callable
 import numpy as np
 
 from model import ClassDocument, Graph, MethodDocument, TopicAssignment, TopicCluster
-from domain.topic_modelling import embed_documents
+from domain.util import embed_documents
 from domain.util import (
     _EN_STOPS,
     _SHORT_MIN,
