@@ -19,9 +19,24 @@
     --node-leaf-stroke: #8FB87A;
     --node-dead-end-stroke: #C0392B;
 
+    /*
+     * Five edge classes, not three. "sequence" in the data covers three
+     * different things and they were all being painted the same colour:
+     * a plain next-statement step, a RETURN (the callee's tail wired to
+     * the caller's continuation, tagged returnFrom), and an inferred
+     * fallback return. Every return edge moves LEFT on the canvas because
+     * it pops the stack, so drawing it like a forward step made the flow
+     * read as if it jumped backwards for no reason.
+     */
     --edge-sequence: #C96B4A;
     --edge-invoke: #4AADA8;
+    --edge-return: #C9A227;
     --edge-fallback: #A07BC8;
+
+    /* Branch panels. Distinct from the phase palette on purpose -- the two
+       overlays answer different questions and must not be confused. */
+    --panel-conditional: #7C8FE0;
+    --panel-polymorphic: #E0913F;
 
     --phase-1: #D4863A;
     --phase-2: #4AADA8;

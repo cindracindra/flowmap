@@ -39,6 +39,15 @@ import { CLASS_FILES } from "./data/classFiles";
 import type { FlowGraph, FlowNode, FlowEdge, NodeType, PhaseTree, Transition } from "./types/flowmap";
 import { computeLayout, type NodePosition } from "./lib/layout";
 import {
+  buildBranchPanels,
+  defaultSelection,
+  visibleNodeIds,
+  type BranchPanel,
+  type BranchSelection,
+} from "./lib/branches";
+import { computePanelGeometry } from "./lib/panelGeometry";
+import { BranchRegions, BranchSwitchers } from "./components/BranchOverlay";
+import {
   shortLabel,
   ownerClassOf,
   indexNodesById,
@@ -47,6 +56,7 @@ import {
   incomingEdges,
   outgoingEdges,
   computePhaseBBox,
+  computeBBox,
   TRANSITION_REASON_LABELS,
   type ExplorerItem,
 } from "./lib/graph";
@@ -63,9 +73,20 @@ const GRAPH = flattenedRaw as unknown as FlowGraph;
 const PHASE_TREE = phaseTreeRaw as unknown as PhaseTree;
 const PHASES = PHASE_TREE.phases;
 const ROOT_ID = GRAPH.rootId!;
-const POSITIONS = computeLayout(GRAPH, ROOT_ID);
 const NODES_BY_ID = indexNodesById(GRAPH.nodes);
 const EXPLORER_TREE = buildExplorerTree(GRAPH.nodes);
+
+// Every switchable fork in the trace. All of them come from the backend's
+// own branch groups -- IF/TRY for conditionals, DISPATCH for a call site
+// with more than one real implementation. Only one arm of each is on screen
+// at a time; see visibleNodeIds.
+const PANELS = buildBranchPanels(GRAPH, ROOT_ID);
+
+// "data" edges are a phase-discovery input, not control flow -- they answer
+// "these two calls touch the same value", which is not a step the reader
+// takes through the trace. They are excluded from every view here; the
+// pipeline still emits and uses them.
+const FLOW_EDGES = GRAPH.edges.filter((e) => e.type !== "data");
 
 const NODE_RADIUS: Record<NodeType, number> = { entry: 13, call: 10, leaf: 8 };
 const NODE_COLORS: Record<NodeType, { fill: string; stroke: string; label: string }> = {
@@ -80,25 +101,69 @@ const NODE_BADGE_COLOR: Record<NodeType, "amber" | "teal" | "grass"> = {
 };
 const PHASE_COLORS = ["var(--phase-1)", "var(--phase-2)", "var(--phase-3)", "var(--phase-4)", "var(--phase-5)"];
 
-const CANVAS_BOUNDS = (() => {
-  const xs = [...POSITIONS.values()].map((p) => p.x);
-  const ys = [...POSITIONS.values()].map((p) => p.y);
+interface CanvasBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+// Recomputed per selection: collapsing a branch arm changes both which
+// nodes exist and how tall the trace is.
+function canvasBounds(positions: Map<string, NodePosition>): CanvasBounds {
+  const box = computeBBox(positions.keys(), positions, 60);
+  if (!box) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
   return {
-    minX: Math.min(...xs) - 60,
-    minY: Math.min(...ys) - 60,
-    maxX: Math.max(...xs) + 60,
-    maxY: Math.max(...ys) + 60,
+    minX: box.x,
+    minY: box.y,
+    maxX: box.x + box.width,
+    maxY: box.y + box.height,
   };
-})();
+}
 
 function nodeLabel(node: FlowNode): string {
   return node.code ?? (node.calleeFullName ? shortLabel(node.calleeFullName) : node.id);
+}
+
+// Canvas labels are drawn to the right of their node at a fixed column
+// width, so a long call expression runs straight through the next column.
+// The full text is still on the node's <title>.
+const LABEL_MAX = 30;
+function canvasLabel(node: FlowNode): string {
+  const label = nodeLabel(node);
+  return label.length > LABEL_MAX ? `${label.slice(0, LABEL_MAX - 1)}…` : label;
 }
 
 function getNodeIcon(type: NodeType) {
   if (type === "entry") return <Hash size={12} />;
   if (type === "leaf") return <ArrowRight size={12} />;
   return <GitBranch size={12} />;
+}
+
+// `type: "sequence"` in the data is three different things, and painting
+// them alike is what made the flow look wrong: a RETURN edge runs from a
+// callee's tail back to the caller's continuation, so it always moves left
+// (measured: 34 of 34 return edges go to a shallower depth), and drawn as a
+// plain forward step it reads as an unexplained jump backwards. "data" is
+// not control flow at all and was also inheriting the sequence colour.
+type EdgeClass = "sequence" | "invoke" | "return" | "fallback";
+
+const EDGE_STYLE: Record<EdgeClass, { color: string; dash?: string; label: string }> = {
+  sequence: { color: "var(--edge-sequence)", label: "next statement" },
+  invoke: { color: "var(--edge-invoke)", dash: "4 3", label: "calls into" },
+  return: { color: "var(--edge-return)", dash: "6 3", label: "returns to caller" },
+  fallback: {
+    color: "var(--edge-fallback)",
+    dash: "2 3",
+    label: "inferred fallback return — the callee never reached this continuation directly",
+  },
+};
+
+// Callers must pass FLOW_EDGES, never GRAPH.edges: "data" has no class here.
+function classifyEdge(edge: FlowEdge): EdgeClass {
+  if (edge.type === "invoke") return "invoke";
+  if (edge.fallback) return "fallback";
+  return edge.returnFrom ? "return" : "sequence";
 }
 
 function edgePath(from: NodePosition, to: NodePosition, fromR: number, toR: number): string {
@@ -301,8 +366,8 @@ function EdgeRow({ edge, otherId }: { edge: FlowEdge; otherId: string }) {
 
 function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void }) {
   const colors = NODE_COLORS[node.type];
-  const incoming = incomingEdges(node.id, GRAPH.edges);
-  const outgoing = outgoingEdges(node.id, GRAPH.edges);
+  const incoming = incomingEdges(node.id, FLOW_EDGES);
+  const outgoing = outgoingEdges(node.id, FLOW_EDGES);
   const phaseIdx = phaseIndexForNode(node.id, PHASES);
   const phase = phaseIdx !== null ? PHASES[phaseIdx] : null;
   const ownerClass = ownerClassOf(node);
@@ -425,12 +490,184 @@ function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void })
   );
 }
 
+// ── Branch switcher ──────────────────────────────────────────────────────
+
+// Distinguishing the two kinds is a requirement, not decoration, so it is
+// carried by an explicit text badge and a glyph -- never by colour alone.
+const PANEL_BADGE: Record<BranchPanel["kind"], { label: string; color: "iris" | "orange"; glyph: string }> = {
+  conditional: { label: "condition", color: "iris", glyph: "⑂" },
+  polymorphic: { label: "dispatch", color: "orange", glyph: "◈" },
+};
+
+// Self-contained phrases: the convergence NODE is named once per panel
+// below the arms, so an arm hint that ended in "rejoins at" would dangle.
+const EXIT_HINT: Record<string, string> = {
+  converges: "rejoins the flow",
+  returns: "returns to caller",
+  throws: "throws — never rejoins",
+  open: "does not rejoin",
+};
+
+function BranchSwitcher({
+  selection,
+  onSelect,
+  onFocus,
+  onHighlight,
+}: {
+  selection: BranchSelection;
+  onSelect: (panelId: string, armId: string | null) => void;
+  onFocus: (nodeId: string) => void;
+  onHighlight: (panelId: string | null) => void;
+}) {
+  if (PANELS.length === 0) {
+    return (
+      <Text size="1" color="gray" align="center" mt="4" as="p">
+        No branches in this trace.
+      </Text>
+    );
+  }
+
+  return (
+    <Flex direction="column" py="1">
+      {PANELS.map((panel) => {
+        const badge = PANEL_BADGE[panel.kind];
+        const selected = selection.get(panel.id) ?? null;
+        const convergeNode = panel.convergesAt ? NODES_BY_ID.get(panel.convergesAt) : undefined;
+
+        return (
+          <Box
+            key={panel.id}
+            px="2"
+            py="2"
+            style={{ borderBottom: "1px solid var(--gray-a4)" }}
+            onMouseEnter={() => onHighlight(panel.id)}
+            onMouseLeave={() => onHighlight(null)}
+          >
+            <Flex align="center" gap="2" mb="1">
+              <Text size="2" style={{ color: `var(--${badge.color}-9)` }}>
+                {badge.glyph}
+              </Text>
+              <Badge size="1" variant="soft" color={badge.color}>
+                {badge.label}
+              </Badge>
+              <Text size="1" color="gray" style={{ fontFamily: MONO, marginLeft: "auto" }}>
+                {panel.structure.toLowerCase()}
+                {panel.line ? `:${panel.line}` : ""}
+              </Text>
+            </Flex>
+            <Text size="1" truncate style={{ fontFamily: MONO, display: "block" }}>
+              {panel.title}
+            </Text>
+            {panel.subtitle && (
+              <Text size="1" color="gray" truncate style={{ display: "block" }}>
+                {panel.subtitle}
+              </Text>
+            )}
+
+            <Flex direction="column" gap="1" mt="2">
+              {/* A TRY's try arm has already run by the time it can throw, so
+                  the switcher offers "no exception" rather than treating the
+                  try body as one option among equals. */}
+              {panel.structure === "TRY" && (
+                <ArmButton
+                  active={selected === null}
+                  label="no exception"
+                  hint="try body completes"
+                  onClick={() => onSelect(panel.id, null)}
+                />
+              )}
+              {panel.arms
+                .filter((arm) => arm.role === "alternative")
+                .map((arm) => (
+                  <ArmButton
+                    key={arm.id}
+                    active={selected === arm.id}
+                    label={arm.label}
+                    hint={
+                      (arm.empty ? "no calls · " : `${arm.memberIds.length} nodes · `) +
+                      EXIT_HINT[arm.exitKind]
+                    }
+                    onClick={() => onSelect(panel.id, arm.id)}
+                  />
+                ))}
+            </Flex>
+
+            {convergeNode && (
+              <Text
+                size="1"
+                color="gray"
+                truncate
+                style={{ display: "block", marginTop: 6, cursor: "pointer" }}
+                onClick={() => onFocus(panel.convergesAt!)}
+              >
+                ↳ converges at {nodeLabel(convergeNode)}
+              </Text>
+            )}
+          </Box>
+        );
+      })}
+    </Flex>
+  );
+}
+
+function ArmButton({
+  active,
+  label,
+  hint,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  hint: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        all: "unset",
+        boxSizing: "border-box",
+        display: "block",
+        width: "100%",
+        padding: "4px 7px",
+        borderRadius: 4,
+        cursor: "pointer",
+        background: active ? "var(--accent-a3)" : "transparent",
+        border: `1px solid ${active ? "var(--accent-a7)" : "var(--gray-a5)"}`,
+      }}
+    >
+      <Text
+        size="1"
+        truncate
+        style={{
+          fontFamily: MONO,
+          display: "block",
+          color: active ? "var(--accent-11)" : "var(--gray-11)",
+        }}
+      >
+        {label}
+      </Text>
+      <Text size="1" color="gray" truncate style={{ display: "block" }}>
+        {hint}
+      </Text>
+    </button>
+  );
+}
+
 // ── Minimap ──────────────────────────────────────────────────────────────
 
-function Minimap({ selectedId }: { selectedId: string | null }) {
+function Minimap({
+  selectedId,
+  positions,
+  bounds,
+}: {
+  selectedId: string | null;
+  positions: Map<string, NodePosition>;
+  bounds: CanvasBounds;
+}) {
   const W = 160;
   const H = 120;
-  const { minX, minY, maxX, maxY } = CANVAS_BOUNDS;
+  const { minX, minY, maxX, maxY } = bounds;
   const scale = Math.min((W - 8) / (maxX - minX), (H - 8) / (maxY - minY));
 
   return (
@@ -440,7 +677,7 @@ function Minimap({ selectedId }: { selectedId: string | null }) {
     >
       <svg width={W} height={H}>
         {PHASES.map((phase, i) => {
-          const bbox = computePhaseBBox(phase, POSITIONS, 20);
+          const bbox = computePhaseBBox(phase, positions, 20);
           if (!bbox) return null;
           return (
             <rect
@@ -458,7 +695,7 @@ function Minimap({ selectedId }: { selectedId: string | null }) {
           );
         })}
         {GRAPH.nodes.map((node) => {
-          const pos = POSITIONS.get(node.id);
+          const pos = positions.get(node.id);
           if (!pos) return null;
           const colors = NODE_COLORS[node.type];
           const x = (pos.x - minX) * scale + 4;
@@ -487,10 +724,11 @@ function Minimap({ selectedId }: { selectedId: string | null }) {
 
 // ── Main App ─────────────────────────────────────────────────────────────
 
-type PanelTab = "explorer" | "search";
+type PanelTab = "explorer" | "search" | "branches";
 
 export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [armSelection, setArmSelection] = useState<BranchSelection>(() => defaultSelection(PANELS));
   const [zoom, setZoom] = useState(0.85);
   const [pan, setPan] = useState({ x: 120, y: 60 });
   const [isPanning, setIsPanning] = useState(false);
@@ -499,14 +737,63 @@ export default function App() {
   const [rightOpen, setRightOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<PanelTab>("explorer");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  // Branch panels are the default overlay: they are what the graph is for.
+  // Phases answer a different question and would fight them for the same
+  // screen space, so only one is shown at a time.
+  const [overlay, setOverlay] = useState<"branches" | "phases" | "none">("branches");
+  const [hoveredPanelId, setHoveredPanelId] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   const selectedNode = selectedId ? (NODES_BY_ID.get(selectedId) ?? null) : null;
 
+  // Everything downstream of the arm selection: which nodes exist, where
+  // they sit, and how big the canvas is. Rows are ranked over the VISIBLE
+  // subgraph, so a collapsed arm leaves no gap behind.
+  const visibleIds = useMemo(() => visibleNodeIds(GRAPH, PANELS, armSelection), [armSelection]);
+
+  // Each visible panel's selected arm becomes a row band, so two branches
+  // that are not nested in each other never share a row -- otherwise their
+  // rectangles overlap however tightly they are drawn (see separateBands).
+  const rowBands = useMemo(
+    () =>
+      PANELS.flatMap((panel) => {
+        const selected = armSelection.get(panel.id) ?? null;
+        const arm =
+          panel.arms.find((a) => a.id === selected) ??
+          panel.arms.find((a) => a.role === "spine");
+        const memberIds = (arm?.memberIds ?? []).filter((id) => visibleIds.has(id));
+        return memberIds.length > 0 ? [{ id: panel.id, memberIds }] : [];
+      }),
+    [armSelection, visibleIds],
+  );
+
+  const positions = useMemo(
+    () => computeLayout(GRAPH, ROOT_ID, visibleIds, rowBands),
+    [visibleIds, rowBands],
+  );
+  const bounds = useMemo(() => canvasBounds(positions), [positions]);
+  const visibleEdges = useMemo(
+    () => FLOW_EDGES.filter((e) => visibleIds.has(e.from) && visibleIds.has(e.to)),
+    [visibleIds],
+  );
+
+  const panelGeometry = useMemo(
+    () => computePanelGeometry(PANELS, armSelection, positions),
+    [armSelection, positions],
+  );
+
+  const handleArmSelect = useCallback((panelId: string, armId: string | null) => {
+    setArmSelection((prev) => {
+      const next = new Map(prev);
+      next.set(panelId, armId);
+      return next;
+    });
+  }, []);
+
   const connectedIds = useMemo(() => {
     if (!selectedId) return null;
     const ids = new Set<string>([selectedId]);
-    for (const e of GRAPH.edges) {
+    for (const e of FLOW_EDGES) {
       if (e.from === selectedId) ids.add(e.to);
       if (e.to === selectedId) ids.add(e.from);
     }
@@ -557,7 +844,10 @@ export default function App() {
     return () => el.removeEventListener("wheel", handleWheel);
   }, [handleWheel]);
 
-  const methodCount = GRAPH.nodes.filter((n) => n.type !== "leaf").length;
+  const methodCount = GRAPH.nodes.filter(
+    (n) => n.type !== "leaf" && visibleIds.has(n.id),
+  ).length;
+  const conditionalCount = PANELS.filter((p) => p.kind === "conditional").length;
 
   return (
     <Flex
@@ -639,6 +929,10 @@ export default function App() {
                       <Search size={12} style={{ marginRight: 6 }} />
                       Nodes
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="branches">
+                      <GitBranch size={12} style={{ marginRight: 6 }} />
+                      Branches
+                    </Tabs.Trigger>
                   </Tabs.List>
                   <IconButton size="1" variant="ghost" color="gray" onClick={() => setLeftOpen(false)}>
                     <Minimize2 size={13} />
@@ -661,6 +955,16 @@ export default function App() {
                 </Tabs.Content>
                 <Tabs.Content value="search" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
                   <NodeSearchPanel selectedNodeId={selectedId} onSelect={handleSelectFromPanel} />
+                </Tabs.Content>
+                <Tabs.Content value="branches" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                  <ScrollArea style={{ height: "100%" }}>
+                    <BranchSwitcher
+                      selection={armSelection}
+                      onSelect={handleArmSelect}
+                      onFocus={handleSelectFromPanel}
+                      onHighlight={setHoveredPanelId}
+                    />
+                  </ScrollArea>
                 </Tabs.Content>
               </Tabs.Root>
 
@@ -694,6 +998,35 @@ export default function App() {
                       </Flex>
                     ),
                   )}
+                </Flex>
+                <Separator size="4" my="2" />
+                <Text
+                  size="1"
+                  weight="bold"
+                  color="gray"
+                  style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}
+                >
+                  Edges
+                </Text>
+                <Flex direction="column" gap="1" mt="2">
+                  {(Object.keys(EDGE_STYLE) as EdgeClass[]).map((kind) => (
+                    <Flex key={kind} align="center" gap="2">
+                      <svg width="16" height="8" style={{ flexShrink: 0 }}>
+                        <line
+                          x1="0"
+                          y1="4"
+                          x2="16"
+                          y2="4"
+                          stroke={EDGE_STYLE[kind].color}
+                          strokeWidth="1.5"
+                          strokeDasharray={EDGE_STYLE[kind].dash}
+                        />
+                      </svg>
+                      <Text size="1" color="gray">
+                        {kind}
+                      </Text>
+                    </Flex>
+                  ))}
                 </Flex>
                 <Separator size="4" my="2" />
                 <Text
@@ -758,21 +1091,31 @@ export default function App() {
             onMouseLeave={handleMouseUp}
           >
             <defs>
-              <marker id="arrow-sequence" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                <path d="M0,0 L0,7 L7,3.5 z" fill="var(--edge-sequence)" opacity="0.85" />
-              </marker>
-              <marker id="arrow-invoke" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                <path d="M0,0 L0,7 L7,3.5 z" fill="var(--edge-invoke)" opacity="0.85" />
-              </marker>
-              <marker id="arrow-fallback" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-                <path d="M0,0 L0,7 L7,3.5 z" fill="var(--edge-fallback)" opacity="0.85" />
-              </marker>
+              {(Object.keys(EDGE_STYLE) as EdgeClass[]).map((kind) => (
+                <marker
+                  key={kind}
+                  id={`arrow-${kind}`}
+                  markerWidth="7"
+                  markerHeight="7"
+                  refX="6"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <path d="M0,0 L0,7 L7,3.5 z" fill={EDGE_STYLE[kind].color} opacity="0.85" />
+                </marker>
+              ))}
             </defs>
 
             <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+              {/* Branch regions go behind everything: they are the ground
+                  the nodes sit on, not an annotation over them. */}
+              {overlay === "branches" && (
+                <BranchRegions geometries={panelGeometry} activeId={hoveredPanelId} />
+              )}
+
               {/* Phase scope boxes */}
-              {PHASES.map((phase, i) => {
-                const bbox = computePhaseBBox(phase, POSITIONS);
+              {overlay === "phases" && PHASES.map((phase, i) => {
+                const bbox = computePhaseBBox(phase, positions);
                 if (!bbox) return null;
                 const color = PHASE_COLORS[i % PHASE_COLORS.length];
                 return (
@@ -805,44 +1148,35 @@ export default function App() {
               })}
 
               {/* Edges */}
-              {GRAPH.edges.map((edge, i) => {
-                const from = POSITIONS.get(edge.from);
-                const to = POSITIONS.get(edge.to);
+              {visibleEdges.map((edge, i) => {
+                const from = positions.get(edge.from);
+                const to = positions.get(edge.to);
                 const fromNode = NODES_BY_ID.get(edge.from);
                 const toNode = NODES_BY_ID.get(edge.to);
                 if (!from || !to || !fromNode || !toNode) return null;
                 const isDimmed = connectedIds ? !connectedIds.has(edge.from) && !connectedIds.has(edge.to) : false;
-                const color = edge.fallback
-                  ? "var(--edge-fallback)"
-                  : edge.type === "invoke"
-                    ? "var(--edge-invoke)"
-                    : "var(--edge-sequence)";
-                const marker = edge.fallback ? "arrow-fallback" : edge.type === "invoke" ? "arrow-invoke" : "arrow-sequence";
-                const dash = edge.fallback ? "2 3" : edge.type === "invoke" ? "4 3" : undefined;
+                const kind = classifyEdge(edge);
+                const style = EDGE_STYLE[kind];
                 return (
                   <path
                     key={i}
                     d={edgePath(from, to, NODE_RADIUS[fromNode.type], NODE_RADIUS[toNode.type])}
                     fill="none"
-                    stroke={color}
+                    stroke={style.color}
                     strokeWidth={1.2}
-                    strokeDasharray={dash}
+                    strokeDasharray={style.dash}
                     opacity={isDimmed ? 0.1 : 0.8}
-                    markerEnd={`url(#${marker})`}
+                    markerEnd={`url(#arrow-${kind})`}
                     style={{ transition: "opacity 0.15s" }}
                   >
-                    <title>
-                      {edge.fallback
-                        ? "Inferred fallback return edge — the callee never reached this continuation directly"
-                        : edge.type}
-                    </title>
+                    <title>{style.label}</title>
                   </path>
                 );
               })}
 
               {/* Nodes */}
               {GRAPH.nodes.map((node) => {
-                const pos = POSITIONS.get(node.id);
+                const pos = positions.get(node.id);
                 if (!pos) return null;
                 const colors = NODE_COLORS[node.type];
                 const r = NODE_RADIUS[node.type];
@@ -905,12 +1239,24 @@ export default function App() {
                       fill={isSelected ? "var(--canvas-foreground)" : isHovered ? "var(--gray-11)" : "var(--canvas-muted)"}
                       style={{ transition: "fill 0.1s", userSelect: "none" }}
                     >
-                      {nodeLabel(node)}
+                      {canvasLabel(node)}
                     </text>
-                    <title>{node.calleeFullName}</title>
+                    <title>{nodeLabel(node)}</title>
                   </g>
                 );
               })}
+
+              {/* Switcher pills last, so they stay clickable above the
+                  nodes and edges the region contains. */}
+              {overlay === "branches" && (
+                <BranchSwitchers
+                  geometries={panelGeometry}
+                  selection={armSelection}
+                  activeId={hoveredPanelId}
+                  onSelect={handleArmSelect}
+                  onHover={setHoveredPanelId}
+                />
+              )}
             </g>
           </svg>
 
@@ -962,7 +1308,7 @@ export default function App() {
             </IconButton>
           )}
 
-          <Minimap selectedId={selectedId} />
+          <Minimap selectedId={selectedId} positions={positions} bounds={bounds} />
         </Box>
 
         {/* Right detail panel */}
@@ -1008,7 +1354,13 @@ export default function App() {
           ·
         </Text>
         <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-          {GRAPH.edges.length} edges
+          {visibleEdges.length} edges
+        </Text>
+        <Text size="1" color="gray">
+          ·
+        </Text>
+        <Text size="1" color="gray" style={{ fontFamily: MONO }}>
+          {conditionalCount} conditional / {PANELS.length - conditionalCount} dispatch
         </Text>
         <Text size="1" color="gray">
           ·
@@ -1016,7 +1368,29 @@ export default function App() {
         <Text size="1" color="gray" style={{ fontFamily: MONO }}>
           {PHASES.length} phases
         </Text>
-        <Flex align="center" gap="2" ml="auto">
+        <Flex align="center" gap="1" ml="auto">
+          <Text size="1" color="gray">
+            overlay
+          </Text>
+          {(["branches", "phases", "none"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setOverlay(mode)}
+              style={{
+                all: "unset",
+                cursor: "pointer",
+                padding: "0 6px",
+                borderRadius: 3,
+                fontFamily: MONO,
+                fontSize: 11,
+                color: overlay === mode ? "var(--accent-11)" : "var(--gray-10)",
+                background: overlay === mode ? "var(--accent-a3)" : "transparent",
+              }}
+            >
+              {mode}
+            </button>
+          ))}
+          <Separator orientation="vertical" size="1" mx="2" />
           {selectedNode && (
             <>
               <Text size="1" color="amber" style={{ fontFamily: MONO }}>

@@ -18,6 +18,13 @@ export function classOf(methodFullName: string): string {
   return splitMethodFullName(methodFullName).className;
 }
 
+// Just the class, no package and no method -- what a dispatch arm is
+// labelled with, since the arms of a polymorphic call differ only by
+// implementing type.
+export function shortClassName(methodFullName: string): string {
+  return splitClassName(classOf(methodFullName)).shortName;
+}
+
 // "Class.method()" display form, or "new Class()" for a constructor.
 export function shortLabel(methodFullName: string): string {
   const { className, method } = splitMethodFullName(methodFullName);
@@ -97,12 +104,23 @@ export interface PhaseBBox {
   height: number;
 }
 
-export function computePhaseBBox(
-  phase: Phase,
+// The box around an arbitrary set of nodes. Phases use it, the canvas
+// viewport uses it, and a branch panel's region will use it -- the three
+// had grown separate min/max loops.
+//
+// Ids with no position are skipped rather than treated as the origin: a
+// node hidden by an unselected branch arm has none, and folding it in as
+// (0, 0) would stretch every box to the top-left corner.
+export function computeBBox(
+  nodeIds: Iterable<string>,
   positions: Map<string, NodePosition>,
   padding = 34,
 ): PhaseBBox | null {
-  const points = phase.nodes.map((id) => positions.get(id)).filter((p): p is NodePosition => !!p);
+  const points: NodePosition[] = [];
+  for (const id of nodeIds) {
+    const position = positions.get(id);
+    if (position) points.push(position);
+  }
   if (points.length === 0) return null;
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
@@ -111,6 +129,14 @@ export function computePhaseBBox(
   const minY = Math.min(...ys) - padding;
   const maxY = Math.max(...ys) + padding;
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+export function computePhaseBBox(
+  phase: Phase,
+  positions: Map<string, NodePosition>,
+  padding = 34,
+): PhaseBBox | null {
+  return computeBBox(phase.nodes, positions, padding);
 }
 
 // Plain-English gloss for each PHASING_RULES.md transition reason, shown in

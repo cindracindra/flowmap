@@ -34,9 +34,19 @@ from domain.phase_discovery import build_phase_tree
 from domain.opseq_clustering import assign_operation_topics
 
 
-SOURCE_DIR = Path("/Users/cindra/Documents/ImperialCollege/Thesis/test_code/java_project/java_project")
-OUTPUT_DIR = Path("/Users/cindra/Documents/ImperialCollege/Thesis/test_code/java_project/output")
-ANCHOR_NAME = "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)"
+# SOURCE_DIR = Path("/Users/cindra/Documents/ImperialCollege/Thesis/test_code/java_project/java_project")
+# OUTPUT_DIR = Path("/Users/cindra/Documents/ImperialCollege/Thesis/test_code/java_project/output")
+# ANCHOR_NAME = "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)"
+
+
+SOURCE_DIR = Path(
+    "/Users/cindra/Documents/ImperialCollege/Thesis/test_code/jgrapht/jgrapht"
+)
+OUTPUT_DIR = Path(
+    "/Users/cindra/Documents/ImperialCollege/Thesis/test_code/jgrapht/output"
+)
+ANCHOR_NAME = ""
+
 
 def export_to_json(output_path:Path, content: dict):
     with output_path.open("w") as f:
@@ -59,9 +69,9 @@ if __name__ == "__main__":
     load_dotenv()
 
     cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
-    if not cpg_output_path.exists():
-        parse_project(SOURCE_DIR, cpg_output_path)
-    # parse_project(SOURCE_DIR, cpg_output_path)
+    # if not cpg_output_path.exists():
+    #     parse_project(SOURCE_DIR, cpg_output_path)
+    parse_project(SOURCE_DIR, cpg_output_path)
 
     session = JoernSession(port=8080)
     

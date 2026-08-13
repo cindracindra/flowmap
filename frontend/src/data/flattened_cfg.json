@@ -4,18 +4,28 @@
       "id": "m107374182400~0",
       "type": "entry",
       "calleeFullName": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
-      "line": 53,
+      "line": 61,
       "origId": "m107374182400",
       "depth": 0
     },
     {
-      "id": "c30064771072~1",
+      "id": "c30064771074~1",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.<init>:void()",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "new TransferReport()",
+      "line": 62,
+      "origId": "c30064771074",
+      "depth": 0
+    },
+    {
+      "id": "c30064771075~2",
       "type": "call",
       "calleeFullName": "com.example.cpgtest.service.AccountService.transfer:void(int,int,double)",
       "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
       "code": "bank.transfer(fromId, toId, 5000.0)",
-      "line": 55,
-      "origId": "c30064771072",
+      "line": 64,
+      "origId": "c30064771075",
       "depth": 0,
       "branchArms": [
         {
@@ -25,13 +35,2603 @@
       ]
     },
     {
-      "id": "c30064771076~2",
+      "id": "m107374182470~3",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.<init>:void()",
+      "line": 16,
+      "origId": "m107374182470",
+      "depth": 1
+    },
+    {
+      "id": "c30064771076~4",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.recordSuccess:void(int,int)",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "report.recordSuccess(fromId, toId)",
+      "line": 65,
+      "origId": "c30064771076",
+      "depth": 0,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182440~5",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "line": 43,
+      "origId": "m107374182440",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771272~6",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "callerMethod": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "code": "from.withdraw(amount)",
+      "line": 49,
+      "origId": "c30064771272",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771274~7",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getBalance:double()",
+      "callerMethod": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "code": "to.getBalance()",
+      "line": 50,
+      "origId": "c30064771274",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182411~8",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "line": 36,
+      "origId": "m107374182411",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771152~9",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "code": "new IllegalArgumentException(\"Withdrawal amount must be positive\")",
+      "line": 38,
+      "origId": "c30064771152",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640265~8",
+          "armLabel": "if"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "c30064771158~10",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "code": "new InsufficientFundsException(\"Account \" + id + \" has insufficient funds for withdrawal of \" + amount)",
+      "line": 41,
+      "origId": "c30064771158",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640266~8",
+          "armLabel": "if"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182405~11",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "line": 5,
+      "origId": "m107374182405",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640266~8",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771131~12",
+      "type": "call",
+      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "code": "super(message);",
+      "line": 6,
+      "origId": "c30064771131",
+      "terminus": "fallthrough",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640266~8",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182494~13",
+      "type": "leaf",
+      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
+      "origId": "m107374182494",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640266~8",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182505~14",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182505",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640265~8",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771275~15",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.AuditedAccountService.reconcile:void(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "code": "this.reconcile(to)",
+      "line": 51,
+      "origId": "c30064771275",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771276~16",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "callerMethod": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "code": "to.deposit(amount)",
+      "line": 53,
+      "origId": "c30064771276",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182409~17",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getBalance:double()",
+      "line": 25,
+      "origId": "m107374182409",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771277~18",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteAdjustment:void(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "code": "this.ledger.noteAdjustment(from)",
+      "line": 55,
+      "origId": "c30064771277",
+      "terminus": "throw",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "c30064771280~19",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "callerMethod": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "code": "this.ledger.record(from, to, amount)",
+      "line": 59,
+      "origId": "c30064771280",
+      "terminus": "fallthrough",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182410~20",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "line": 29,
+      "origId": "m107374182410",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771145~21",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "code": "new IllegalArgumentException(\"Deposit amount must be positive\")",
+      "line": 31,
+      "origId": "c30064771145",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640264~20",
+          "armLabel": "if"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182505~22",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182505",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "cs47244640264~20",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182458~23",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "line": 23,
+      "origId": "m107374182458",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771455~24",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteRejected:void(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.noteRejected(from)",
+      "line": 25,
+      "origId": "c30064771455",
+      "terminus": "return",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771460~25",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.describe(from)",
+      "line": 28,
+      "origId": "c30064771460",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771461~26",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.describe(to)",
+      "line": 28,
+      "origId": "c30064771461",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~27",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~28",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~29",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~30",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~31",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771468~32",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.notifyOwner:void(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.notifyOwner(watcher)",
+      "line": 30,
+      "origId": "c30064771468",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~33",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~34",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~35",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~36",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~37",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182461~38",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.notifyOwner:void(com.example.cpgtest.model.Account)",
+      "line": 42,
+      "origId": "m107374182461",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771480~39",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.notifyOwner:void(com.example.cpgtest.model.Account)",
+      "code": "this.describe(watcher)",
+      "line": 43,
+      "origId": "c30064771480",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~40",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~41",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~42",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~43",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~44",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182460~45",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteRejected:void(com.example.cpgtest.model.Account)",
+      "line": 38,
+      "origId": "m107374182460",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771476~46",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.noteRejected:void(com.example.cpgtest.model.Account)",
+      "code": "this.describe(account)",
+      "line": 39,
+      "origId": "c30064771476",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~47",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~48",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~49",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~50",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~51",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640289~23",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182459~52",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteAdjustment:void(com.example.cpgtest.model.Account)",
+      "line": 34,
+      "origId": "m107374182459",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771472~53",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.noteAdjustment:void(com.example.cpgtest.model.Account)",
+      "code": "this.describe(account)",
+      "line": 35,
+      "origId": "c30064771472",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~54",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~55",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~56",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~57",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~58",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182443~59",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.AuditedAccountService.reconcile:void(com.example.cpgtest.model.Account)",
+      "line": 83,
+      "origId": "m107374182443",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771308~60",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteAdjustment:void(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.AuditedAccountService.reconcile:void(com.example.cpgtest.model.Account)",
+      "code": "this.ledger.noteAdjustment(account)",
+      "line": 84,
+      "origId": "c30064771308",
+      "terminus": "fallthrough",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182459~61",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteAdjustment:void(com.example.cpgtest.model.Account)",
+      "line": 34,
+      "origId": "m107374182459",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771472~62",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.noteAdjustment:void(com.example.cpgtest.model.Account)",
+      "code": "this.describe(account)",
+      "line": 35,
+      "origId": "c30064771472",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~63",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~64",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~65",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~66",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~67",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl1"
+        },
+        {
+          "groupId": "cs47244640269~5",
+          "armLabel": "if"
+        },
+        {
+          "groupId": "cs47244640268~5",
+          "armLabel": "try"
+        }
+      ]
+    },
+    {
+      "id": "m107374182446~68",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "line": 33,
+      "origId": "m107374182446",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771348~69",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "new IllegalArgumentException(\"Both accounts must exist\")",
+      "line": 39,
+      "origId": "c30064771348",
+      "terminus": "throw",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640275~68",
+          "armLabel": "if"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "c30064771352~70",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.premiumFee:double(double)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "this.feePolicy.premiumFee(amount)",
+      "line": 49,
+      "origId": "c30064771352",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771357~71",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.standardFee:double(double)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "this.feePolicy.standardFee(amount)",
+      "line": 51,
+      "origId": "c30064771357",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "elseif1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771360~72",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "from.withdraw(amount + fee)",
+      "line": 56,
+      "origId": "c30064771360",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771362~73",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "to.deposit(amount)",
+      "line": 57,
+      "origId": "c30064771362",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182411~74",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "line": 36,
+      "origId": "m107374182411",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771152~75",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "code": "new IllegalArgumentException(\"Withdrawal amount must be positive\")",
+      "line": 38,
+      "origId": "c30064771152",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640265~74",
+          "armLabel": "if"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "c30064771158~76",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "code": "new InsufficientFundsException(\"Account \" + id + \" has insufficient funds for withdrawal of \" + amount)",
+      "line": 41,
+      "origId": "c30064771158",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640266~74",
+          "armLabel": "if"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182405~77",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "line": 5,
+      "origId": "m107374182405",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640266~74",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771131~78",
+      "type": "call",
+      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
+      "code": "super(message);",
+      "line": 6,
+      "origId": "c30064771131",
+      "terminus": "fallthrough",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640266~74",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182494~79",
+      "type": "leaf",
+      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
+      "origId": "m107374182494",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640266~74",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182505~80",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182505",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640265~74",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771363~81",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "code": "this.ledger.record(from, to, amount)",
+      "line": 58,
+      "origId": "c30064771363",
+      "terminus": "fallthrough",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182410~82",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "line": 29,
+      "origId": "m107374182410",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771145~83",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "code": "new IllegalArgumentException(\"Deposit amount must be positive\")",
+      "line": 31,
+      "origId": "c30064771145",
+      "terminus": "throw",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640264~82",
+          "armLabel": "if"
+        }
+      ],
+      "deadEnd": true
+    },
+    {
+      "id": "m107374182505~84",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182505",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640264~82",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182458~85",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "line": 23,
+      "origId": "m107374182458",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771455~86",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteRejected:void(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.noteRejected(from)",
+      "line": 25,
+      "origId": "c30064771455",
+      "terminus": "return",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771460~87",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.describe(from)",
+      "line": 28,
+      "origId": "c30064771460",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771461~88",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.describe(to)",
+      "line": 28,
+      "origId": "c30064771461",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~89",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~90",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~91",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~92",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~93",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771468~94",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.notifyOwner:void(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "code": "this.notifyOwner(watcher)",
+      "line": 30,
+      "origId": "c30064771468",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~95",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~96",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~97",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~98",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~99",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182461~100",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.notifyOwner:void(com.example.cpgtest.model.Account)",
+      "line": 42,
+      "origId": "m107374182461",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771480~101",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.notifyOwner:void(com.example.cpgtest.model.Account)",
+      "code": "this.describe(watcher)",
+      "line": 43,
+      "origId": "c30064771480",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~102",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~103",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~104",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~105",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~106",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182460~107",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.noteRejected:void(com.example.cpgtest.model.Account)",
+      "line": 38,
+      "origId": "m107374182460",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771476~108",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.noteRejected:void(com.example.cpgtest.model.Account)",
+      "code": "this.describe(account)",
+      "line": 39,
+      "origId": "c30064771476",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182462~109",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "line": 46,
+      "origId": "m107374182462",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771482~110",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner()",
+      "line": 47,
+      "origId": "c30064771482",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771481~111",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.service.TransferLedger.describe:java.lang.String(com.example.cpgtest.model.Account)",
+      "code": "account.getOwner().getUsername()",
+      "line": 47,
+      "origId": "c30064771481",
+      "terminus": "return",
+      "depth": 4,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182408~112",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.Account.getOwner:com.example.cpgtest.model.User()",
+      "line": 21,
+      "origId": "m107374182408",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182415~113",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.model.User.getUsername:java.lang.String()",
+      "line": 21,
+      "origId": "m107374182415",
+      "depth": 5,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640289~85",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182454~114",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.standardFee:double(double)",
+      "line": 23,
+      "origId": "m107374182454",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "elseif1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771443~115",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.cap:double(double,double)",
+      "callerMethod": "com.example.cpgtest.service.FeePolicy.standardFee:double(double)",
+      "code": "this.cap(base, STANDARD_CAP)",
+      "line": 25,
+      "origId": "c30064771443",
+      "terminus": "return",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "elseif1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182455~116",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.cap:double(double,double)",
+      "line": 34,
+      "origId": "m107374182455",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "elseif1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182453~117",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.premiumFee:double(double)",
+      "line": 18,
+      "origId": "m107374182453",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771438~118",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.cap:double(double,double)",
+      "callerMethod": "com.example.cpgtest.service.FeePolicy.premiumFee:double(double)",
+      "code": "this.cap(base, PREMIUM_CAP)",
+      "line": 20,
+      "origId": "c30064771438",
+      "terminus": "return",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182455~119",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.FeePolicy.cap:double(double,double)",
+      "line": 34,
+      "origId": "m107374182455",
+      "depth": 3,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640276~68",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "m107374182505~120",
+      "type": "leaf",
+      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
+      "origId": "m107374182505",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
+        },
+        {
+          "groupId": "dispatch:c30064771075~2",
+          "armLabel": "impl2"
+        },
+        {
+          "groupId": "cs47244640275~68",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771078~121",
       "type": "call",
       "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.getMessage:java.lang.String()",
       "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
       "code": "e.getMessage()",
-      "line": 57,
-      "origId": "c30064771076",
+      "line": 67,
+      "origId": "c30064771078",
       "depth": 0,
       "branchArms": [
         {
@@ -41,286 +2641,1082 @@
       ]
     },
     {
-      "id": "m107374182440~3",
-      "type": "entry",
-      "calleeFullName": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
-      "line": 28,
-      "origId": "m107374182440",
-      "depth": 1
+      "id": "c30064771080~122",
+      "type": "call",
+      "calleeFullName": "java.lang.IllegalArgumentException.getMessage:java.lang.String()",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "e.getMessage()",
+      "line": 69,
+      "origId": "c30064771080",
+      "depth": 0,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch2"
+        }
+      ]
     },
     {
-      "id": "c30064771278~4",
+      "id": "c30064771081~123",
       "type": "call",
-      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
-      "code": "new IllegalArgumentException(\"Both accounts must exist\")",
-      "line": 34,
-      "origId": "c30064771278",
-      "terminus": "throw",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.publish:void()",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "report.publish()",
+      "line": 71,
+      "origId": "c30064771081",
+      "terminus": "fallthrough",
+      "depth": 0
+    },
+    {
+      "id": "m107374182464~124",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.recordSuccess:void(int,int)",
+      "line": 21,
+      "origId": "m107374182464",
       "depth": 1,
       "branchArms": [
         {
-          "groupId": "cs47244640268~3",
-          "armLabel": "if"
+          "groupId": "cs47244640256~0",
+          "armLabel": "try"
         }
-      ],
-      "deadEnd": true
+      ]
     },
     {
-      "id": "c30064771279~5",
-      "type": "call",
-      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
-      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
-      "code": "from.withdraw(amount)",
-      "line": 37,
-      "origId": "c30064771279",
+      "id": "m107374182467~125",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.publish:void()",
+      "line": 42,
+      "origId": "m107374182467",
       "depth": 1
     },
     {
-      "id": "c30064771280~6",
+      "id": "c30064771510~126",
       "type": "call",
-      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
-      "callerMethod": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
-      "code": "to.deposit(amount)",
-      "line": 38,
-      "origId": "c30064771280",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.summarise:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.service.TransferReport.publish:void()",
+      "code": "this.summarise(\"failed\")",
+      "line": 44,
+      "origId": "c30064771510",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640291~125",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "c30064771513~127",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.summarise:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.service.TransferReport.publish:void()",
+      "code": "this.summarise(\"partial\")",
+      "line": 46,
+      "origId": "c30064771513",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640291~125",
+          "armLabel": "elseif1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771514~128",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.finish:void()",
+      "callerMethod": "com.example.cpgtest.service.TransferReport.publish:void()",
+      "code": "this.finish()",
+      "line": 48,
+      "origId": "c30064771514",
       "terminus": "fallthrough",
       "depth": 1
     },
     {
-      "id": "m107374182411~7",
+      "id": "m107374182469~129",
       "type": "entry",
-      "calleeFullName": "com.example.cpgtest.model.Account.withdraw:void(double)",
-      "line": 36,
-      "origId": "m107374182411",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.finish:void()",
+      "line": 55,
+      "origId": "m107374182469",
       "depth": 2
     },
     {
-      "id": "c30064771147~8",
-      "type": "call",
-      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
-      "code": "new IllegalArgumentException(\"Withdrawal amount must be positive\")",
-      "line": 38,
-      "origId": "c30064771147",
-      "terminus": "throw",
-      "depth": 2,
-      "branchArms": [
-        {
-          "groupId": "cs47244640264~7",
-          "armLabel": "if"
-        }
-      ],
-      "deadEnd": true
-    },
-    {
-      "id": "c30064771153~9",
-      "type": "call",
-      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
-      "callerMethod": "com.example.cpgtest.model.Account.withdraw:void(double)",
-      "code": "new InsufficientFundsException(\"Account \" + id + \" has insufficient funds for withdrawal of \" + amount)",
-      "line": 41,
-      "origId": "c30064771153",
-      "terminus": "throw",
-      "depth": 2,
-      "branchArms": [
-        {
-          "groupId": "cs47244640265~7",
-          "armLabel": "if"
-        }
-      ],
-      "deadEnd": true
-    },
-    {
-      "id": "m107374182405~10",
+      "id": "m107374182468~130",
       "type": "entry",
-      "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
-      "line": 5,
-      "origId": "m107374182405",
-      "depth": 3
-    },
-    {
-      "id": "c30064771126~11",
-      "type": "call",
-      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
-      "callerMethod": "com.example.cpgtest.exception.InsufficientFundsException.<init>:void(java.lang.String)",
-      "code": "super(message);",
-      "line": 6,
-      "origId": "c30064771126",
-      "terminus": "fallthrough",
-      "depth": 3
-    },
-    {
-      "id": "m107374182468~12",
-      "type": "leaf",
-      "calleeFullName": "java.lang.Exception.<init>:void(java.lang.String)",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.summarise:void(java.lang.String)",
+      "line": 51,
       "origId": "m107374182468",
-      "depth": 4
-    },
-    {
-      "id": "m107374182479~13",
-      "type": "leaf",
-      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "origId": "m107374182479",
-      "depth": 3
-    },
-    {
-      "id": "m107374182410~14",
-      "type": "entry",
-      "calleeFullName": "com.example.cpgtest.model.Account.deposit:void(double)",
-      "line": 29,
-      "origId": "m107374182410",
-      "depth": 2
-    },
-    {
-      "id": "c30064771140~15",
-      "type": "call",
-      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "callerMethod": "com.example.cpgtest.model.Account.deposit:void(double)",
-      "code": "new IllegalArgumentException(\"Deposit amount must be positive\")",
-      "line": 31,
-      "origId": "c30064771140",
-      "terminus": "throw",
       "depth": 2,
       "branchArms": [
         {
-          "groupId": "cs47244640263~14",
+          "groupId": "cs47244640291~125",
+          "armLabel": "elseif1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182468~131",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.summarise:void(java.lang.String)",
+      "line": 51,
+      "origId": "m107374182468",
+      "depth": 2,
+      "branchArms": [
+        {
+          "groupId": "cs47244640291~125",
           "armLabel": "if"
         }
-      ],
-      "deadEnd": true
+      ]
     },
     {
-      "id": "m107374182479~16",
+      "id": "m107374182480~132",
       "type": "leaf",
-      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "origId": "m107374182479",
-      "depth": 3
+      "calleeFullName": "java.lang.IllegalArgumentException.getMessage:java.lang.String()",
+      "origId": "m107374182480",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch2"
+        }
+      ]
     },
     {
-      "id": "m107374182479~17",
-      "type": "leaf",
-      "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-      "origId": "m107374182479",
-      "depth": 2
+      "id": "c30064771079~133",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.recordRejection:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "report.recordRejection(e.getMessage())",
+      "line": 69,
+      "origId": "c30064771079",
+      "depth": 0,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch2"
+        }
+      ]
     },
     {
-      "id": "m107374182503~18",
+      "id": "m107374182466~134",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.recordRejection:void(java.lang.String)",
+      "line": 30,
+      "origId": "m107374182466",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch2"
+        }
+      ]
+    },
+    {
+      "id": "m107374182529~135",
       "type": "leaf",
       "calleeFullName": "com.example.cpgtest.exception.InsufficientFundsException.getMessage:java.lang.String()",
-      "origId": "m107374182503",
-      "depth": 1
+      "origId": "m107374182529",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "c30064771077~136",
+      "type": "call",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.recordShortfall:void(java.lang.String)",
+      "callerMethod": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "code": "report.recordShortfall(e.getMessage())",
+      "line": 67,
+      "origId": "c30064771077",
+      "depth": 0,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch1"
+        }
+      ]
+    },
+    {
+      "id": "m107374182465~137",
+      "type": "entry",
+      "calleeFullName": "com.example.cpgtest.service.TransferReport.recordShortfall:void(java.lang.String)",
+      "line": 25,
+      "origId": "m107374182465",
+      "depth": 1,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256~0",
+          "armLabel": "catch1"
+        }
+      ]
     }
   ],
   "edges": [
     {
       "from": "m107374182400~0",
-      "to": "c30064771072~1",
+      "to": "c30064771074~1",
       "type": "sequence"
     },
     {
-      "from": "m107374182440~3",
-      "to": "c30064771278~4",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182440~3",
-      "to": "c30064771279~5",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182411~7",
-      "to": "c30064771147~8",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182411~7",
-      "to": "c30064771153~9",
-      "type": "sequence"
-    },
-    {
-      "from": "m107374182405~10",
-      "to": "c30064771126~11",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771126~11",
-      "to": "m107374182468~12",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771153~9",
-      "to": "m107374182405~10",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771147~8",
-      "to": "m107374182479~13",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771279~5",
-      "to": "m107374182411~7",
-      "type": "invoke"
-    },
-    {
-      "from": "m107374182411~7",
-      "to": "c30064771280~6",
+      "from": "m107374182470~3",
+      "to": "c30064771075~2",
       "type": "sequence",
-      "returnFrom": "c30064771279~5",
+      "returnFrom": "c30064771074~1"
+    },
+    {
+      "from": "c30064771074~1",
+      "to": "m107374182470~3",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182440~5",
+      "to": "c30064771272~6",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~8",
+      "to": "c30064771152~9",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~8",
+      "to": "c30064771158~10",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182405~11",
+      "to": "c30064771131~12",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771131~12",
+      "to": "m107374182494~13",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771158~10",
+      "to": "m107374182405~11",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771152~9",
+      "to": "m107374182505~14",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771272~6",
+      "to": "m107374182411~8",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182411~8",
+      "to": "c30064771274~7",
+      "type": "sequence",
+      "returnFrom": "c30064771272~6",
       "fallback": true
     },
     {
-      "from": "m107374182410~14",
-      "to": "c30064771140~15",
+      "from": "m107374182409~17",
+      "to": "c30064771275~15",
+      "type": "sequence",
+      "returnFrom": "c30064771274~7"
+    },
+    {
+      "from": "m107374182409~17",
+      "to": "c30064771276~16",
+      "type": "sequence",
+      "returnFrom": "c30064771274~7"
+    },
+    {
+      "from": "c30064771274~7",
+      "to": "m107374182409~17",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182410~20",
+      "to": "c30064771145~21",
       "type": "sequence"
     },
     {
-      "from": "c30064771140~15",
-      "to": "m107374182479~16",
+      "from": "c30064771145~21",
+      "to": "m107374182505~22",
       "type": "invoke"
     },
     {
-      "from": "c30064771280~6",
-      "to": "m107374182410~14",
+      "from": "c30064771276~16",
+      "to": "m107374182410~20",
       "type": "invoke"
     },
     {
-      "from": "c30064771278~4",
-      "to": "m107374182479~17",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771072~1",
-      "to": "m107374182440~3",
-      "type": "invoke"
-    },
-    {
-      "from": "m107374182440~3",
-      "to": "c30064771076~2",
+      "from": "m107374182410~20",
+      "to": "c30064771277~18",
       "type": "sequence",
-      "returnFrom": "c30064771072~1",
+      "returnFrom": "c30064771276~16",
       "fallback": true
     },
     {
-      "from": "c30064771076~2",
-      "to": "m107374182503~18",
+      "from": "m107374182410~20",
+      "to": "c30064771280~19",
+      "type": "sequence",
+      "returnFrom": "c30064771276~16",
+      "fallback": true
+    },
+    {
+      "from": "m107374182458~23",
+      "to": "c30064771455~24",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182458~23",
+      "to": "c30064771460~25",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~27",
+      "to": "c30064771482~28",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~30",
+      "to": "c30064771481~29",
+      "type": "sequence",
+      "returnFrom": "c30064771482~28"
+    },
+    {
+      "from": "c30064771482~28",
+      "to": "m107374182408~30",
       "type": "invoke"
+    },
+    {
+      "from": "m107374182415~31",
+      "to": "c30064771461~26",
+      "type": "sequence",
+      "returnFrom": "c30064771460~25"
+    },
+    {
+      "from": "c30064771481~29",
+      "to": "m107374182415~31",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~28",
+      "to": "c30064771481~29",
+      "type": "data"
+    },
+    {
+      "from": "c30064771460~25",
+      "to": "m107374182462~27",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182462~33",
+      "to": "c30064771482~34",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~36",
+      "to": "c30064771481~35",
+      "type": "sequence",
+      "returnFrom": "c30064771482~34"
+    },
+    {
+      "from": "c30064771482~34",
+      "to": "m107374182408~36",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~37",
+      "to": "c30064771468~32",
+      "type": "sequence",
+      "returnFrom": "c30064771461~26"
+    },
+    {
+      "from": "c30064771481~35",
+      "to": "m107374182415~37",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~34",
+      "to": "c30064771481~35",
+      "type": "data"
+    },
+    {
+      "from": "c30064771461~26",
+      "to": "m107374182462~33",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182461~38",
+      "to": "c30064771480~39",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~40",
+      "to": "c30064771482~41",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~43",
+      "to": "c30064771481~42",
+      "type": "sequence",
+      "returnFrom": "c30064771482~41"
+    },
+    {
+      "from": "c30064771482~41",
+      "to": "m107374182408~43",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~44",
+      "to": "c30064771076~4",
+      "type": "sequence",
+      "returnFrom": "c30064771075~2"
+    },
+    {
+      "from": "c30064771481~42",
+      "to": "m107374182415~44",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~41",
+      "to": "c30064771481~42",
+      "type": "data"
+    },
+    {
+      "from": "c30064771480~39",
+      "to": "m107374182462~40",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771468~32",
+      "to": "m107374182461~38",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182460~45",
+      "to": "c30064771476~46",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~47",
+      "to": "c30064771482~48",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~50",
+      "to": "c30064771481~49",
+      "type": "sequence",
+      "returnFrom": "c30064771482~48"
+    },
+    {
+      "from": "c30064771482~48",
+      "to": "m107374182408~50",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~51",
+      "to": "c30064771076~4",
+      "type": "sequence",
+      "returnFrom": "c30064771075~2"
+    },
+    {
+      "from": "c30064771481~49",
+      "to": "m107374182415~51",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~48",
+      "to": "c30064771481~49",
+      "type": "data"
+    },
+    {
+      "from": "c30064771476~46",
+      "to": "m107374182462~47",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771455~24",
+      "to": "m107374182460~45",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771280~19",
+      "to": "m107374182458~23",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182459~52",
+      "to": "c30064771472~53",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~54",
+      "to": "c30064771482~55",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~57",
+      "to": "c30064771481~56",
+      "type": "sequence",
+      "returnFrom": "c30064771482~55"
+    },
+    {
+      "from": "c30064771482~55",
+      "to": "m107374182408~57",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771481~56",
+      "to": "m107374182415~58",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~55",
+      "to": "c30064771481~56",
+      "type": "data"
+    },
+    {
+      "from": "c30064771472~53",
+      "to": "m107374182462~54",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771277~18",
+      "to": "m107374182459~52",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182443~59",
+      "to": "c30064771308~60",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182459~61",
+      "to": "c30064771472~62",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~63",
+      "to": "c30064771482~64",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~66",
+      "to": "c30064771481~65",
+      "type": "sequence",
+      "returnFrom": "c30064771482~64"
+    },
+    {
+      "from": "c30064771482~64",
+      "to": "m107374182408~66",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~67",
+      "to": "c30064771276~16",
+      "type": "sequence",
+      "returnFrom": "c30064771275~15"
+    },
+    {
+      "from": "c30064771481~65",
+      "to": "m107374182415~67",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~64",
+      "to": "c30064771481~65",
+      "type": "data"
+    },
+    {
+      "from": "c30064771472~62",
+      "to": "m107374182462~63",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771308~60",
+      "to": "m107374182459~61",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771275~15",
+      "to": "m107374182443~59",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771075~2",
+      "to": "m107374182440~5",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182446~68",
+      "to": "c30064771348~69",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182446~68",
+      "to": "c30064771352~70",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182446~68",
+      "to": "c30064771357~71",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182446~68",
+      "to": "c30064771360~72",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~74",
+      "to": "c30064771152~75",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182411~74",
+      "to": "c30064771158~76",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182405~77",
+      "to": "c30064771131~78",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771131~78",
+      "to": "m107374182494~79",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771158~76",
+      "to": "m107374182405~77",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771152~75",
+      "to": "m107374182505~80",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771360~72",
+      "to": "m107374182411~74",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182411~74",
+      "to": "c30064771362~73",
+      "type": "sequence",
+      "returnFrom": "c30064771360~72",
+      "fallback": true
+    },
+    {
+      "from": "m107374182410~82",
+      "to": "c30064771145~83",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771145~83",
+      "to": "m107374182505~84",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771362~73",
+      "to": "m107374182410~82",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182410~82",
+      "to": "c30064771363~81",
+      "type": "sequence",
+      "returnFrom": "c30064771362~73",
+      "fallback": true
+    },
+    {
+      "from": "m107374182458~85",
+      "to": "c30064771455~86",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182458~85",
+      "to": "c30064771460~87",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~89",
+      "to": "c30064771482~90",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~92",
+      "to": "c30064771481~91",
+      "type": "sequence",
+      "returnFrom": "c30064771482~90"
+    },
+    {
+      "from": "c30064771482~90",
+      "to": "m107374182408~92",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~93",
+      "to": "c30064771461~88",
+      "type": "sequence",
+      "returnFrom": "c30064771460~87"
+    },
+    {
+      "from": "c30064771481~91",
+      "to": "m107374182415~93",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~90",
+      "to": "c30064771481~91",
+      "type": "data"
+    },
+    {
+      "from": "c30064771460~87",
+      "to": "m107374182462~89",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182462~95",
+      "to": "c30064771482~96",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~98",
+      "to": "c30064771481~97",
+      "type": "sequence",
+      "returnFrom": "c30064771482~96"
+    },
+    {
+      "from": "c30064771482~96",
+      "to": "m107374182408~98",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~99",
+      "to": "c30064771468~94",
+      "type": "sequence",
+      "returnFrom": "c30064771461~88"
+    },
+    {
+      "from": "c30064771481~97",
+      "to": "m107374182415~99",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~96",
+      "to": "c30064771481~97",
+      "type": "data"
+    },
+    {
+      "from": "c30064771461~88",
+      "to": "m107374182462~95",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182461~100",
+      "to": "c30064771480~101",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~102",
+      "to": "c30064771482~103",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~105",
+      "to": "c30064771481~104",
+      "type": "sequence",
+      "returnFrom": "c30064771482~103"
+    },
+    {
+      "from": "c30064771482~103",
+      "to": "m107374182408~105",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~106",
+      "to": "c30064771076~4",
+      "type": "sequence",
+      "returnFrom": "c30064771075~2"
+    },
+    {
+      "from": "c30064771481~104",
+      "to": "m107374182415~106",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~103",
+      "to": "c30064771481~104",
+      "type": "data"
+    },
+    {
+      "from": "c30064771480~101",
+      "to": "m107374182462~102",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771468~94",
+      "to": "m107374182461~100",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182460~107",
+      "to": "c30064771476~108",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182462~109",
+      "to": "c30064771482~110",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182408~112",
+      "to": "c30064771481~111",
+      "type": "sequence",
+      "returnFrom": "c30064771482~110"
+    },
+    {
+      "from": "c30064771482~110",
+      "to": "m107374182408~112",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182415~113",
+      "to": "c30064771076~4",
+      "type": "sequence",
+      "returnFrom": "c30064771075~2"
+    },
+    {
+      "from": "c30064771481~111",
+      "to": "m107374182415~113",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771482~110",
+      "to": "c30064771481~111",
+      "type": "data"
+    },
+    {
+      "from": "c30064771476~108",
+      "to": "m107374182462~109",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771455~86",
+      "to": "m107374182460~107",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771363~81",
+      "to": "m107374182458~85",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182454~114",
+      "to": "c30064771443~115",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182455~116",
+      "to": "c30064771360~72",
+      "type": "sequence",
+      "returnFrom": "c30064771357~71"
+    },
+    {
+      "from": "c30064771443~115",
+      "to": "m107374182455~116",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771357~71",
+      "to": "m107374182454~114",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182453~117",
+      "to": "c30064771438~118",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182455~119",
+      "to": "c30064771360~72",
+      "type": "sequence",
+      "returnFrom": "c30064771352~70"
+    },
+    {
+      "from": "c30064771438~118",
+      "to": "m107374182455~119",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771352~70",
+      "to": "m107374182453~117",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771348~69",
+      "to": "m107374182505~120",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771352~70",
+      "to": "c30064771360~72",
+      "type": "data"
+    },
+    {
+      "from": "c30064771357~71",
+      "to": "c30064771360~72",
+      "type": "data"
+    },
+    {
+      "from": "c30064771075~2",
+      "to": "m107374182446~68",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182464~124",
+      "to": "c30064771078~121",
+      "type": "sequence",
+      "returnFrom": "c30064771076~4"
+    },
+    {
+      "from": "m107374182464~124",
+      "to": "c30064771080~122",
+      "type": "sequence",
+      "returnFrom": "c30064771076~4"
+    },
+    {
+      "from": "m107374182464~124",
+      "to": "c30064771081~123",
+      "type": "sequence",
+      "returnFrom": "c30064771076~4"
+    },
+    {
+      "from": "c30064771076~4",
+      "to": "m107374182464~124",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182467~125",
+      "to": "c30064771510~126",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182467~125",
+      "to": "c30064771513~127",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182467~125",
+      "to": "c30064771514~128",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771514~128",
+      "to": "m107374182469~129",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182468~130",
+      "to": "c30064771514~128",
+      "type": "sequence",
+      "returnFrom": "c30064771513~127"
+    },
+    {
+      "from": "c30064771513~127",
+      "to": "m107374182468~130",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182468~131",
+      "to": "c30064771514~128",
+      "type": "sequence",
+      "returnFrom": "c30064771510~126"
+    },
+    {
+      "from": "c30064771510~126",
+      "to": "m107374182468~131",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771081~123",
+      "to": "m107374182467~125",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771080~122",
+      "to": "m107374182480~132",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771080~122",
+      "to": "c30064771079~133",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182466~134",
+      "to": "c30064771081~123",
+      "type": "sequence",
+      "returnFrom": "c30064771079~133"
+    },
+    {
+      "from": "c30064771079~133",
+      "to": "m107374182466~134",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771078~121",
+      "to": "m107374182529~135",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771078~121",
+      "to": "c30064771077~136",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182465~137",
+      "to": "c30064771081~123",
+      "type": "sequence",
+      "returnFrom": "c30064771077~136"
+    },
+    {
+      "from": "c30064771077~136",
+      "to": "m107374182465~137",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771078~121",
+      "to": "c30064771077~136",
+      "type": "data"
+    },
+    {
+      "from": "c30064771080~122",
+      "to": "c30064771079~133",
+      "type": "data"
     }
   ],
   "entryPoint": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
   "rootId": "m107374182400~0",
   "branchGroups": [
     {
-      "id": "cs47244640264~7",
+      "id": "cs47244640265~8",
       "kind": "IF",
       "method": "com.example.cpgtest.model.Account.withdraw:void(double)",
       "line": 37,
       "branchPointIds": [
-        "m107374182411~7"
+        "m107374182411~8"
       ],
+      "convergesAt": "c30064771274~7",
       "returnsTo": [
-        "c30064771280~6"
+        "c30064771274~7"
       ],
       "arms": [
         {
@@ -328,20 +3724,26 @@
           "empty": false,
           "terminus": "throw",
           "conditionCode": "amount <= 0",
-          "firstCallId": "c30064771147~8"
+          "firstCallId": "c30064771152~9"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
         }
       ]
     },
     {
-      "id": "cs47244640265~7",
+      "id": "cs47244640266~8",
       "kind": "IF",
       "method": "com.example.cpgtest.model.Account.withdraw:void(double)",
       "line": 40,
       "branchPointIds": [
-        "m107374182411~7"
+        "m107374182411~8"
       ],
+      "convergesAt": "c30064771274~7",
       "returnsTo": [
-        "c30064771280~6"
+        "c30064771274~7"
       ],
       "arms": [
         {
@@ -349,20 +3751,27 @@
           "empty": false,
           "terminus": "throw",
           "conditionCode": "amount > balance",
-          "firstCallId": "c30064771153~9"
+          "firstCallId": "c30064771158~10"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
         }
       ]
     },
     {
-      "id": "cs47244640263~14",
+      "id": "cs47244640264~20",
       "kind": "IF",
       "method": "com.example.cpgtest.model.Account.deposit:void(double)",
       "line": 30,
       "branchPointIds": [
-        "m107374182410~14"
+        "m107374182410~20"
       ],
+      "convergesAt": "c30064771280~19",
       "returnsTo": [
-        "c30064771076~2"
+        "c30064771277~18",
+        "c30064771280~19"
       ],
       "arms": [
         {
@@ -370,20 +3779,259 @@
           "empty": false,
           "terminus": "throw",
           "conditionCode": "amount <= 0",
-          "firstCallId": "c30064771140~15"
+          "firstCallId": "c30064771145~21"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
         }
       ]
     },
     {
-      "id": "cs47244640268~3",
+      "id": "cs47244640289~23",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "line": 24,
+      "branchPointIds": [
+        "m107374182458~23"
+      ],
+      "convergesAt": "c30064771076~4",
+      "returnsTo": [
+        "c30064771076~4"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "return",
+          "conditionCode": "amount <= 0",
+          "firstCallId": "c30064771455~24"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640269~5",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "line": 50,
+      "branchPointIds": [
+        "c30064771274~7"
+      ],
+      "convergesAt": "c30064771276~16",
+      "returnsTo": [
+        "c30064771076~4"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "continues",
+          "conditionCode": "to.getBalance() < 0",
+          "firstCallId": "c30064771275~15"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640268~5",
+      "kind": "TRY",
+      "method": "com.example.cpgtest.service.AuditedAccountService.transfer:void(int,int,double)",
+      "line": 48,
+      "branchPointIds": [
+        "c30064771276~16"
+      ],
+      "convergesAt": "c30064771280~19",
+      "returnsTo": [
+        "c30064771076~4"
+      ],
+      "arms": [
+        {
+          "label": "try",
+          "empty": false,
+          "terminus": "continues",
+          "firstCallId": "c30064771272~6"
+        },
+        {
+          "label": "catch1",
+          "empty": false,
+          "terminus": "throw",
+          "firstCallId": "c30064771277~18"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640265~74",
+      "kind": "IF",
+      "method": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "line": 37,
+      "branchPointIds": [
+        "m107374182411~74"
+      ],
+      "convergesAt": "c30064771362~73",
+      "returnsTo": [
+        "c30064771362~73"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "throw",
+          "conditionCode": "amount <= 0",
+          "firstCallId": "c30064771152~75"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640266~74",
+      "kind": "IF",
+      "method": "com.example.cpgtest.model.Account.withdraw:void(double)",
+      "line": 40,
+      "branchPointIds": [
+        "m107374182411~74"
+      ],
+      "convergesAt": "c30064771362~73",
+      "returnsTo": [
+        "c30064771362~73"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "throw",
+          "conditionCode": "amount > balance",
+          "firstCallId": "c30064771158~76"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640264~82",
+      "kind": "IF",
+      "method": "com.example.cpgtest.model.Account.deposit:void(double)",
+      "line": 30,
+      "branchPointIds": [
+        "m107374182410~82"
+      ],
+      "convergesAt": "c30064771363~81",
+      "returnsTo": [
+        "c30064771363~81"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "throw",
+          "conditionCode": "amount <= 0",
+          "firstCallId": "c30064771145~83"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640289~85",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.TransferLedger.record:void(com.example.cpgtest.model.Account,com.example.cpgtest.model.Account,double)",
+      "line": 24,
+      "branchPointIds": [
+        "m107374182458~85"
+      ],
+      "convergesAt": "c30064771076~4",
+      "returnsTo": [
+        "c30064771076~4"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "return",
+          "conditionCode": "amount <= 0",
+          "firstCallId": "c30064771455~86"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640288~116",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.FeePolicy.cap:double(double,double)",
+      "line": 35,
+      "returnsTo": [
+        "c30064771360~72"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": true,
+          "terminus": "return",
+          "conditionCode": "fee > ceiling"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640288~119",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.FeePolicy.cap:double(double,double)",
+      "line": 35,
+      "returnsTo": [
+        "c30064771360~72"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": true,
+          "terminus": "return",
+          "conditionCode": "fee > ceiling"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640275~68",
       "kind": "IF",
       "method": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
-      "line": 33,
+      "line": 38,
       "branchPointIds": [
-        "m107374182440~3"
+        "m107374182446~68"
       ],
+      "convergesAt": "c30064771360~72",
       "returnsTo": [
-        "c30064771076~2"
+        "c30064771076~4"
       ],
       "arms": [
         {
@@ -391,7 +4039,104 @@
           "empty": false,
           "terminus": "throw",
           "conditionCode": "from == null || to == null",
-          "firstCallId": "c30064771278~4"
+          "firstCallId": "c30064771348~69"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640276~68",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.BankAccountService.transfer:void(int,int,double)",
+      "line": 48,
+      "branchPointIds": [
+        "m107374182446~68"
+      ],
+      "convergesAt": "c30064771360~72",
+      "returnsTo": [
+        "c30064771076~4"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "continues",
+          "conditionCode": "amount > PREMIUM_THRESHOLD",
+          "firstCallId": "c30064771352~70"
+        },
+        {
+          "label": "elseif1",
+          "empty": false,
+          "terminus": "continues",
+          "conditionCode": "amount > STANDARD_THRESHOLD",
+          "firstCallId": "c30064771357~71"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "dispatch:c30064771075~2",
+      "kind": "DISPATCH",
+      "method": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
+      "line": 64,
+      "branchPointIds": [
+        "c30064771075~2"
+      ],
+      "convergesAt": "c30064771076~4",
+      "returnsTo": [
+        "c30064771076~4"
+      ],
+      "arms": [
+        {
+          "label": "impl1",
+          "empty": false,
+          "terminus": "continues",
+          "firstCallId": "m107374182440~5"
+        },
+        {
+          "label": "impl2",
+          "empty": false,
+          "terminus": "continues",
+          "firstCallId": "m107374182446~68"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640291~125",
+      "kind": "IF",
+      "method": "com.example.cpgtest.service.TransferReport.publish:void()",
+      "line": 43,
+      "branchPointIds": [
+        "m107374182467~125"
+      ],
+      "convergesAt": "c30064771514~128",
+      "arms": [
+        {
+          "label": "if",
+          "empty": false,
+          "terminus": "continues",
+          "conditionCode": "failures > 1",
+          "firstCallId": "c30064771510~126"
+        },
+        {
+          "label": "elseif1",
+          "empty": false,
+          "terminus": "continues",
+          "conditionCode": "failures == 1",
+          "firstCallId": "c30064771513~127"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
         }
       ]
     },
@@ -399,22 +4144,29 @@
       "id": "cs47244640256~0",
       "kind": "TRY",
       "method": "com.example.cpgtest.Main.runTransfer:void(com.example.cpgtest.service.AccountService,int,int)",
-      "line": 54,
+      "line": 63,
       "branchPointIds": [
-        "c30064771072~1"
+        "c30064771076~4"
       ],
+      "convergesAt": "c30064771081~123",
       "arms": [
         {
           "label": "try",
           "empty": false,
           "terminus": "continues",
-          "firstCallId": "c30064771072~1"
+          "firstCallId": "c30064771075~2"
         },
         {
           "label": "catch1",
           "empty": false,
           "terminus": "continues",
-          "firstCallId": "c30064771076~2"
+          "firstCallId": "c30064771078~121"
+        },
+        {
+          "label": "catch2",
+          "empty": false,
+          "terminus": "continues",
+          "firstCallId": "c30064771080~122"
         }
       ]
     }
