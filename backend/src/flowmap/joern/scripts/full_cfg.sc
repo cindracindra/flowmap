@@ -78,6 +78,15 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     arms.arr.addOne(armObj)
   }
 
+  // Add explicit empty arm for `if` with no `else`.
+  def addImplicitElse(arms: ujson.Arr): Unit = {
+    arms.arr.addOne(ujson.Obj(
+      "label" -> "else",
+      "empty" -> ujson.Bool(true),
+      "terminus" -> ujson.Str("continues")
+    ))
+  }
+
   // Emits ONE group for a whole if / else-if / else chain.
   def emitIfChain(head: ControlStructure, methodFullName: String, armTags: ArmTags): Unit = {
     val groupId = s"cs${head.id}"
@@ -97,8 +106,11 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           current = next
           idx += 1
         case None =>
-          if (armRoots.size > 1) {
+          val chainEndsWithElse = armRoots.size > 1
+          if (chainEndsWithElse) {
             addArm(groupId, "else", None, armRoots.last, arms, armTags)
+          } else {
+            addImplicitElse(arms)
           }
           walking = false
       }
@@ -166,6 +178,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val controlStructures = method.controlStructure.l
     val ifs = controlStructures.filter(_.controlStructureType == "IF")
     val chainedIfIds = ifs.flatMap(cs => elseChainNext(cs).map(_.id)).toSet
+
     // Each group records its owning method: a group is method-level
     // metadata with no node of its own, so nothing else identifies where
     // it lives once the graph is sliced (a group whose every arm is empty

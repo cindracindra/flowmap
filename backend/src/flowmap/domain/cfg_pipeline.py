@@ -213,21 +213,7 @@ def _reachable_non_members(
 ) -> set[str]:
     """
     Every node forward-reachable from `start` that belongs to NO arm of
-    this group -- everywhere this one path out of the branch can get to
-    once it leaves the branch.
-
-    `flow_out` must include invoke edges into inlined callees, not just
-    sequence edges: flattening REPLACES a call site's own sequence edge to
-    its successor with a return edge from the callee's tail, so on a
-    flattened graph an arm that calls anything only reaches what follows
-    it by going through the callee.
-
-    Traversal stops at any node in a SIBLING arm rather than passing
-    through it. Without that, one arm inherits its sibling's exits and
-    every group looks like it converges: Joern's cfgNext doesn't model
-    exception control flow (DESIGN.md #4.3), so a try arm's last call has
-    a plain sequence edge straight into the catch arm (confirmed live:
-    `bank.transfer(...)` -> `e.getMessage()`).
+    this group.
     """
     reached: set[str] = set()
     non_members: set[str] = set()
@@ -534,6 +520,19 @@ def _resolve_convergence(
         e for e in edges
         if e.type == "sequence" or (e.type == "invoke" and e.target in entry_ids)
     ])
+
+    # Where each call site's own flow RESUMES. A call whose callee was
+    # inlined owns no sequence edge -- flattening replaced it with the
+    # callee's return edge, which is tagged returnFrom with that call site.
+    # So a fork that is itself a call has NO sequence successors at all
+    # (confirmed live: `to.getBalance()` has zero), and enumerating its
+    # continuations from sequence_out alone silently misses every one of
+    # them, which is exactly the implicit-else path a branch needs to
+    # converge against.
+    continuation_out: dict[str, list[str]] = {}
+    for edge in edges:
+        if edge.type == "sequence" and edge.returnFrom is not None:
+            continuation_out.setdefault(edge.returnFrom, []).append(edge.target)
     order = _walk_order(flow_out, [root_id], nodes)
     rank = lambda node_id: order.get(node_id, len(order))  # noqa: E731
     nodes_by_id = {n.id: n for n in nodes}
@@ -577,7 +576,9 @@ def _resolve_convergence(
         # converges reported None.
         implicit_continuations = 0
         for branch_point in group.branchPointIds:
-            for successor in sequence_out.get(branch_point, ()):
+            successors = list(sequence_out.get(branch_point, ()))
+            successors += continuation_out.get(branch_point, ())
+            for successor in successors:
                 if successor in group_members or nodes_by_id[successor].deadEnd:
                     continue
                 paths.append(
@@ -604,10 +605,26 @@ def _resolve_convergence(
             if group.returnsTo and implicit_continuations == 0:
                 paths.append(set(group.returnsTo))
 
-        # A single path has nothing to converge WITH -- that's a
-        # continuation, not a merge.
+        # Evaluated for ONE surviving path too, not just two or more.
+        #
+        # This reverses an earlier decision recorded above ("fewer than two
+        # paths means a continuation, not a merge"). The rule below is
+        # unchanged -- `count == len(paths)` is already "reached by every
+        # live path" and `min(..., key=rank)` is already "earliest". The old
+        # guard did not implement a different rule, it declined to evaluate
+        # this one whenever a branch had a single live path, which is the
+        # commonest shape there is: a guard clause, where the arm throws and
+        # only the implicit false path survives.
+        #
+        # `convergesAt` therefore now means "where this branch stops
+        # mattering" rather than "where two or more paths merge". For a
+        # guard that is the first node the surviving path reaches, which is
+        # exactly the bound a branch panel needs. Measured on the sample
+        # project: 5 of 16 groups resolved before, 13 after (with the
+        # continuation_out fix above), and no previously-resolved group
+        # changed its answer.
         converges_at = None
-        if len(paths) > 1:
+        if paths:
             reached_by = Counter(node_id for path in paths for node_id in path)
             # After every fork: a loop's back edge makes nodes BEFORE the
             # branch reachable from each arm, and those are the loop
@@ -731,6 +748,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
         return_from: str | None,
         visited_methods: frozenset[str],
         depth: int,
+        inherited_tags: tuple[BranchArmRef, ...] = (),
     ) -> tuple[str, bool]:
         """
         Clones and wires ONE method's own reachable body (recursing into
@@ -769,8 +787,56 @@ def flatten_cfg(cfg: Graph) -> Graph:
 
         entry_new_id = get_or_clone(entry_original_id)
         method_name = nodes_by_id[entry_original_id].calleeFullName
+
+        # This instance's own group-id suffix, needed BEFORE the walk rather
+        # than after it. A callee inlined from inside one of this method's
+        # arms has to inherit that arm's INSTANCE-scoped id (`cs20~7`, not
+        # `cs20`), and that recursion happens during the walk -- so the
+        # rewrite can no longer wait until the end the way it used to.
+        suffix = entry_new_id.rsplit("~", 1)[-1]
+        scoped_ids = {g.id for g in groups_by_method.get(method_name, ())}
+
+        def tags_for(original_id: str) -> list[BranchArmRef]:
+            """
+            Every arm this node belongs to: the ones inherited from the call
+            site that inlined this whole method instance, plus the node's
+            own, scoped to this instance.
+
+            Inheritance is what makes arm membership mean "runs only when
+            this arm is taken" rather than "is written inside this arm".
+            Extraction tags calls LEXICALLY (`armRoot.ast.isCall`), so
+            `if (x) foo();` tags one node while everything foo() does is
+            untagged -- measured at 1 tagged against 9 untagged on the
+            sample project's `reconcile(to)` arm.
+            """
+            seen: set[tuple[str, str]] = set()
+            unique: list[BranchArmRef] = []
+            own = (
+                BranchArmRef(f"{t.groupId}~{suffix}", t.armLabel)
+                if t.groupId in scoped_ids else t
+                for t in nodes_by_id[original_id].branchArms
+            )
+            for tag in (*inherited_tags, *own):
+                key = (tag.groupId, tag.armLabel)
+                if key not in seen:
+                    seen.add(key)
+                    unique.append(tag)
+            return unique
+
         if method_name in visited_methods:
+            # Recursion cutoff: no body is inlined, but the stub itself
+            # still only runs because of whatever arm called it.
+            if inherited_tags:
+                flat_nodes[entry_new_id] = dataclasses.replace(
+                    flat_nodes[entry_new_id], branchArms=tags_for(entry_original_id)
+                )
             return entry_new_id, False
+
+        # Leaves are keyed by CLONE id, not original: a leaf takes the arms
+        # of the call site that invoked it, and two call sites in this same
+        # method share one leaf clone (`local_clone` dedups by original id),
+        # so their arms are unioned rather than one overwriting the other.
+        leaf_tags: dict[str, list[BranchArmRef]] = {}
 
         continuation_consumed = False
         deeper_visited = visited_methods | {method_name}
@@ -797,7 +863,14 @@ def flatten_cfg(cfg: Graph) -> Graph:
                 # `local_clone` at a different depth than its neighbours:
                 # a leaf is only ever an "invoke" target, never reached by
                 # a "sequence" edge, so no id is requested at two depths.
-                emit_edge(this_new_id, get_or_clone(leaf_target, depth + 1), "invoke")
+                leaf_new_id = get_or_clone(leaf_target, depth + 1)
+                emit_edge(this_new_id, leaf_new_id, "invoke")
+                bucket = leaf_tags.setdefault(leaf_new_id, [])
+                present = {(t.groupId, t.armLabel) for t in bucket}
+                for tag in tags_for(original_id):
+                    if (tag.groupId, tag.armLabel) not in present:
+                        present.add((tag.groupId, tag.armLabel))
+                        bucket.append(tag)
 
             if internal_targets:
                 is_new_continuation = False
@@ -845,11 +918,52 @@ def flatten_cfg(cfg: Graph) -> Graph:
                     # continuation/returnFrom through unchanged.
                     callee_continuations = continuations
                     callee_return_from = return_from
-                for target in internal_targets:
+                # Polymorphic dispatch: ONE call site, more than one real
+                # implementation behind it. Nothing upstream models this as
+                # a branch -- Joern's dynamic call linker resolves through
+                # the type hierarchy and full_cfg.sc emits one invoke edge
+                # per surviving implementation, and that edge multiplicity
+                # is the only signal there is. It becomes a first-class
+                # group here, so a consumer can treat "which implementation
+                # runs" the same way it treats "which arm of the if runs",
+                # instead of re-deriving it from edge counts.
+                #
+                # Recorded per CALL SITE CLONE, so the same interface call
+                # reached twice in a trace yields two independent groups --
+                # the same reason conditional groups are instance-scoped.
+                dispatch_id = (
+                    f"dispatch:{this_new_id}" if len(internal_targets) > 1 else None
+                )
+                dispatch_arms: list[BranchArm] = []
+
+                for index, target in enumerate(internal_targets, start=1):
+                    callee_tags = tags_for(original_id)
+                    arm_label = f"impl{index}"
+                    if dispatch_id is not None:
+                        # The implementation's whole subtree is tagged as
+                        # this arm's members, exactly like a conditional
+                        # arm's, so arm membership stays one mechanism.
+                        callee_tags = callee_tags + [
+                            BranchArmRef(dispatch_id, arm_label)
+                        ]
                     callee_entry_new, callee_consumed = inline(
                         target, callee_continuations, callee_return_from,
                         deeper_visited, depth + 1,
+                        inherited_tags=tuple(callee_tags),
                     )
+                    if dispatch_id is not None:
+                        # No conditionCode: what selects this arm is the
+                        # receiver's runtime type, not a source expression.
+                        # `firstCallId` is the callee's own entry clone, so
+                        # the implementation's identity is recoverable from
+                        # that node's calleeFullName without duplicating it
+                        # here.
+                        dispatch_arms.append(BranchArm(
+                            label=arm_label,
+                            firstCallId=callee_entry_new,
+                            empty=False,
+                            terminus="continues",
+                        ))
                     emit_edge(this_new_id, callee_entry_new, "invoke")
                     if is_new_continuation:
                         if callee_consumed:
@@ -875,6 +989,22 @@ def flatten_cfg(cfg: Graph) -> Graph:
                             )
                     else:
                         continuation_consumed = continuation_consumed or callee_consumed
+
+                if dispatch_id is not None:
+                    # convergesAt is deliberately left for
+                    # _resolve_convergence, which treats this exactly like
+                    # any other group: the implementations' return edges
+                    # are what say where they rejoin, and those only exist
+                    # once the whole trace is wired.
+                    flat_groups.append(BranchGroup(
+                        id=dispatch_id,
+                        kind="DISPATCH",
+                        method=nodes_by_id[original_id].callerMethod,
+                        line=nodes_by_id[original_id].line,
+                        arms=dispatch_arms,
+                        branchPointIds=[this_new_id],
+                        returnsTo=list(callee_continuations),
+                    ))
             elif successors:
                 for s in successors:
                     emit_edge(this_new_id, get_or_clone(s), "sequence")
@@ -909,27 +1039,24 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # suffix is the entry clone's -- unique per inline() call, so it
         # identifies the instance the way no single node id can (every
         # node gets its own counter value).
-        instance_groups = groups_by_method.get(method_name, ())
-        if instance_groups:
-            suffix = entry_new_id.rsplit("~", 1)[-1]
-            scoped_ids = {g.id for g in instance_groups}
-            for group in instance_groups:
-                flat_groups.append(
-                    _scope_group_to_instance(group, suffix, local_clone, continuations)
+        for group in groups_by_method.get(method_name, ()):
+            flat_groups.append(
+                _scope_group_to_instance(group, suffix, local_clone, continuations)
+            )
+
+        # Final arm membership for every clone this instance made. Runs
+        # unconditionally, not only when this method owns groups: a method
+        # with no branches of its own still inherits the arms of the call
+        # site that inlined it, which is the whole point of the propagation.
+        #
+        # A fresh list per node -- `clone` copies the field by reference, so
+        # rewriting one in place would corrupt every sibling instance.
+        for original_id, new_id in local_clone.items():
+            tags = leaf_tags[new_id] if new_id in leaf_tags else tags_for(original_id)
+            if tags:
+                flat_nodes[new_id] = dataclasses.replace(
+                    flat_nodes[new_id], branchArms=tags
                 )
-            # Each clone's own tags must move with them, or the group ids
-            # on the nodes stop matching the groups. A fresh list per
-            # node: `clone` copies the field by reference, so rewriting in
-            # place would corrupt every other instance.
-            for new_id in local_clone.values():
-                node = flat_nodes[new_id]
-                if not node.branchArms:
-                    continue
-                flat_nodes[new_id] = dataclasses.replace(node, branchArms=[
-                    BranchArmRef(f"{t.groupId}~{suffix}", t.armLabel)
-                    if t.groupId in scoped_ids else t
-                    for t in node.branchArms
-                ])
 
         return entry_new_id, continuation_consumed
 
