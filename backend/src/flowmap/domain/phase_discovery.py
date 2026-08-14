@@ -257,18 +257,11 @@ def _resolve_phases(
         (see visit()'s own use of this return value, and visit_children's
         anchor lookup).
 
-        R6 refinement: when the callee resolves to EXACTLY one phase,
-        call_site_id is unambiguous -- there's only one candidate for it
-        to belong to -- so it's prepended into that phase as a real
-        member, not just used as a comparison subject. This is the one
-        case excluding it entirely would only lose a label for free; the
-        ambiguity R6 exists to avoid is specific to the >1-phase case
-        below, where a shared name really would leave it unclear which
-        resulting phase it belongs to.
+        Whether call_site_id is a phase member is decided collectively by
+        visit(), after every invoke target has been resolved. Doing it here
+        target-by-target would put one polymorphic call site into several
+        phases (and make the result depend on invoke-edge order).
         """
-        if len(callee_phases) == 1:
-            callee_phases[0].nodes.insert(0, call_site_id)
-
         result_phase_id = None
         if callee_phases:
             first, *rest = callee_phases
@@ -296,9 +289,6 @@ def _resolve_phases(
             for phase in rest:
                 phases.append(phase)
                 phase_of.update({n: len(phases) - 1 for n in phase.nodes})
-
-        for real_tail, target_id in return_edges_by_call_site.get(call_site_id, []):
-            visit(target_id, real_tail, call_site_id)
 
         return result_phase_id
 
@@ -393,17 +383,13 @@ def _resolve_phases(
             if invoke_graph.nodes[t]["type"] == "entry"
         ]
         if internal_targets:
-            # R6: node_id itself is never a member -- each resolved target
-            # (more than one only for genuine polymorphism, DESIGN.md §3
-            # bug fix #2) is spliced in on its own. node_id still gets a
-            # phase_of entry pointing at its FIRST target's own resulting
-            # phase (never a real member of it) -- a dead-end SIBLING
-            # reached via the same fork (R4) needs this to find the right
-            # phase to merge into via visit_children's anchor lookup, even
-            # though node_id was excluded from that phase's own node list.
-            spliced_id = None
-            for target_id in internal_targets:
-                callee_phases = _resolve_phases(
+            # Resolve every dispatch target before deciding R6 membership or
+            # following the caller's continuation. node_id still gets a
+            # phase_of entry pointing at its first target's resulting phase;
+            # a dead-end sibling reached via the same fork (R4) needs this
+            # anchor even when the polymorphic call itself is not a member.
+            resolved_targets = [
+                _resolve_phases(
                     target_id,
                     sequence_graph,
                     invoke_graph,
@@ -411,6 +397,17 @@ def _resolve_phases(
                     back_edges,
                     return_edges_by_call_site,
                 )
+                for target_id in internal_targets
+            ]
+
+            # R6 applies to the call's complete dispatch result, rather than
+            # independently to each possible implementation. Only one target
+            # resolving to one phase leaves a unique phase for the call site.
+            if len(resolved_targets) == 1 and len(resolved_targets[0]) == 1:
+                resolved_targets[0][0].nodes.insert(0, node_id)
+
+            spliced_id = None
+            for callee_phases in resolved_targets:
                 this_target_id = splice(
                     real_predecessor, subject, node_id, callee_phases
                 )
@@ -418,6 +415,13 @@ def _resolve_phases(
                     spliced_id = this_target_id
             if spliced_id is not None:
                 phase_of[node_id] = spliced_id
+
+            # All dispatch alternatives must be emitted before the caller's
+            # continuation. Following these edges inside splice() interleaved
+            # the continuation between polymorphic targets; visited then made
+            # that edge-order-dependent ordering permanent.
+            for real_tail, target_id in return_edges_by_call_site.get(node_id, []):
+                visit(target_id, real_tail, node_id)
             return
 
         if real_predecessor is None:

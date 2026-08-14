@@ -77,31 +77,6 @@ export function BranchRegions({
               strokeDasharray={style.dash}
               style={{ transition: "fill-opacity 0.15s, stroke-opacity 0.15s" }}
             />
-            {/* The convergence marker sits OUTSIDE the region, on the merge
-                node itself -- the visual statement of "the branch ends
-                here, and this node belongs to neither alternative". */}
-            {geometry.merge && (
-              <g opacity={isActive ? 0.9 : 0.35}>
-                <line
-                  x1={geometry.merge.x - 20}
-                  y1={geometry.merge.y - 18}
-                  x2={geometry.merge.x + 20}
-                  y2={geometry.merge.y - 18}
-                  stroke={style.stroke}
-                  strokeWidth={1}
-                  strokeDasharray="3 2"
-                />
-                <text
-                  x={geometry.merge.x + 24}
-                  y={geometry.merge.y - 15}
-                  fontSize="8"
-                  fontFamily={MONO}
-                  fill={style.stroke}
-                >
-                  converges
-                </text>
-              </g>
-            )}
           </g>
         );
       })}

@@ -302,7 +302,7 @@ def classify_operation(
         )
         return None
 
-    print(f"classify_operation[{operation_id}]: assigned label {group_id}")
+    # print(f"classify_operation[{operation_id}]: assigned label {group_id}")
     return group_id
 
 
