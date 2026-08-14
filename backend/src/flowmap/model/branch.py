@@ -44,6 +44,19 @@ class BranchArm:
     # `else` arm (no condition of its own) and on every TRY arm.
     conditionCode: str | None = None
 
+    # Flatten stage only: visible destinations after this arm exits.
+    # None means this stage has not resolved destinations yet. The final
+    # flattened graph always carries a list: [] for a throw or for flow
+    # leaving the visible trace, caller continuation(s) for return, and the
+    # group's normal continuation for continues.
+    targetIds: list[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.terminus == "throw" and self.targetIds:
+            raise ValueError(
+                f"Throwing arm {self.label!r} cannot have normal-flow targets"
+            )
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> BranchArm:
         return cls(
@@ -52,6 +65,7 @@ class BranchArm:
             empty=data.get("empty", False),
             terminus=data.get("terminus"),
             conditionCode=data.get("conditionCode"),
+            targetIds=(list(data["targetIds"]) if "targetIds" in data else None),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -62,6 +76,8 @@ class BranchArm:
             result["conditionCode"] = self.conditionCode
         if self.firstCallId is not None:
             result["firstCallId"] = self.firstCallId
+        if self.targetIds is not None:
+            result["targetIds"] = self.targetIds
         return result
 
 

@@ -15,15 +15,15 @@
 //   dispatch groups <- BranchGroup with kind "DISPATCH"
 //   convergence     <- BranchGroup.convergesAt, for every kind alike
 //
-// What is left here is genuinely view logic: grouping, labelling, ordering,
-// and selection state. Anything that needs to walk the graph belongs in
-// cfg_pipeline.py, not here.
+// What is left here is view logic: grouping, labelling, ordering, selection
+// state, and the cheap selection-dependent reachability walk. Structural
+// graph facts and route targets still belong in cfg_pipeline.py.
 //
 // Note the phase tree deliberately does NOT gate on polymorphism
 // (DESIGN.md §6), so a dispatch panel's bounds will not line up with phase
 // boxes.
 
-import type { ArmTerminus, BranchGroup, FlowGraph, FlowNode } from "../types/flowmap";
+import type { ArmTerminus, BranchGroup, FlowEdge, FlowGraph, FlowNode } from "../types/flowmap";
 import { indexNodesById, shortClassName, shortLabel } from "./graph";
 import { computeWalkOrder } from "./layout";
 
@@ -76,6 +76,7 @@ export interface PanelArm {
   // Every node this arm owns, straight from the node tags.
   memberIds: string[];
   exitTargetId?: string;
+  exitTargetIds: string[];
   exitKind: ArmExitKind;
 }
 
@@ -145,17 +146,28 @@ function armLabel(
 }
 
 function armExit(
-  terminus: ArmTerminus,
+  arm: { terminus?: ArmTerminus; targetIds?: string[] },
   group: BranchGroup,
-): { exitTargetId?: string; exitKind: ArmExitKind } {
-  if (terminus === "throw") return { exitKind: "throws" };
+): { exitTargetId?: string; exitTargetIds: string[]; exitKind: ArmExitKind } {
+  const terminus = arm.terminus ?? "continues";
+  if (terminus === "throw") return { exitTargetIds: [], exitKind: "throws" };
+  // Backward-compatible while previously generated artifacts remain on
+  // disk: targetIds is authoritative when present; older payloads derive
+  // the same value from the group-level fields.
+  const targets = arm.targetIds ?? (
+    terminus === "return"
+      ? (group.returnsTo ?? [])
+      : (group.convergesAt ? [group.convergesAt] : [])
+  );
+  const target = targets[0];
   if (terminus === "return") {
-    const target = group.returnsTo?.[0];
-    return target ? { exitTargetId: target, exitKind: "returns" } : { exitKind: "open" };
+    return target
+      ? { exitTargetId: target, exitTargetIds: targets, exitKind: "returns" }
+      : { exitTargetIds: [], exitKind: "open" };
   }
-  return group.convergesAt
-    ? { exitTargetId: group.convergesAt, exitKind: "converges" }
-    : { exitKind: "open" };
+  return target
+    ? { exitTargetId: target, exitTargetIds: targets, exitKind: "converges" }
+    : { exitTargetIds: [], exitKind: "open" };
 }
 
 function panelTitle(
@@ -233,7 +245,7 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
         empty: arm.empty || memberIds.length === 0,
         headId: arm.firstCallId,
         memberIds,
-        ...armExit(terminus, group),
+        ...armExit(arm, group),
       };
     });
 
@@ -268,15 +280,18 @@ export function defaultSelection(panels: BranchPanel[]): BranchSelection {
   return new Map(panels.map((p) => [p.id, p.defaultArmId]));
 }
 
-/**
- * Which nodes are on screen for a given selection.
+/** Which nodes are executable under the complete branch selection.
  *
- * A node is hidden iff SOME panel owns it in an `alternative` arm that is
- * not the selected one. Membership is a list, not a lookup: a call inside
- * an `if` inside a `try` belongs to two panels at once, and it is only
- * visible when both agree -- so this is an intersection across panels, not
- * a per-panel decision. `spine` and `always` arms never hide anything (a
- * try body has already run by the time its catch can be chosen).
+ * Membership first removes unselected alternative bodies. A forward walk
+ * from the graph root then gates the route edges at each unambiguous branch
+ * point: a non-empty arm enters at its head, while an empty arm enters at
+ * its resolved exit target. Common post-convergence flow is ordinary,
+ * ungated flow and is discovered naturally by the walk.
+ *
+ * Day 1 deliberately does not infer ordering for consecutive groups whose
+ * stripped conditions made them share one branch point. Those groups retain
+ * the old membership-only behaviour until logical gates are preserved by
+ * the backend; guessing here would hide valid flow.
  */
 export function visibleNodeIds(
   graph: FlowGraph,
@@ -292,9 +307,91 @@ export function visibleNodeIds(
     }
   }
 
+  if (!graph.rootId || hidden.has(graph.rootId)) return new Set();
+
+  const groupsAtPoint = new Map<string, BranchPanel[]>();
+  for (const panel of panels) {
+    for (const point of panel.branchPointIds) {
+      const groups = groupsAtPoint.get(point);
+      if (groups) groups.push(panel);
+      else groupsAtPoint.set(point, [panel]);
+    }
+  }
+
+  const ambiguousPanelIds = new Set<string>();
+  for (const groups of groupsAtPoint.values()) {
+    if (groups.length > 1) {
+      for (const panel of groups) ambiguousPanelIds.add(panel.id);
+    }
+  }
+
+  const routeTargets = (panel: BranchPanel, selectedArmId: string | null): Set<string> => {
+    // TRY's null selection means the body completed without entering a
+    // catch. Its route resumes at the group's normal continuation.
+    if (selectedArmId === null) {
+      return new Set(panel.convergesAt ? [panel.convergesAt] : []);
+    }
+    const arm = panel.arms.find((candidate) => candidate.id === selectedArmId);
+    if (!arm) return new Set();
+    if (!arm.empty && arm.headId) return new Set([arm.headId]);
+    return new Set(arm.exitTargetIds);
+  };
+
+  const routingPanels = panels.filter((panel) => !ambiguousPanelIds.has(panel.id));
+  const selectedTargets = new Map(
+    routingPanels.map((panel) => [
+      panel.id,
+      routeTargets(panel, selection.get(panel.id) ?? null),
+    ]),
+  );
+  const allTargets = new Map(
+    routingPanels.map((panel) => [
+      panel.id,
+      new Set(panel.arms.flatMap((arm) => [
+        ...(arm.headId ? [arm.headId] : []),
+        ...arm.exitTargetIds,
+      ]).concat(panel.convergesAt ? [panel.convergesAt] : [])),
+    ]),
+  );
+
+  const flowEdges = graph.edges.filter((edge) => edge.type !== "data");
+  const outgoing = new Map<string, FlowEdge[]>();
+  for (const edge of flowEdges) {
+    const edges = outgoing.get(edge.from);
+    if (edges) edges.push(edge);
+    else outgoing.set(edge.from, [edge]);
+  }
+
+  const edgeAllowed = (edge: FlowEdge): boolean => {
+    for (const panel of routingPanels) {
+      const atDirectPoint = panel.branchPointIds.includes(edge.from);
+      const atReturnedPoint = edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom);
+      if (!atDirectPoint && !atReturnedPoint) continue;
+
+      // An IF/TRY route is a sequence edge; an invoke at its branch-point
+      // call must still run before its return edge chooses the arm. DISPATCH
+      // is the inverse: its alternatives are the invoke targets themselves.
+      if (panel.structure === "DISPATCH" ? edge.type !== "invoke" : edge.type !== "sequence") {
+        continue;
+      }
+
+      const candidates = allTargets.get(panel.id)!;
+      if (!candidates.has(edge.to)) continue;
+      if (!selectedTargets.get(panel.id)!.has(edge.to)) return false;
+    }
+    return true;
+  };
+
   const visible = new Set<string>();
-  for (const node of graph.nodes) {
-    if (!hidden.has(node.id)) visible.add(node.id);
+  const pending = [graph.rootId];
+  while (pending.length > 0) {
+    const nodeId = pending.pop()!;
+    if (visible.has(nodeId) || hidden.has(nodeId)) continue;
+    visible.add(nodeId);
+    for (const edge of outgoing.get(nodeId) ?? []) {
+      if (hidden.has(edge.to) || !edgeAllowed(edge)) continue;
+      pending.push(edge.to);
+    }
   }
   return visible;
 }

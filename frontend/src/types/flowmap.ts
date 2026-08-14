@@ -94,6 +94,10 @@ export interface BranchArm {
   // group, because an else-if chain is one group with a different
   // condition per arm. Absent on `else` and on every TRY arm.
   conditionCode?: string;
+  // Flatten stage: visible destinations after this arm exits. Empty for a
+  // throw or when normal flow leaves the visible trace; caller continuation
+  // nodes for return; the normal continuation for continues.
+  targetIds?: string[];
 }
 
 export interface BranchGroup {

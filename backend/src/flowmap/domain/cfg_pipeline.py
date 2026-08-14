@@ -473,6 +473,7 @@ def _scope_group_to_instance(
             arm,
             firstCallId=local_clone.get(arm.firstCallId) if arm.firstCallId else None,
             empty=local_clone.get(arm.firstCallId) is None if arm.firstCallId else True,
+            targetIds=None,
         )
         for arm in group.arms
     ]
@@ -542,10 +543,24 @@ def _resolve_convergence(
         for tag in node.branchArms:
             members.setdefault((tag.groupId, tag.armLabel), set()).add(node.id)
 
+    def with_arm_targets(
+        group: BranchGroup, convergence: str | None,
+    ) -> BranchGroup:
+        arms: list[BranchArm] = []
+        for arm in group.arms:
+            if arm.terminus == "throw":
+                target_ids: list[str] = []
+            elif arm.terminus == "return":
+                target_ids = list(group.returnsTo)
+            else:
+                target_ids = [convergence] if convergence is not None else []
+            arms.append(dataclasses.replace(arm, targetIds=target_ids))
+        return dataclasses.replace(group, arms=arms, convergesAt=convergence)
+
     resolved: list[BranchGroup] = []
     for group in groups:
         if not group.branchPointIds:
-            resolved.append(group)
+            resolved.append(with_arm_targets(group, None))
             continue
 
         group_members = {
@@ -635,7 +650,7 @@ def _resolve_convergence(
                 if count == len(paths) and rank(node_id) > last_fork
             ]
             converges_at = min(shared, key=rank) if shared else None
-        resolved.append(dataclasses.replace(group, convergesAt=converges_at))
+        resolved.append(with_arm_targets(group, converges_at))
     return resolved
 
 
