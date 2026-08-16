@@ -823,6 +823,34 @@ function GraphCanvasView() {
       const gaps: RowGap[] = [];
       const emptyRoutes = new Map<string, { fromId: string; toId: string; count: number }>();
       const selectedPanelHeadIds = new Set<string>();
+      const outgoing = new Map<string, FlowEdge[]>();
+      for (const edge of visibleEdges) {
+        const edges = outgoing.get(edge.from);
+        if (edges) edges.push(edge);
+        else outgoing.set(edge.from, [edge]);
+      }
+
+      // Nodes executed inside a call site before its synthesized return edge.
+      // TRY attaches to the try tail (often an internal call), so its empty
+      // noCatch panel must wait until this complete subtree has finished.
+      const invokedSubtreeIds = (panel: BranchPanel, toId: string): string[] => {
+        const points = new Set(panel.branchPointIds);
+        const stack = visibleEdges
+          .filter((edge) => edge.type === "invoke" && points.has(edge.from))
+          .map((edge) => edge.to);
+        const found = new Set<string>();
+        while (stack.length > 0) {
+          const id = stack.pop()!;
+          if (id === toId || found.has(id)) continue;
+          found.add(id);
+          for (const edge of outgoing.get(id) ?? []) {
+            if (edge.to === toId) continue;
+            if (edge.returnFrom != null && points.has(edge.returnFrom)) continue;
+            stack.push(edge.to);
+          }
+        }
+        return [...found];
+      };
 
       for (const panel of activePanels) {
         const selected = armSelection.get(panel.id) ?? panel.defaultArmId;
@@ -838,13 +866,27 @@ function GraphCanvasView() {
         if (!arm) continue;
 
         if (arm.empty) {
-          const toId = panelRouteTargetIds(panel, activePanels, armSelection)
-            .find((id) => visibleIds.has(id));
+          const targetIds = panelRouteTargetIds(panel, activePanels, armSelection);
+          const routeEdge = visibleEdges.find((edge) =>
+            targetIds.includes(edge.to)
+            && edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence")
+            && (panel.branchPointIds.includes(edge.from)
+              || (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))),
+          );
+          const toId = routeEdge?.to ?? targetIds.find((id) => visibleIds.has(id));
           if (!fromId || !toId || !visibleIds.has(fromId)) continue;
-          const key = `${fromId}\u0000${toId}`;
+          const layoutFromId = routeEdge?.from ?? fromId;
+          if (panel.switcherPosition === "after") {
+            gaps.push(...invokedSubtreeIds(panel, toId).map((memberId) => ({
+              fromId: memberId,
+              toId,
+              rows: 1,
+            })));
+          }
+          const key = `${layoutFromId}\u0000${toId}`;
           const route = emptyRoutes.get(key);
           if (route) route.count++;
-          else emptyRoutes.set(key, { fromId, toId, count: 1 });
+          else emptyRoutes.set(key, { fromId: layoutFromId, toId, count: 1 });
           continue;
         }
 
@@ -876,7 +918,7 @@ function GraphCanvasView() {
       }
       return gaps;
     },
-    [activePanels, armSelection, visibleIds],
+    [activePanels, armSelection, visibleIds, visibleEdges],
   );
 
   const positions = useMemo(

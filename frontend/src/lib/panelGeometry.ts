@@ -61,6 +61,39 @@ function overlapsLabel(
   return false;
 }
 
+function invokedSubtreeBottom(
+  panel: BranchPanel,
+  positions: Map<string, NodePosition>,
+  visibleEdges: FlowEdge[],
+): number | undefined {
+  const points = new Set(panel.branchPointIds);
+  const outgoing = new Map<string, FlowEdge[]>();
+  for (const edge of visibleEdges) {
+    const edges = outgoing.get(edge.from);
+    if (edges) edges.push(edge);
+    else outgoing.set(edge.from, [edge]);
+  }
+  const stack = visibleEdges
+    .filter((edge) => edge.type === "invoke" && points.has(edge.from))
+    .map((edge) => edge.to);
+  const visited = new Set<string>();
+  let bottom: number | undefined;
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    const position = positions.get(id);
+    if (position) bottom = Math.max(bottom ?? position.y, position.y);
+    for (const edge of outgoing.get(id) ?? []) {
+      // A return/fallback attributed to the TRY tail has left the protected
+      // call. Nested returns remain part of that call's visible subtree.
+      if (edge.returnFrom != null && points.has(edge.returnFrom)) continue;
+      stack.push(edge.to);
+    }
+  }
+  return bottom;
+}
+
 export function computePanelGeometry(
   panels: BranchPanel[],
   selection: Map<string, string>,
@@ -74,7 +107,10 @@ export function computePanelGeometry(
   // condition nodes were stripped from the graph. Their empty arms are still
   // separate, selectable choices, so give each panel its own slot along that
   // edge instead of putting every one at the midpoint.
-  const emptyRoutes = new Map<string, { panelId: string; from: NodePosition; to: NodePosition }[]>();
+  const emptyRoutes = new Map<
+    string,
+    { panel: BranchPanel; from: NodePosition; to: NodePosition }[]
+  >();
   for (const panel of panels) {
     const selectedId = selection.get(panel.id) ?? panel.defaultArmId;
     const arm = panel.arms.find((candidate) => candidate.id === selectedId);
@@ -92,17 +128,28 @@ export function computePanelGeometry(
     if (!from || !to) continue;
     const key = `${routeEdge.from}\u0000${routeEdge.to}\u0000${routeEdge.type}`;
     const group = emptyRoutes.get(key);
-    const route = { panelId: panel.id, from, to };
+    const route = { panel, from, to };
     if (group) group.push(route);
     else emptyRoutes.set(key, [route]);
   }
   const emptyRoutePlacements = new Map<string, EmptyRoutePlacement>();
   for (const routes of emptyRoutes.values()) {
     routes.forEach((route, index) => {
-      emptyRoutePlacements.set(route.panelId, {
+      let position = (index + 1) / (routes.length + 1);
+      // A TRY selector describes what happened after its protected body.
+      // With a single empty noCatch route, keep it next to the continuation
+      // rather than centring it over the callee work that preceded it.
+      if (routes.length === 1 && route.panel.switcherPosition === "after") {
+        const desiredCenter = route.to.y - EMPTY_PANEL_HEIGHT / 2 - 8;
+        const deltaY = route.to.y - route.from.y;
+        position = deltaY > 0
+          ? Math.max(0, Math.min(1, (desiredCenter - route.from.y) / deltaY))
+          : 0.75;
+      }
+      emptyRoutePlacements.set(route.panel.id, {
         from: route.from,
         to: route.to,
-        position: (index + 1) / (routes.length + 1),
+        position,
       });
     });
   }
@@ -146,6 +193,9 @@ export function computePanelGeometry(
     const routeFrom = emptyPlacement?.from ?? (routeEdge ? positions.get(routeEdge.from) : undefined);
     const routeTo = emptyPlacement?.to ?? (routeEdge ? positions.get(routeEdge.to) : undefined);
     const routePosition = emptyPlacement?.position ?? 0.5;
+    const subtreeBottom = panel.switcherPosition === "after"
+      ? invokedSubtreeBottom(panel, positions, visibleEdges)
+      : undefined;
     const box = memberBox
       // Nothing to wrap: an empty arm, or one whose nodes are all hidden by
       // an enclosing panel. Put an empty arm directly on its selected route
@@ -163,7 +213,12 @@ export function computePanelGeometry(
         : fork
         ? {
             x: fork.x - REGION_PAD,
-            y: fork.y + EMPTY_PANEL_TOP_GAP,
+            y: subtreeBottom === undefined
+              ? fork.y + EMPTY_PANEL_TOP_GAP
+              : Math.max(
+                  fork.y + EMPTY_PANEL_TOP_GAP,
+                  subtreeBottom + REGION_PAD + 8,
+                ),
             width: 260,
             height: EMPTY_PANEL_HEIGHT,
           }
