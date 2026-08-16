@@ -12,6 +12,7 @@ import {
   Tabs,
   Tooltip,
   Card,
+  Slider,
 } from "@radix-ui/themes";
 import {
   ChevronRight,
@@ -37,9 +38,12 @@ import { computeLayout, type NodePosition, type RowGap } from "../lib/layout";
 import {
   defaultSelection,
   buildBranchPanels,
-  visibleNodeIds,
+  flowEdgeKey,
+  visibleGraphSelection,
   type BranchPanel,
   type BranchSelection,
+  activeBranchPanels,
+  panelRouteTargetIds,
 } from "../lib/branches";
 import { computePanelGeometry } from "../lib/panelGeometry";
 import { BranchRegions, BranchSwitchers } from "../components/BranchOverlay";
@@ -512,17 +516,19 @@ const EXIT_HINT: Record<string, string> = {
 };
 
 function BranchSwitcher({
+  panels,
   selection,
   onSelect,
   onFocus,
   onHighlight,
 }: {
+  panels: BranchPanel[];
   selection: BranchSelection;
-  onSelect: (panelId: string, armId: string | null) => void;
+  onSelect: (panelId: string, armId: string) => void;
   onFocus: (nodeId: string) => void;
   onHighlight: (panelId: string | null) => void;
 }) {
-  const { panels, nodesById } = useGraphViewData();
+  const { nodesById } = useGraphViewData();
   if (panels.length === 0) {
     return (
       <Text size="1" color="gray" align="center" mt="4" as="p">
@@ -535,7 +541,7 @@ function BranchSwitcher({
     <Flex direction="column" py="1">
       {panels.map((panel) => {
         const badge = PANEL_BADGE[panel.kind];
-        const selected = selection.get(panel.id) ?? null;
+        const selected = selection.get(panel.id) ?? panel.defaultArmId;
         const convergeNode = panel.convergesAt ? nodesById.get(panel.convergesAt) : undefined;
 
         return (
@@ -569,17 +575,6 @@ function BranchSwitcher({
             )}
 
             <Flex direction="column" gap="1" mt="2">
-              {/* A TRY's try arm has already run by the time it can throw, so
-                  the switcher offers "no exception" rather than treating the
-                  try body as one option among equals. */}
-              {panel.structure === "TRY" && (
-                <ArmButton
-                  active={selected === null}
-                  label="no exception"
-                  hint="try body completes"
-                  onClick={() => onSelect(panel.id, null)}
-                />
-              )}
               {panel.arms
                 .filter((arm) => arm.role === "alternative")
                 .map((arm) => (
@@ -679,7 +674,7 @@ function Minimap({
   return (
     <Card
       size="1"
-      style={{ position: "absolute", bottom: "16px", right: "16px", padding: 0, overflow: "hidden" }}
+      style={{ position: "absolute", bottom: "64px", right: "16px", padding: 0, overflow: "hidden" }}
     >
       <svg width={W} height={H}>
         {phases.map((phase, i) => {
@@ -763,38 +758,71 @@ function GraphCanvasView() {
   // Everything downstream of the arm selection: which nodes exist, where
   // they sit, and how big the canvas is. Rows are ranked over the VISIBLE
   // subgraph, so a collapsed arm leaves no gap behind.
-  const visibleIds = useMemo(() => visibleNodeIds(GRAPH, PANELS, armSelection), [armSelection]);
+  const visibleSelection = useMemo(
+    () => visibleGraphSelection(GRAPH, PANELS, armSelection),
+    [GRAPH, PANELS, armSelection],
+  );
+  const visibleIds = visibleSelection.nodeIds;
+  const visibleEdges = useMemo(
+    () => FLOW_EDGES.filter((edge) => visibleSelection.edgeIds.has(flowEdgeKey(edge))),
+    [FLOW_EDGES, visibleSelection],
+  );
+  const activePanels = useMemo(() => {
+    const nestedActive = activeBranchPanels(PANELS, armSelection);
+    return nestedActive.filter((panel) => {
+      const selectedId = armSelection.get(panel.id) ?? panel.defaultArmId;
+      const arm = panel.arms.find((candidate) => candidate.id === selectedId);
+      if (!arm) return false;
+
+      // A selected non-empty arm proves the panel is reachable only when at
+      // least one of its members survived the reachability walk. For an
+      // empty arm, its visible exit plays the same role. This also hides a
+      // later guard that shares an anchor with an earlier selected throw.
+      if (!arm.empty) return arm.memberIds.some((id) => visibleIds.has(id));
+      const targets = arm.exitTargetIds.length > 0
+        ? arm.exitTargetIds
+        : (panel.convergesAt ? [panel.convergesAt] : []);
+      if (targets.some((id) => visibleIds.has(id))) return true;
+      return panel.branchPointIds.some((id) => visibleIds.has(id));
+    });
+  }, [PANELS, armSelection, visibleIds]);
 
   // Each visible panel's selected arm becomes a row band, so two branches
   // that are not nested in each other never share a row -- otherwise their
   // rectangles overlap however tightly they are drawn (see separateBands).
   const rowBands = useMemo(
     () =>
-      PANELS.flatMap((panel) => {
-        const selected = armSelection.get(panel.id) ?? null;
-        const arm =
-          panel.arms.find((a) => a.id === selected) ??
-          panel.arms.find((a) => a.role === "spine");
+      activePanels.flatMap((panel) => {
+        const selected = armSelection.get(panel.id) ?? panel.defaultArmId;
+        const arm = panel.arms.find((a) => a.id === selected);
         const memberIds = (arm?.memberIds ?? []).filter((id) => visibleIds.has(id));
         return memberIds.length > 0 ? [{ id: panel.id, memberIds }] : [];
       }),
-    [armSelection, visibleIds],
+    [activePanels, armSelection, visibleIds],
   );
 
   // An empty arm has no member node for row-banding to reserve. Without an
   // explicit gap, its visual box is painted over the immediate continuation.
   const branchBoundaryGaps = useMemo<RowGap[]>(
-    () => PANELS.flatMap((panel) => {
-      const selected = armSelection.get(panel.id) ?? null;
-      const arm = panel.arms.find((candidate) => candidate.id === selected)
-        ?? panel.arms.find((candidate) => candidate.role === "spine");
+    () => activePanels.flatMap((panel) => {
+      const selected = armSelection.get(panel.id) ?? panel.defaultArmId;
+      const arm = panel.arms.find((candidate) => candidate.id === selected);
       const fromId = panel.branchPointIds[0];
-      const toId = arm?.exitTargetId ?? panel.convergesAt;
-      if (!arm || !toId || !visibleIds.has(toId)) return [];
+      if (!arm) return [];
 
       if (arm.empty) {
-        return fromId && visibleIds.has(fromId) ? [{ fromId, toId, rows: 2 }] : [];
+        const toId = panelRouteTargetIds(panel, activePanels, armSelection)
+          .find((id) => visibleIds.has(id));
+        if (!toId) return [];
+        return fromId && visibleIds.has(fromId) ? [{ fromId, toId, rows: 1 }] : [];
       }
+
+      // Route targets are entry nodes for non-empty arms. They must not be
+      // reused as the arm's continuation: doing so creates backwards row-gap
+      // constraints (especially for throw arms) and stretches every pass.
+      if (arm.terminus === "throw") return [];
+      const toId = arm.exitTargetId ?? panel.convergesAt;
+      if (!toId || !visibleIds.has(toId)) return [];
 
       // A rectangle around an arm must end before its continuation starts.
       // The flattened graph only guarantees every continuation is below its
@@ -805,25 +833,41 @@ function GraphCanvasView() {
         .filter((memberId) => visibleIds.has(memberId) && memberId !== toId)
         .map((memberId) => ({ fromId: memberId, toId, rows: 1 }));
     }),
-    [armSelection, visibleIds],
+    [activePanels, armSelection, visibleIds],
   );
 
   const positions = useMemo(
-    () => computeLayout(GRAPH, ROOT_ID, visibleIds, rowBands, branchBoundaryGaps),
-    [visibleIds, rowBands, branchBoundaryGaps],
+    () => computeLayout(
+      { ...GRAPH, edges: visibleEdges },
+      ROOT_ID,
+      visibleIds,
+      rowBands,
+      branchBoundaryGaps,
+    ),
+    [GRAPH, ROOT_ID, visibleIds, visibleEdges, rowBands, branchBoundaryGaps],
+  );
+  const panelLabelWidths = useMemo(
+    () => new Map(
+      GRAPH.nodes.map((node) => [
+        node.id,
+        NODE_RADIUS[node.type] + 9 + canvasLabel(node).length * 6.6,
+      ]),
+    ),
+    [GRAPH],
   );
   const bounds = useMemo(() => canvasBounds(positions), [positions]);
-  const visibleEdges = useMemo(
-    () => FLOW_EDGES.filter((e) => visibleIds.has(e.from) && visibleIds.has(e.to)),
-    [visibleIds],
-  );
-
   const panelGeometry = useMemo(
-    () => computePanelGeometry(PANELS, armSelection, positions),
-    [armSelection, positions],
+    () => computePanelGeometry(
+      activePanels,
+      armSelection,
+      positions,
+      panelLabelWidths,
+      visibleEdges,
+    ),
+    [activePanels, armSelection, positions, panelLabelWidths, visibleEdges],
   );
 
-  const handleArmSelect = useCallback((panelId: string, armId: string | null) => {
+  const handleArmSelect = useCallback((panelId: string, armId: string) => {
     setArmSelection((prev) => {
       const next = new Map(prev);
       next.set(panelId, armId);
@@ -834,12 +878,12 @@ function GraphCanvasView() {
   const connectedIds = useMemo(() => {
     if (!selectedId) return null;
     const ids = new Set<string>([selectedId]);
-    for (const e of FLOW_EDGES) {
+    for (const e of visibleEdges) {
       if (e.from === selectedId) ids.add(e.to);
       if (e.to === selectedId) ids.add(e.from);
     }
     return ids;
-  }, [selectedId]);
+  }, [selectedId, visibleEdges]);
 
   const handleNodeClick = useCallback((id: string) => {
     setSelectedId((prev) => {
@@ -875,8 +919,33 @@ function GraphCanvasView() {
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
-    setZoom((z) => Math.min(3, Math.max(0.2, z - e.deltaY * 0.001)));
-  }, []);
+
+    // Trackpad pinch is exposed as ctrl+wheel by browsers. Zoom around the
+    // pointer so the item under the fingers stays in place.
+    if (e.ctrlKey || e.metaKey) {
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const pointerX = e.clientX - rect.left;
+      const pointerY = e.clientY - rect.top;
+      const nextZoom = Math.min(3, Math.max(0.2, zoom * Math.exp(-e.deltaY * 0.01)));
+      const graphX = (pointerX - pan.x) / zoom;
+      const graphY = (pointerY - pan.y) / zoom;
+      setPan({
+        x: pointerX - graphX * nextZoom,
+        y: pointerY - graphY * nextZoom,
+      });
+      setZoom(nextZoom);
+      return;
+    }
+
+    // Ordinary wheel/two-finger scrolling pans the canvas. Shift+wheel is
+    // horizontal for mouse users; trackpads already provide deltaX.
+    const shiftHorizontal = e.shiftKey && e.deltaX === 0;
+    setPan((current) => ({
+      x: current.x - (shiftHorizontal ? e.deltaY : e.deltaX),
+      y: current.y - (shiftHorizontal ? 0 : e.deltaY),
+    }));
+  }, [pan, zoom]);
 
   useEffect(() => {
     const el = svgRef.current;
@@ -948,6 +1017,7 @@ function GraphCanvasView() {
                 <Tabs.Content value="branches" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
                   <ScrollArea style={{ height: "100%" }}>
                     <BranchSwitcher
+                      panels={activePanels}
                       selection={armSelection}
                       onSelect={handleArmSelect}
                       onFocus={handleSelectFromPanel}
@@ -1185,17 +1255,6 @@ function GraphCanvasView() {
                     {(isSelected || isHovered) && (
                       <circle cx={pos.x} cy={pos.y} r={r + 6} fill={colors.stroke + "28"} />
                     )}
-                    {node.deadEnd && (
-                      <circle
-                        cx={pos.x}
-                        cy={pos.y}
-                        r={r + 3}
-                        fill="none"
-                        stroke="var(--node-dead-end-stroke)"
-                        strokeWidth={1}
-                        strokeDasharray="2 2"
-                      />
-                    )}
                     {node.type === "entry" ? (
                       <rect
                         x={pos.x - r * 0.75}
@@ -1225,8 +1284,10 @@ function GraphCanvasView() {
                       dominantBaseline="middle"
                       fontSize="11"
                       fontFamily={MONO}
-                      fill={isSelected ? "var(--canvas-foreground)" : isHovered ? "var(--gray-11)" : "var(--canvas-muted)"}
-                      style={{ transition: "fill 0.1s", userSelect: "none" }}
+                      fontWeight={isSelected ? 700 : 400}
+                      fill="var(--canvas-foreground)"
+                      opacity={isSelected || isHovered ? 1 : 0.82}
+                      style={{ transition: "fill 0.1s, opacity 0.1s", userSelect: "none" }}
                     >
                       {canvasLabel(node)}
                     </text>
@@ -1255,23 +1316,33 @@ function GraphCanvasView() {
             style={{
               position: "absolute",
               bottom: "16px",
-              left: "50%",
-              transform: "translateX(-50%)",
+              right: "16px",
               padding: 6,
             }}
           >
             <Flex align="center" gap="1">
-              <IconButton size="1" variant="ghost" color="gray" onClick={() => setZoom((z) => Math.max(0.2, z - 0.15))}>
+              <IconButton aria-label="Zoom out" size="1" variant="ghost" color="gray" onClick={() => setZoom((z) => Math.max(0.2, z - 0.15))}>
                 <ZoomOut size={14} />
               </IconButton>
               <Text size="1" color="gray" style={{ width: 44, textAlign: "center", fontFamily: MONO }}>
                 {Math.round(zoom * 100)}%
               </Text>
-              <IconButton size="1" variant="ghost" color="gray" onClick={() => setZoom((z) => Math.min(3, z + 0.15))}>
+              <Slider
+                size="1"
+                min={20}
+                max={300}
+                step={5}
+                value={[zoom * 100]}
+                onValueChange={([value]) => setZoom(value / 100)}
+                aria-label="Graph zoom"
+                style={{ width: 88 }}
+              />
+              <IconButton aria-label="Zoom in" size="1" variant="ghost" color="gray" onClick={() => setZoom((z) => Math.min(3, z + 0.15))}>
                 <ZoomIn size={14} />
               </IconButton>
               <Separator orientation="vertical" size="1" mx="1" />
               <IconButton
+                aria-label="Reset graph view"
                 size="1"
                 variant="ghost"
                 color="gray"

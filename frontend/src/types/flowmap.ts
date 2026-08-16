@@ -50,6 +50,14 @@ export interface FlowEdge {
   type: EdgeType;
   returnFrom?: string;
   fallback?: boolean;
+  // Flatten stage: branch selections required for this edge to execute.
+  // TRY normal completion names its explicit empty `noCatch` arm.
+  branchRequirements?: BranchRequirement[];
+}
+
+export interface BranchRequirement {
+  groupId: string;
+  armLabel: string;
 }
 
 // Mirrors model/branch.py's BranchArmRef -- one (group, arm) membership
@@ -94,6 +102,9 @@ export interface BranchArm {
   // group, because an else-if chain is one group with a different
   // condition per arm. Absent on `else` and on every TRY arm.
   conditionCode?: string;
+  // TRY catch arms only: declared caught type, including a multi-catch
+  // union when Joern exposes it as one type name.
+  exceptionType?: string;
   // Flatten stage: visible destinations after this arm exits. Empty for a
   // throw or when normal flow leaves the visible trace; caller continuation
   // nodes for return; the normal continuation for continues.

@@ -40,7 +40,7 @@ export const PANEL_KIND: Record<BranchPanel["kind"], KindStyle> = {
 };
 
 // SVG has no text metrics without measuring, and a monospace face makes the
-// estimate reliable enough for pill widths.
+// estimate reliable enough for compact selection badges.
 const CHAR_W = 6.1;
 const pillWidth = (label: string) => Math.max(46, label.length * CHAR_W + 18);
 
@@ -84,7 +84,7 @@ export function BranchRegions({
   );
 }
 
-/** Header, switcher pills and empty-arm arrow. Drawn on top of nodes. */
+/** Header and chosen-arm badge. Drawn on top of nodes. */
 export function BranchSwitchers({
   geometries,
   selection,
@@ -93,28 +93,21 @@ export function BranchSwitchers({
   onHover,
 }: {
   geometries: PanelGeometry[];
-  selection: Map<string, string | null>;
+  selection: Map<string, string>;
   activeId: string | null;
-  onSelect: (panelId: string, armId: string | null) => void;
+  onSelect: (panelId: string, armId: string) => void;
   onHover: (panelId: string | null) => void;
 }) {
   return (
     <g>
-      {/* Hover targets for EVERY panel, in the top layer.
-          They cannot live with the regions: those are painted behind the
-          edges and nodes, so a strip down there only receives a pointer
-          where nothing happens to cover it -- which is most of the time
-          nowhere. A thin strip on the region's top edge (never its fill,
-          which would swallow every click on the nodes inside) is enough of
-          a target, and smallest-last means a nested panel wins the hover
-          over the one containing it. */}
+      {/* A compact header strip inside each panel. */}
       {geometries.map((geometry) => (
         <rect
           key={`hit-${geometry.panel.id}`}
           x={geometry.x}
-          y={geometry.y - 8}
+          y={geometry.y}
           width={geometry.width}
-          height={20}
+          height={28}
           fill="transparent"
           style={{ cursor: "pointer" }}
           onMouseEnter={() => onHover(geometry.panel.id)}
@@ -123,116 +116,94 @@ export function BranchSwitchers({
 
       {geometries.map((geometry) => {
         const { panel } = geometry;
-        // Only the panel under the cursor gets a header and switcher.
-        // Drawing all 15 at once is the overcrowding the panel exists to
-        // prevent -- the regions stay visible so the structure reads at a
-        // glance, but the controls appear where you are looking.
-        if (panel.id !== activeId) return null;
         const style = PANEL_KIND[panel.kind];
-        const isActive = true;
-        const selected = selection.get(panel.id) ?? null;
+        const isActive = panel.id === activeId;
+        const selected = selection.get(panel.id) ?? panel.defaultArmId;
         const alternatives = panel.arms.filter((a) => a.role === "alternative");
 
-        // A TRY's switcher belongs AFTER the try body -- by the time it can
-        // throw, the body has already run -- so it sits on the bottom edge.
-        const rowY =
-          panel.switcherPosition === "after"
-            ? geometry.y + geometry.height + 4
-            : geometry.y - 26;
+        const options = alternatives.map((a) => ({ id: a.id, label: armSwitcherLabel(a) }));
+        if (options.length === 0) return null;
 
-        // "no exception" is a real option, not the absence of one.
-        const options: { id: string | null; label: string }[] = [
-          ...(panel.structure === "TRY" ? [{ id: null, label: "no exception" }] : []),
-          ...alternatives.map((a) => ({ id: a.id as string | null, label: armSwitcherLabel(a) })),
-        ];
+        const selectedOption = options.find((option) => option.id === selected) ?? options[0];
+        const nextOption = options[(options.findIndex((option) => option.id === selected) + 1) % options.length];
+        const badgeWidth = pillWidth(selectedOption.label);
 
-        let cursor = geometry.x + 8;
+        // Every panel keeps the selected-arm badge; only the hovered one
+        // expands to expose the clickable condition/dispatch label.
+        if (!isActive) {
+          return (
+            <g key={panel.id} pointerEvents="none">
+              <rect
+                x={geometry.x + geometry.width - badgeWidth - 8}
+                y={geometry.y + 4}
+                width={badgeWidth}
+                height={17}
+                rx={8.5}
+                fill={style.fill}
+                fillOpacity={0.2}
+                stroke={style.stroke}
+                strokeOpacity={0.6}
+                strokeDasharray={style.dash}
+              />
+              <text
+                x={geometry.x + geometry.width - badgeWidth / 2 - 8}
+                y={geometry.y + 16}
+                fontSize="9"
+                fontFamily={MONO}
+                textAnchor="middle"
+                fill="var(--canvas-foreground)"
+              >
+                {selectedOption.label}
+              </text>
+            </g>
+          );
+        }
         return (
           <g
             key={panel.id}
             onMouseEnter={() => onHover(panel.id)}
             onMouseLeave={() => onHover(null)}
           >
-            {/* Header: glyph + kind badge + what the branch is */}
             <text
               x={geometry.x + 10}
-              y={geometry.y - 32}
-              fontSize="11"
+              y={geometry.y + 17}
+              fontSize="10"
               fontFamily={MONO}
-              fill={style.stroke}
-              opacity={isActive ? 1 : 0.75}
+              fill="var(--canvas-foreground)"
             >
               {style.glyph} {style.badge} · {panel.title}
             </text>
+            <g
+              className="graph-node"
+              style={{ cursor: "pointer" }}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect(panel.id, nextOption.id);
+              }}
+            >
+              <rect
+                x={geometry.x + geometry.width - badgeWidth - 8}
+                y={geometry.y + 5}
+                width={badgeWidth}
+                height={17}
+                rx={8.5}
+                fill={style.fill}
+                fillOpacity={0.3}
+                stroke={style.stroke}
+                strokeDasharray={style.dash}
+              />
+              <text
+                x={geometry.x + geometry.width - badgeWidth / 2 - 8}
+                y={geometry.y + 17}
+                fontSize="9"
+                fontFamily={MONO}
+                textAnchor="middle"
+                fill="var(--canvas-foreground)"
+              >
+                {selectedOption.label}
+              </text>
+            </g>
 
-            {options.map((option) => {
-              const width = pillWidth(option.label);
-              const x = cursor;
-              cursor += width + 5;
-              const on = option.id === selected;
-              return (
-                <g
-                  key={option.id ?? "__none__"}
-                  className="graph-node"
-                  style={{ cursor: "pointer" }}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onSelect(panel.id, option.id);
-                  }}
-                >
-                  <rect
-                    x={x}
-                    y={rowY}
-                    width={width}
-                    height={19}
-                    rx={9.5}
-                    fill={on ? style.fill : "var(--canvas-card)"}
-                    fillOpacity={on ? 0.3 : 0.9}
-                    stroke={style.stroke}
-                    strokeOpacity={on ? 1 : 0.4}
-                    strokeWidth={on ? 1.4 : 0.9}
-                    strokeDasharray={style.dash}
-                  />
-                  <text
-                    x={x + width / 2}
-                    y={rowY + 13}
-                    fontSize="9"
-                    fontFamily={MONO}
-                    textAnchor="middle"
-                    fill={on ? style.stroke : "var(--canvas-muted)"}
-                    style={{ userSelect: "none" }}
-                  >
-                    {option.label}
-                  </text>
-                </g>
-              );
-            })}
-
-            {/* An arm with no calls: no node to draw, so the arrow and its
-                label carry the whole meaning ("else -> skips to X"). */}
-            {geometry.isEmptyArm && geometry.fork && (
-              <g opacity={isActive ? 0.95 : 0.55}>
-                <path
-                  d={`M ${geometry.fork.x} ${geometry.fork.y + 16}
-                      L ${geometry.fork.x} ${geometry.y + geometry.height / 2}`}
-                  stroke={style.stroke}
-                  strokeWidth={1.2}
-                  strokeDasharray="4 3"
-                  fill="none"
-                />
-                <text
-                  x={geometry.x + 14}
-                  y={geometry.y + geometry.height / 2 + 4}
-                  fontSize="9"
-                  fontFamily={MONO}
-                  fill={style.stroke}
-                >
-                  {geometry.arm?.exitKind === "throws"
-                    ? "throws — never rejoins"
-                    : "no calls — skips ahead"}
-                </text>
-              </g>
-            )}
           </g>
         );
       })}

@@ -30,18 +30,9 @@ import { computeWalkOrder } from "./layout";
 export type BranchKind = "conditional" | "polymorphic";
 export type PanelStructure = "IF" | "TRY" | "SWITCH" | "DISPATCH";
 
-// Whether an arm is one of the mutually exclusive options the switcher
-// offers, or something that is always on screen regardless.
-//
-//   alternative -- an IF arm, a catch arm, a dispatch target.
-//   spine       -- a TRY's `try` arm. NOT an alternative: by the time the
-//                  fork happens the try body has already run, which is why
-//                  the switcher sits AFTER it and offers {none, catch1,
-//                  ...} rather than treating `try` as one option among
-//                  several (DESIGN.md, 2026-08-12).
-//   always      -- `finally`. Runs on every path, so it belongs after the
-//                  merge rather than inside the switcher.
-export type ArmRole = "alternative" | "spine" | "always";
+// BranchGroup arms are exactly the mutually exclusive options offered by
+// the switcher. A TRY's body and finally are ordinary flow outside it.
+export type ArmRole = "alternative";
 
 // Where an arm's region stops, which is also what its arrow points at when
 // the arm is empty and has no node of its own to draw.
@@ -57,8 +48,8 @@ export type ArmRole = "alternative" | "spine" | "always";
 export type ArmExitKind = "converges" | "returns" | "throws" | "open";
 
 export interface PanelArm {
-  // The backend's arm label: "if" / "elseif1" / "else" / "try" / "catch1"
-  // / "impl1". Unique within its group, and the key its member nodes are
+  // The backend's arm label: "if" / "elseif1" / "else" / "catch1" /
+  // "noCatch" / "impl1". Unique within its group, and the key its member nodes are
   // tagged with.
   id: string;
   label: string;
@@ -98,15 +89,15 @@ export interface BranchPanel {
   branchPointIds: string[];
   convergesAt?: string;
   arms: PanelArm[];
-  // Which arm the switcher starts on. null for a TRY: "no exception
-  // thrown" is a real state, and the correct default.
-  defaultArmId: string | null;
+  // Which arm the switcher starts on. TRY defaults to its empty noCatch arm;
+  // other structures default to their first source arm.
+  defaultArmId: string;
   // IF/SWITCH/DISPATCH fork before their arms; a TRY's switcher belongs
   // after the try body, which has already run by the time it can throw.
   switcherPosition: "before" | "after";
 }
 
-export type BranchSelection = Map<string, string | null>;
+export type BranchSelection = Map<string, string>;
 
 function structureOf(group: BranchGroup): PanelStructure {
   if (group.kind === "TRY") return "TRY";
@@ -115,15 +106,13 @@ function structureOf(group: BranchGroup): PanelStructure {
   return "IF";
 }
 
-function armRole(structure: PanelStructure, label: string): ArmRole {
-  if (structure !== "TRY") return "alternative";
-  if (label === "finally") return "always";
-  return label === "try" ? "spine" : "alternative";
+function armRole(): ArmRole {
+  return "alternative";
 }
 
 function armLabel(
   structure: PanelStructure,
-  arm: { label: string; conditionCode?: string; firstCallId?: string },
+  arm: { label: string; conditionCode?: string; exceptionType?: string; firstCallId?: string },
   nodesById: Map<string, FlowNode>,
 ): string {
   if (structure === "DISPATCH") {
@@ -135,10 +124,10 @@ function armLabel(
   }
   if (arm.conditionCode) return arm.conditionCode;
   if (structure === "TRY") {
-    if (arm.label === "try" || arm.label === "finally") return arm.label;
-    // The caught exception TYPE is not extracted -- full_cfg.sc records a
-    // TRY arm's label and nothing else, and a catch arm has no
-    // conditionCode by construction. Positional until it is.
+    if (arm.label === "noCatch") return "no exception";
+    if (arm.exceptionType) return `catch ${arm.exceptionType}`;
+    // Backward-compatible positional label for artifacts generated before
+    // the extractor started emitting exceptionType.
     const n = arm.label.replace(/^catch/, "");
     return n ? `catch ${n}` : "catch";
   }
@@ -231,6 +220,10 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
     if (group.arms.every((arm) => arm.empty)) continue;
 
     const structure = structureOf(group);
+    if (
+      structure === "TRY" &&
+      !group.arms.some((arm) => arm.label !== "noCatch" && !arm.empty)
+    ) continue;
     const byArm = members.get(group.id) ?? new Map<string, string[]>();
 
     const arms: PanelArm[] = group.arms.map((arm) => {
@@ -239,7 +232,7 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
       return {
         id: arm.label,
         label: armLabel(structure, arm, nodesById),
-        role: armRole(structure, arm.label),
+        role: armRole(),
         conditionCode: arm.conditionCode,
         terminus,
         empty: arm.empty || memberIds.length === 0,
@@ -250,6 +243,10 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
     });
 
     const alternatives = arms.filter((a) => a.role === "alternative");
+    const defaultAlternative = structure === "TRY"
+      ? alternatives.find((candidate) => candidate.id === "noCatch")
+      : alternatives[0];
+    if (!defaultAlternative) continue;
     panels.push({
       id: group.id,
       kind: structure === "DISPATCH" ? "polymorphic" : "conditional",
@@ -260,7 +257,7 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
       branchPointIds: group.branchPointIds,
       convergesAt: group.convergesAt,
       arms,
-      defaultArmId: structure === "TRY" ? null : (alternatives[0]?.id ?? null),
+      defaultArmId: defaultAlternative.id,
       switcherPosition: structure === "TRY" ? "after" : "before",
     });
   }
@@ -280,7 +277,99 @@ export function defaultSelection(panels: BranchPanel[]): BranchSelection {
   return new Map(panels.map((p) => [p.id, p.defaultArmId]));
 }
 
-/** Which nodes are executable under the complete branch selection.
+/** Panels whose enclosing branch arms are currently selected.
+ *
+ * Flattening propagates an enclosing arm's membership into every nested
+ * call. That makes containment explicit even when filtering removed both
+ * conditions and left parent and child attached to the same anchor.
+ */
+export function activeBranchPanels(
+  panels: BranchPanel[],
+  selection: BranchSelection,
+): BranchPanel[] {
+  const members = new Map(
+    panels.map((panel) => [
+      panel.id,
+      new Set(panel.arms.flatMap((arm) => arm.memberIds)),
+    ]),
+  );
+
+  return panels.filter((child) => {
+    const childMembers = members.get(child.id)!;
+    for (const parent of panels) {
+      if (parent.id === child.id) continue;
+      for (const arm of parent.arms) {
+        const parentMembers = new Set(arm.memberIds);
+        const containsFork = child.branchPointIds.some((id) => parentMembers.has(id));
+        const containsAllMembers = childMembers.size > 0
+          && parentMembers.size >= childMembers.size
+          && [...childMembers].every((id) => parentMembers.has(id));
+        const equalSetInSameMethod = containsAllMembers
+          && parentMembers.size === childMembers.size
+          && parent.method === child.method
+          && (parent.line ?? Number.MAX_SAFE_INTEGER) < (child.line ?? 0);
+        const encloses = containsFork
+          || (containsAllMembers && (parentMembers.size > childMembers.size || equalSetInSameMethod));
+        if (!encloses) continue;
+
+        const selected = selection.get(parent.id) ?? parent.defaultArmId;
+        if (selected !== arm.id) return false;
+      }
+    }
+    return true;
+  });
+}
+
+/** Visible route candidates for the selected arm, including the next
+ * sequential group when stripped conditions made both groups share an
+ * anchor. New backend artifacts carry these in targetIds; the inferred
+ * candidate keeps older saved traces visually correct.
+ */
+export function panelRouteTargetIds(
+  panel: BranchPanel,
+  panels: BranchPanel[],
+  selection: BranchSelection,
+): string[] {
+  const selectedId = selection.get(panel.id) ?? panel.defaultArmId;
+  const arm = panel.arms.find((candidate) => candidate.id === selectedId);
+  if (!arm) return [];
+  if (!arm.empty && arm.headId) return [arm.headId];
+
+  const laterHeads = panels
+    .filter((candidate) =>
+      candidate.id !== panel.id
+      && candidate.method === panel.method
+      && (candidate.line ?? 0) > (panel.line ?? 0)
+      && candidate.branchPointIds.some((id) => panel.branchPointIds.includes(id)),
+    )
+    .sort((a, b) => (a.line ?? 0) - (b.line ?? 0))
+    .flatMap((candidate) => {
+      const laterSelected = selection.get(candidate.id) ?? candidate.defaultArmId;
+      const laterArm = candidate.arms.find((armCandidate) => armCandidate.id === laterSelected);
+      return laterArm?.headId ? [laterArm.headId] : [];
+    });
+  const declared = arm.exitTargetIds.length > 0
+    ? arm.exitTargetIds
+    : (panel.convergesAt ? [panel.convergesAt] : []);
+  return [...new Set([...laterHeads, ...declared])];
+}
+
+export function flowEdgeKey(edge: FlowEdge): string {
+  return [
+    edge.from,
+    edge.to,
+    edge.type,
+    edge.returnFrom ?? "",
+    edge.fallback ? "fallback" : "",
+  ].join("|");
+}
+
+export interface VisibleGraphSelection {
+  nodeIds: Set<string>;
+  edgeIds: Set<string>;
+}
+
+/** Which nodes and edges are executable under the complete branch selection.
  *
  * Membership first removes unselected alternative bodies. A forward walk
  * from the graph root then gates the route edges at each unambiguous branch
@@ -293,21 +382,23 @@ export function defaultSelection(panels: BranchPanel[]): BranchSelection {
  * the old membership-only behaviour until logical gates are preserved by
  * the backend; guessing here would hide valid flow.
  */
-export function visibleNodeIds(
+export function visibleGraphSelection(
   graph: FlowGraph,
   panels: BranchPanel[],
   selection: BranchSelection,
-): Set<string> {
+): VisibleGraphSelection {
   const hidden = new Set<string>();
   for (const panel of panels) {
-    const selected = selection.get(panel.id) ?? null;
+    const selected = selection.get(panel.id) ?? panel.defaultArmId;
     for (const arm of panel.arms) {
       if (arm.role !== "alternative" || arm.id === selected) continue;
       for (const id of arm.memberIds) hidden.add(id);
     }
   }
 
-  if (!graph.rootId || hidden.has(graph.rootId)) return new Set();
+  if (!graph.rootId || hidden.has(graph.rootId)) {
+    return { nodeIds: new Set(), edgeIds: new Set() };
+  }
 
   const groupsAtPoint = new Map<string, BranchPanel[]>();
   for (const panel of panels) {
@@ -325,12 +416,7 @@ export function visibleNodeIds(
     }
   }
 
-  const routeTargets = (panel: BranchPanel, selectedArmId: string | null): Set<string> => {
-    // TRY's null selection means the body completed without entering a
-    // catch. Its route resumes at the group's normal continuation.
-    if (selectedArmId === null) {
-      return new Set(panel.convergesAt ? [panel.convergesAt] : []);
-    }
+  const routeTargets = (panel: BranchPanel, selectedArmId: string): Set<string> => {
     const arm = panel.arms.find((candidate) => candidate.id === selectedArmId);
     if (!arm) return new Set();
     if (!arm.empty && arm.headId) return new Set([arm.headId]);
@@ -341,7 +427,7 @@ export function visibleNodeIds(
   const selectedTargets = new Map(
     routingPanels.map((panel) => [
       panel.id,
-      routeTargets(panel, selection.get(panel.id) ?? null),
+      routeTargets(panel, selection.get(panel.id) ?? panel.defaultArmId),
     ]),
   );
   const allTargets = new Map(
@@ -355,6 +441,9 @@ export function visibleNodeIds(
   );
 
   const flowEdges = graph.edges.filter((edge) => edge.type !== "data");
+  const hasAuthoritativeRequirements = flowEdges.some(
+    (edge) => edge.branchRequirements !== undefined,
+  );
   const outgoing = new Map<string, FlowEdge[]>();
   for (const edge of flowEdges) {
     const edges = outgoing.get(edge.from);
@@ -363,6 +452,45 @@ export function visibleNodeIds(
   }
 
   const edgeAllowed = (edge: FlowEdge): boolean => {
+    // A selected throw is unambiguous even when several stripped conditions
+    // share one anchor: only its own arm head may be entered. This closes the
+    // route immediately. Keep this invariant even for older authoritative
+    // artifacts that omitted the earlier guard's normal requirement from a
+    // later sibling's head.
+    for (const panel of panels) {
+      const selectedId = selection.get(panel.id) ?? panel.defaultArmId;
+      const selectedArm = panel.arms.find((arm) => arm.id === selectedId);
+      if (selectedArm?.terminus !== "throw") continue;
+      const atDirectPoint = panel.branchPointIds.includes(edge.from);
+      const atReturnedPoint = edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom);
+      if (!atDirectPoint && !atReturnedPoint) continue;
+      if (panel.structure === "DISPATCH" ? edge.type !== "invoke" : edge.type !== "sequence") {
+        continue;
+      }
+      const entersEarlierSibling = panels.some((candidate) =>
+        candidate.id !== panel.id
+        && candidate.method === panel.method
+        && (candidate.line ?? 0) < (panel.line ?? 0)
+        && candidate.branchPointIds.some((id) => panel.branchPointIds.includes(id))
+        && candidate.arms.some((arm) => arm.headId === edge.to),
+      );
+      if (entersEarlierSibling) continue;
+      if (edge.to !== selectedArm.headId) return false;
+    }
+
+    if (hasAuthoritativeRequirements) {
+      return (edge.branchRequirements ?? []).every((requirement) => {
+        // A backend group may intentionally have no switcher (for example,
+        // every arm became empty after filtering). With no user selection
+        // to apply, that requirement must not erase otherwise valid flow.
+        if (!selection.has(requirement.groupId)) return true;
+        return selection.get(requirement.groupId) === requirement.armLabel;
+      });
+    }
+
+    // Backward compatibility for flattened artifacts generated before
+    // branchRequirements became backend-authoritative.
+
     for (const panel of routingPanels) {
       const atDirectPoint = panel.branchPointIds.includes(edge.from);
       const atReturnedPoint = edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom);
@@ -383,6 +511,7 @@ export function visibleNodeIds(
   };
 
   const visible = new Set<string>();
+  const visibleEdges = new Set<string>();
   const pending = [graph.rootId];
   while (pending.length > 0) {
     const nodeId = pending.pop()!;
@@ -390,10 +519,11 @@ export function visibleNodeIds(
     visible.add(nodeId);
     for (const edge of outgoing.get(nodeId) ?? []) {
       if (hidden.has(edge.to) || !edgeAllowed(edge)) continue;
+      visibleEdges.add(flowEdgeKey(edge));
       pending.push(edge.to);
     }
   }
-  return visible;
+  return { nodeIds: visible, edgeIds: visibleEdges };
 }
 
 /**

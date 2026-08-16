@@ -51,20 +51,17 @@ for (const arm of dispatch.arms) {
   console.log(`  dispatch -> ${arm.label.padEnd(24)} visible ${visibleNodeIds(graph, panels, s).size}`);
 }
 
-// Isolate the TRY panel: with every panel in play, spine nodes can be
-// hidden by an UNRELATED panel (the dispatch arm they sit inside), which
-// says nothing about whether the TRY hides its own spine.
+// Isolate the TRY panel so unrelated panels cannot affect its arm counts.
 const tryPanel = panels.find((p) => p.structure === "TRY" && p.arms.length === 3)!;
 console.log(`\nTRY panel ${tryPanel.id} (isolated):`);
-const spine = tryPanel.arms.find((a) => a.role === "spine")!;
-for (const choice of [null, ...tryPanel.arms.filter((a) => a.role === "alternative").map((a) => a.id)]) {
+for (const choice of tryPanel.arms.map((a) => a.id)) {
   const s = new Map([[tryPanel.id, choice]]);
   const v = visibleNodeIds(graph, [tryPanel], s);
   const shown = (armId: string) =>
     tryPanel.arms.find((a) => a.id === armId)!.memberIds.filter((id) => v.has(id)).length;
   console.log(
     `  select ${String(choice).padEnd(8)} visible ${String(v.size).padStart(3)}` +
-      `  spine ${shown("try")}/${spine.memberIds.length}` +
+      `  noCatch ${shown("noCatch")}` +
       `  catch1 ${shown("catch1")}  catch2 ${shown("catch2")}`,
   );
 }

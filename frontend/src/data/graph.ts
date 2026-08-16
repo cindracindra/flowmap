@@ -31,7 +31,7 @@ export const EXPLORER_TREE = buildExplorerTree(GRAPH.nodes);
 // Every switchable fork in the trace. All of them come from the backend's
 // own branch groups -- IF/TRY for conditionals, DISPATCH for a call site
 // with more than one real implementation. Only one arm of each is on screen
-// at a time; see visibleNodeIds.
+// at a time; see visibleGraphSelection.
 export const PANELS = buildBranchPanels(GRAPH, ROOT_ID);
 
 // "data" edges are a phase-discovery input, not control flow -- they answer
