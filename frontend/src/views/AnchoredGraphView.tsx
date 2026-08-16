@@ -6,6 +6,7 @@ import {
   Heading,
   Badge,
   IconButton,
+  TextField,
   ScrollArea,
   Separator,
   Tabs,
@@ -22,6 +23,7 @@ import {
   X,
   GitBranch,
   Minimize2,
+  Search,
   FolderOpen,
   FileCode2,
   Package as PackageIcon,
@@ -238,15 +240,18 @@ function ProjectExplorerRow({
   depth,
   selectedNodeId,
   onSelect,
+  forceOpen = false,
 }: {
   item: ProjectExplorerItem;
   depth: number;
   selectedNodeId: string | null;
   onSelect: (id: string) => void;
+  forceOpen?: boolean;
 }) {
   const { graph } = useGraphViewData();
   const [open, setOpen] = useState(true);
   const isBranch = item.kind !== "method";
+  const isOpen = forceOpen || open;
   const activeNode = item.methodFullName
     ? graph.nodes.find((node) => node.type === "entry" && node.calleeFullName === item.methodFullName)
     : undefined;
@@ -276,7 +281,7 @@ function ProjectExplorerRow({
         }}
       >
         {isBranch ? (
-          open ? <ChevronDown size={12} /> : <ChevronRight size={12} />
+          isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />
         ) : (
           <Box style={{ width: 12, flexShrink: 0 }} />
         )}
@@ -287,17 +292,32 @@ function ProjectExplorerRow({
           {item.name}
         </Text>
       </button>
-      {isBranch && open && item.children?.map((child, index) => (
+      {isBranch && isOpen && item.children?.map((child, index) => (
         <ProjectExplorerRow
           key={`${child.kind}-${child.name}-${index}`}
           item={child}
           depth={depth + 1}
           selectedNodeId={selectedNodeId}
           onSelect={onSelect}
+          forceOpen={forceOpen}
         />
       ))}
     </Box>
   );
+}
+
+function filterProjectTree(items: ProjectExplorerItem[], query: string): ProjectExplorerItem[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return items;
+
+  return items.flatMap((item) => {
+    const selfMatches = item.name.toLowerCase().includes(normalizedQuery)
+      || item.methodFullName?.toLowerCase().includes(normalizedQuery);
+    if (selfMatches) return [item];
+
+    const children = filterProjectTree(item.children ?? [], normalizedQuery);
+    return children.length > 0 ? [{ ...item, children }] : [];
+  });
 }
 
 // ── Detail panel ─────────────────────────────────────────────────────────
@@ -660,6 +680,7 @@ function GraphCanvasView() {
   const [resizingSide, setResizingSide] = useState<ResizeSide | null>(null);
   const resizeStartRef = useRef<{ side: ResizeSide; x: number; width: number } | null>(null);
   const [activeTab, setActiveTab] = useState<PanelTab>("explore");
+  const [exploreQuery, setExploreQuery] = useState("");
   const [legendOpen, setLegendOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Branch panels are the default overlay: they are what the graph is for.
@@ -670,6 +691,10 @@ function GraphCanvasView() {
   const svgRef = useRef<SVGSVGElement>(null);
 
   const selectedNode = selectedId ? (NODES_BY_ID.get(selectedId) ?? null) : null;
+  const filteredProjectTree = useMemo(
+    () => filterProjectTree(PROJECT_TREE, exploreQuery),
+    [PROJECT_TREE, exploreQuery],
+  );
 
   // Everything downstream of the arm selection: which nodes exist, where
   // they sit, and how big the canvas is. Rows are ranked over the VISIBLE
@@ -1025,19 +1050,40 @@ function GraphCanvasView() {
                   </IconButton>
                 </Flex>
                 <Tabs.Content value="explore" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                  <ScrollArea style={{ height: "100%" }}>
-                    <Box py="1">
-                      {PROJECT_TREE.map((item, i) => (
-                        <ProjectExplorerRow
-                          key={`${item.kind}-${item.name}-${i}`}
-                          item={item}
-                          depth={0}
-                          selectedNodeId={selectedId}
-                          onSelect={handleSelectFromPanel}
-                        />
-                      ))}
+                  <Flex direction="column" style={{ height: "100%" }}>
+                    <Box p="2" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
+                      <TextField.Root
+                        size="1"
+                        placeholder="Search project…"
+                        value={exploreQuery}
+                        onChange={(event) => setExploreQuery(event.target.value)}
+                        aria-label="Search project files and methods"
+                      >
+                        <TextField.Slot>
+                          <Search size={13} />
+                        </TextField.Slot>
+                      </TextField.Root>
                     </Box>
-                  </ScrollArea>
+                    <ScrollArea style={{ flex: 1 }}>
+                      <Box py="1">
+                        {filteredProjectTree.length === 0 && (
+                          <Text size="1" color="gray" align="center" as="p" mt="4">
+                            No project items found
+                          </Text>
+                        )}
+                        {filteredProjectTree.map((item, i) => (
+                          <ProjectExplorerRow
+                            key={`${item.kind}-${item.name}-${i}`}
+                            item={item}
+                            depth={0}
+                            selectedNodeId={selectedId}
+                            onSelect={handleSelectFromPanel}
+                            forceOpen={exploreQuery.trim().length > 0}
+                          />
+                        ))}
+                      </Box>
+                    </ScrollArea>
+                  </Flex>
                 </Tabs.Content>
                 <Tabs.Content value="operation" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
                   <ScrollArea style={{ height: "100%" }}>
