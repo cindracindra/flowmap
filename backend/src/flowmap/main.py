@@ -57,7 +57,7 @@ def combine_topic_operations(
     opseq_labels: dict[str, str | None],
     root_method_full_names: dict[str, str],
 ) -> dict[str, list[dict]]:
-    """Create the topic-drill-down artifact from Mode 1's opseq outputs."""
+    """Create the topic drill-down, retaining unclassified opseqs as noise."""
     operations_by_topic: dict[str, list[dict]] = {}
     for operation_id, topic_assignments in assignments.items():
         for assignment in topic_assignments:
@@ -74,6 +74,23 @@ def combine_topic_operations(
                     "similarity": similarity,
                 }
             )
+
+    classified_ids = {
+        operation_id
+        for operation_id, topic_assignments in assignments.items()
+        if topic_assignments
+    }
+    for operation_id, root_method_full_name in root_method_full_names.items():
+        if operation_id in classified_ids:
+            continue
+        operations_by_topic.setdefault("-1", []).append(
+            {
+                "id": operation_id,
+                "label": opseq_labels.get(operation_id) or operation_id,
+                "rootMethodFullName": root_method_full_name,
+                "similarity": 0.0,
+            }
+        )
 
     for operations in operations_by_topic.values():
         operations.sort(key=lambda operation: operation["label"].lower())
@@ -133,6 +150,12 @@ def build_all_opseq_visualisations(full_cfg: Graph) -> dict[str, dict]:
     for root_id, method_full_name in root_method_full_names(full_cfg).items():
         visualisation = build_opseq_visualisation(full_cfg, method_full_name)
         payloads[root_id] = {
+            "rootMethodFullName": method_full_name,
+            "memberMethodFullNames": sorted({
+                node.calleeFullName
+                for node in visualisation.anchored_cfg.nodes
+                if node.type == "entry" and node.calleeFullName is not None
+            }),
             "graph": visualisation.flattened_cfg.to_dict(),
             "phaseTree": visualisation.phase_tree,
         }

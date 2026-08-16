@@ -2,8 +2,6 @@ import { useCallback, useMemo, useState } from "react";
 import { Box, Flex, Text, Heading, Badge, IconButton, ScrollArea, Separator } from "@radix-ui/themes";
 import {
   ChevronLeft,
-  ChevronRight,
-  Minimize2,
   Layers,
   FileText,
   Boxes,
@@ -12,32 +10,16 @@ import {
 
 import { OPERATIONS_BY_TOPIC, OPSEQ_VISUALISATIONS, TOPICS } from "../data/graph";
 import type { TopicCluster, TopicOperation } from "../types/topics";
-import { topicLabel, isUnnamed, splitClassFullName, NOISE_LABEL } from "../lib/topics";
+import { topicLabel, isUnnamed, NOISE_LABEL } from "../lib/topics";
 import { MONO } from "../lib/ui";
 import AnchoredGraphView from "./AnchoredGraphView";
 
 // ── Topic discovery view ─────────────────────────────────────────────────
 // Mode 1 output, read top-down: the clusters the corpus falls into, what
 // each one contains, and (on a double click) one cluster on its own. The
-// left panel is deliberately empty -- its content is not decided yet, but
-// the frame it will live in is, so the three-column shape matches the
-// anchored graph view rather than being retrofitted onto it later.
-
-// Members are listed package-first: a cluster is a claim about which
-// classes belong together, and that claim is easiest to check against the
-// package layout it cuts across.
-function groupByPackage(fullNames: string[]): { pkg: string; classes: string[] }[] {
-  const byPkg = new Map<string, string[]>();
-  for (const fullName of fullNames) {
-    const { pkg, shortName } = splitClassFullName(fullName);
-    const bucket = byPkg.get(pkg);
-    if (bucket) bucket.push(shortName);
-    else byPkg.set(pkg, [shortName]);
-  }
-  return [...byPkg.entries()]
-    .map(([pkg, classes]) => ({ pkg, classes: classes.sort() }))
-    .sort((a, b) => a.pkg.localeCompare(b.pkg));
-}
+// The topic and operation pickers stay full-width. Once an opseq is chosen,
+// AnchoredGraphView supplies the same Explore/Operation panel as it does in
+// the standalone anchored flow.
 
 // ── Topic list ───────────────────────────────────────────────────────────
 
@@ -52,6 +34,7 @@ function TopicRow({
 }) {
   const isNoise = topic.label === NOISE_LABEL;
   const unnamed = isUnnamed(topic);
+  const operations = OPERATIONS_BY_TOPIC[String(topic.label)] ?? [];
 
   return (
     <button
@@ -83,13 +66,13 @@ function TopicRow({
         >
           {topicLabel(topic)}
         </Text>
-        {unnamed && (
+        {unnamed && !isNoise && (
           <Badge size="1" variant="outline" color="gray">
             unlabelled
           </Badge>
         )}
         <Badge size="1" variant="soft" color={isNoise ? "gray" : "teal"} style={{ fontFamily: MONO }}>
-          {topic.member_full_names.length}
+          {operations.length}
         </Badge>
       </Flex>
       <Text
@@ -98,9 +81,7 @@ function TopicRow({
         truncate
         style={{ display: "block", fontFamily: MONO, marginTop: 4, paddingLeft: 21 }}
       >
-        {topic.member_full_names
-          .map((fullName) => splitClassFullName(fullName).shortName)
-          .join(" · ")}
+        {operations.map((operation) => operation.label).join(" · ") || "No operation sequences"}
       </Text>
     </button>
   );
@@ -118,9 +99,9 @@ function TopicList({
       <Box p="4" style={{ maxWidth: 720, margin: "0 auto" }}>
         <Heading size="3">Topics</Heading>
         <Text as="p" size="1" color="gray" mt="1">
-          {TOPICS.length} clusters over{" "}
-          {TOPICS.reduce((n, t) => n + t.member_full_names.length, 0)} classes. Click a topic for its
-          assigned operations.
+          {Object.keys(OPSEQ_VISUALISATIONS).length} operation sequences across{" "}
+          {TOPICS.filter((topic) => topic.label !== NOISE_LABEL).length} topics. Click a topic to see
+          its assigned operation sequences.
         </Text>
         <Flex direction="column" gap="2" mt="3">
           {TOPICS.map((topic) => (
@@ -173,7 +154,7 @@ function TopicDetailView({
           <ChevronLeft size={14} />
         </IconButton>
         <Text size="1" color="gray">
-          All topics
+          All Topics
         </Text>
         <Text color="gray">/</Text>
         <Text size="1" weight="medium">
@@ -267,66 +248,28 @@ function TopicDetailView({
   );
 }
 
-// ── Right detail panel ───────────────────────────────────────────────────
+// ── View ─────────────────────────────────────────────────────────────────
 
-function TopicClassesPanel({ topic }: { topic: TopicCluster }) {
-  const groups = useMemo(() => groupByPackage(topic.member_full_names), [topic]);
-
+function BreadcrumbButton({ children, onClick }: { children: string; onClick: () => void }) {
   return (
-    <ScrollArea style={{ height: "100%" }}>
-      <Flex direction="column">
-        <Box p="3" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
-          <Heading size="3">{topicLabel(topic)}</Heading>
-          <Flex gap="2" mt="2" wrap="wrap">
-            <Badge size="1" variant="soft" color="gray" style={{ fontFamily: MONO }}>
-              cluster {topic.label}
-            </Badge>
-            {/* Naming the source matters: an LLM label is a summary of the
-                cluster, a c-TF-IDF term is a measurement of it, and the
-                fallback is neither. */}
-            <Badge size="1" variant="outline" color="gray">
-              {topic.llm_label?.trim()
-                ? "llm label"
-                : topic.statistical_terms.some((t) => t.trim())
-                  ? "top term"
-                  : "unlabelled"}
-            </Badge>
-          </Flex>
-        </Box>
-
-        <Box p="3">
-          <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            Members ({topic.member_full_names.length})
-          </Text>
-          <Flex direction="column" gap="3" mt="2">
-            {groups.map((group) => (
-              <Box key={group.pkg}>
-                <Text size="1" color="gray" truncate style={{ fontFamily: MONO, display: "block" }}>
-                  {group.pkg}
-                </Text>
-                <Flex direction="column" gap="1" mt="1">
-                  {group.classes.map((name) => (
-                    <Text key={name} size="1" truncate style={{ fontFamily: MONO, paddingLeft: 8 }}>
-                      {name}
-                    </Text>
-                  ))}
-                </Flex>
-              </Box>
-            ))}
-          </Flex>
-        </Box>
-
-      </Flex>
-    </ScrollArea>
+    <button
+      onClick={onClick}
+      style={{
+        all: "unset",
+        cursor: "pointer",
+        color: "var(--gray-11)",
+        fontSize: 12,
+      }}
+    >
+      {children}
+    </button>
   );
 }
-
-// ── View ─────────────────────────────────────────────────────────────────
 
 export default function TopicDiscoveryView() {
   const [selectedLabel, setSelectedLabel] = useState<number | null>(null);
   const [selectedOperation, setSelectedOperation] = useState<TopicOperation | null>(null);
-  const [leftOpen, setLeftOpen] = useState(true);
+  const [displayedOperationLabel, setDisplayedOperationLabel] = useState<string | null>(null);
 
   const byLabel = useMemo(() => new Map(TOPICS.map((t) => [t.label, t])), []);
   const selectedTopic = selectedLabel !== null ? (byLabel.get(selectedLabel) ?? null) : null;
@@ -334,82 +277,21 @@ export default function TopicDiscoveryView() {
   const handleSelect = useCallback((label: number) => {
     setSelectedLabel(label);
     setSelectedOperation(null);
+    setDisplayedOperationLabel(null);
   }, []);
 
-  const classCount = useMemo(
-    () => TOPICS.reduce((n, t) => n + t.member_full_names.length, 0),
-    [],
-  );
-  const noiseCount = byLabel.get(NOISE_LABEL)?.member_full_names.length ?? 0;
+  const handleOpenOperation = useCallback((operation: TopicOperation) => {
+    setSelectedOperation(operation);
+    setDisplayedOperationLabel(operation.label);
+  }, []);
+
+  const opseqCount = Object.keys(OPSEQ_VISUALISATIONS).length;
+  const noiseCount = OPERATIONS_BY_TOPIC[String(NOISE_LABEL)]?.length ?? 0;
+  const topicCount = TOPICS.filter((topic) => topic.label !== NOISE_LABEL).length;
 
   return (
     <Flex direction="column" flexGrow="1" overflow="hidden" style={{ minHeight: 0 }}>
       <Flex flexGrow="1" style={{ minHeight: 0 }}>
-        {/* The selected topic's class membership is supporting evidence for
-            its operation list, so it stays visible without taking over the
-            main reading path. */}
-        {leftOpen && (
-          <Box
-            flexShrink="0"
-            width="240px"
-            style={{ borderRight: "1px solid var(--gray-a5)", background: "var(--color-panel-solid)" }}
-          >
-            <Flex direction="column" style={{ height: "100%" }}>
-              <Flex
-                align="center"
-                justify="between"
-                px="3"
-                flexShrink="0"
-                height="36px"
-                style={{ borderBottom: "1px solid var(--gray-a5)" }}
-              >
-                <Text size="1" weight="medium" color="gray">
-                  Topics
-                </Text>
-                <IconButton size="1" variant="ghost" color="gray" onClick={() => setLeftOpen(false)}>
-                  <Minimize2 size={13} />
-                </IconButton>
-              </Flex>
-              {selectedTopic ? (
-                <Box flexGrow="1" style={{ minHeight: 0 }}>
-                  <TopicClassesPanel topic={selectedTopic} />
-                </Box>
-              ) : (
-                <Flex align="center" justify="center" flexGrow="1" p="4">
-                  <Text size="1" color="gray" align="center">
-                    Select a topic to see its classes.
-                  </Text>
-                </Flex>
-              )}
-            </Flex>
-          </Box>
-        )}
-
-        {/* Collapsed left panel keeps a rail rather than floating a button
-            over the content: unlike the graph canvas, everything here is
-            text starting at the top-left corner. */}
-        {!leftOpen && (
-          <Flex
-            direction="column"
-            align="center"
-            flexShrink="0"
-            width="32px"
-            pt="2"
-            style={{ borderRight: "1px solid var(--gray-a5)", background: "var(--color-panel-solid)" }}
-          >
-            <IconButton
-              size="1"
-              variant="ghost"
-              color="gray"
-              onClick={() => setLeftOpen(true)}
-              title="Show panel"
-            >
-              <ChevronRight size={14} />
-            </IconButton>
-          </Flex>
-        )}
-
-        {/* Centre */}
         <Box
           position="relative"
           flexGrow="1"
@@ -419,16 +301,46 @@ export default function TopicDiscoveryView() {
           {selectedOperation ? (
             <Flex direction="column" style={{ height: "100%" }}>
               <Flex align="center" gap="2" px="3" flexShrink="0" height="36px" style={{ borderBottom: "1px solid var(--gray-a5)", background: "var(--color-panel-solid)" }}>
-                <IconButton size="1" variant="ghost" color="gray" onClick={() => setSelectedOperation(null)} title="Back to operations">
+                <IconButton
+                  size="1"
+                  variant="ghost"
+                  color="gray"
+                  onClick={() => {
+                    setSelectedOperation(null);
+                    setDisplayedOperationLabel(null);
+                  }}
+                  title="Back to operations"
+                >
                   <ChevronLeft size={14} />
                 </IconButton>
-                <Text size="1" color="gray">{topicLabel(selectedTopic!)}</Text>
+                <BreadcrumbButton
+                  onClick={() => {
+                    setSelectedLabel(null);
+                    setSelectedOperation(null);
+                    setDisplayedOperationLabel(null);
+                  }}
+                >
+                  All Topics
+                </BreadcrumbButton>
                 <Text color="gray">/</Text>
-                <Text size="1" weight="medium">{selectedOperation.label}</Text>
+                <BreadcrumbButton
+                  onClick={() => {
+                    setSelectedOperation(null);
+                    setDisplayedOperationLabel(null);
+                  }}
+                >
+                  {topicLabel(selectedTopic!)}
+                </BreadcrumbButton>
+                <Text color="gray">/</Text>
+                <Text size="1" weight="medium">{displayedOperationLabel ?? selectedOperation.label}</Text>
               </Flex>
               <Box flexGrow="1" height="100%" style={{ minHeight: 0 }}>
                 {OPSEQ_VISUALISATIONS[selectedOperation.id] ? (
-                  <AnchoredGraphView {...OPSEQ_VISUALISATIONS[selectedOperation.id]} />
+                  <AnchoredGraphView
+                    {...OPSEQ_VISUALISATIONS[selectedOperation.id]}
+                    initialPanelTab="operation"
+                    onOpseqChange={(choice) => setDisplayedOperationLabel(choice.label)}
+                  />
                 ) : (
                   <Flex align="center" justify="center" height="100%">
                     <Text size="1" color="gray">No static graph is available for this operation.</Text>
@@ -440,7 +352,7 @@ export default function TopicDiscoveryView() {
             <TopicDetailView
               topic={selectedTopic}
               onBack={() => setSelectedLabel(null)}
-              onOpenOperation={setSelectedOperation}
+              onOpenOperation={handleOpenOperation}
             />
           ) : (
             <TopicList selectedLabel={selectedLabel} onSelect={handleSelect} />
@@ -467,13 +379,13 @@ export default function TopicDiscoveryView() {
           ·
         </Text>
         <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-          {TOPICS.length} topics
+          {topicCount} topics
         </Text>
         <Text size="1" color="gray">
           ·
         </Text>
         <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-          {classCount} classes
+          {opseqCount} opseqs
         </Text>
         <Text size="1" color="gray">
           ·

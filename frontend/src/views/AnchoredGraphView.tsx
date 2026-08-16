@@ -13,6 +13,8 @@ import {
   Tooltip,
   Card,
   Slider,
+  Dialog,
+  Button,
 } from "@radix-ui/themes";
 import {
   ChevronRight,
@@ -36,7 +38,15 @@ import {
 } from "lucide-react";
 
 import { CLASS_FILES } from "../data/classFiles";
-import { ANCHORED_VISUALISATION, FULL_GRAPH, graphVisualisation, type GraphVisualisation } from "../data/graph";
+import {
+  ANCHORED_VISUALISATION,
+  FULL_GRAPH,
+  OPSEQ_VISUALISATIONS,
+  graphVisualisation,
+  opseqChoicesForMethod,
+  type GraphVisualisation,
+  type OpseqChoice,
+} from "../data/graph";
 import type { FlowNode, FlowEdge, LoopGroup, NodeType, Transition } from "../types/flowmap";
 import { computeLayout, type NodePosition, type RowGap } from "../lib/layout";
 import {
@@ -82,9 +92,15 @@ interface GraphViewData extends GraphVisualisation {
   panels: BranchPanel[];
   flowEdges: FlowEdge[];
   loopsById: Map<string, LoopGroup>;
+  focusMethodFullName?: string;
+  onSelectProjectMethod: (methodFullName: string) => void;
 }
 
-function makeGraphViewData(visualisation: GraphVisualisation): GraphViewData {
+function makeGraphViewData(
+  visualisation: GraphVisualisation,
+  onSelectProjectMethod: (methodFullName: string) => void,
+  focusMethodFullName?: string,
+): GraphViewData {
   const { graph, phaseTree } = visualisation;
   const rootId = graph.rootId;
   if (!rootId) throw new Error("A flattened graph must have a rootId");
@@ -95,6 +111,7 @@ function makeGraphViewData(visualisation: GraphVisualisation): GraphViewData {
   const loopsById = new Map((graph.loopGroups ?? []).map((loop) => [loop.id, loop]));
   return {
     graph, phaseTree, rootId, nodesById, explorerTree, projectTree, panels, loopsById,
+    focusMethodFullName, onSelectProjectMethod,
     flowEdges: graph.edges.filter((edge) => edge.type !== "data" && !edge.loopBack),
   };
 }
@@ -239,16 +256,14 @@ function ProjectExplorerRow({
   item,
   depth,
   selectedNodeId,
-  onSelect,
   forceOpen = false,
 }: {
   item: ProjectExplorerItem;
   depth: number;
   selectedNodeId: string | null;
-  onSelect: (id: string) => void;
   forceOpen?: boolean;
 }) {
-  const { graph } = useGraphViewData();
+  const { graph, onSelectProjectMethod } = useGraphViewData();
   const [open, setOpen] = useState(true);
   const isBranch = item.kind !== "method";
   const isOpen = forceOpen || open;
@@ -262,7 +277,7 @@ function ProjectExplorerRow({
       <button
         onClick={() => {
           if (isBranch) setOpen((value) => !value);
-          else if (activeNode) onSelect(activeNode.id);
+          else if (item.methodFullName) onSelectProjectMethod(item.methodFullName);
         }}
         title={item.methodFullName ?? item.name}
         style={{
@@ -274,7 +289,7 @@ function ProjectExplorerRow({
           width: "100%",
           padding: "5px 8px",
           paddingLeft: 8 + depth * 14,
-          cursor: isBranch || activeNode ? "pointer" : "default",
+          cursor: "pointer",
           borderRadius: 4,
           color: isSelected ? "var(--accent-11)" : "var(--gray-11)",
           background: isSelected ? "var(--accent-a3)" : "transparent",
@@ -298,7 +313,6 @@ function ProjectExplorerRow({
           item={child}
           depth={depth + 1}
           selectedNodeId={selectedNodeId}
-          onSelect={onSelect}
           forceOpen={forceOpen}
         />
       ))}
@@ -654,7 +668,7 @@ function PanelResizeHandle({
   );
 }
 
-function GraphCanvasView() {
+function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) {
   const {
     graph: GRAPH,
     phaseTree,
@@ -665,10 +679,22 @@ function GraphCanvasView() {
     panels: PANELS,
     flowEdges: FLOW_EDGES,
     loopsById: LOOPS_BY_ID,
+    focusMethodFullName,
   } = useGraphViewData();
   const PHASES = phaseTree.phases;
+  const focusNodeId = focusMethodFullName
+    ? GRAPH.nodes.find((node) => node.type === "entry" && node.calleeFullName === focusMethodFullName)?.id ?? null
+    : null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [armSelection, setArmSelection] = useState<BranchSelection>(() => defaultSelection(PANELS));
+  const [armSelection, setArmSelection] = useState<BranchSelection>(() => {
+    const selection = defaultSelection(PANELS);
+    if (!focusNodeId) return selection;
+    for (const panel of PANELS) {
+      const containingArm = panel.arms.find((arm) => arm.memberIds.includes(focusNodeId));
+      if (containingArm) selection.set(panel.id, containingArm.id);
+    }
+    return selection;
+  });
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 120, y: 60 });
   const [isPanning, setIsPanning] = useState(false);
@@ -679,7 +705,7 @@ function GraphCanvasView() {
   const [rightWidth, setRightWidth] = useState(288);
   const [resizingSide, setResizingSide] = useState<ResizeSide | null>(null);
   const resizeStartRef = useRef<{ side: ResizeSide; x: number; width: number } | null>(null);
-  const [activeTab, setActiveTab] = useState<PanelTab>("explore");
+  const [activeTab, setActiveTab] = useState<PanelTab>(initialTab);
   const [exploreQuery, setExploreQuery] = useState("");
   const [legendOpen, setLegendOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -1077,7 +1103,6 @@ function GraphCanvasView() {
                             item={item}
                             depth={0}
                             selectedNodeId={selectedId}
-                            onSelect={handleSelectFromPanel}
                             forceOpen={exploreQuery.trim().length > 0}
                           />
                         ))}
@@ -1526,18 +1551,122 @@ function GraphCanvasView() {
   );
 }
 
-export default function AnchoredGraphView({
-  graph,
-  phaseTree,
-}: Partial<GraphVisualisation> = {}) {
-  const visualisation = useMemo(
-    () => graphVisualisation(graph ?? ANCHORED_VISUALISATION.graph, phaseTree ?? ANCHORED_VISUALISATION.phaseTree),
-    [graph, phaseTree],
+interface PendingOpseqSelection {
+  methodFullName: string;
+  choices: OpseqChoice[];
+}
+
+interface AnchoredGraphViewProps extends Partial<GraphVisualisation> {
+  onEntryPointChange?: (entryPoint: string | undefined) => void;
+  onOpseqChange?: (choice: OpseqChoice) => void;
+  initialPanelTab?: PanelTab;
+}
+
+export default function AnchoredGraphView(props: AnchoredGraphViewProps = {}) {
+  const baseVisualisation = useMemo<GraphVisualisation>(() => ({
+    ...graphVisualisation(
+      props.graph ?? ANCHORED_VISUALISATION.graph,
+      props.phaseTree ?? ANCHORED_VISUALISATION.phaseTree,
+    ),
+    rootMethodFullName: props.rootMethodFullName,
+    memberMethodFullNames: props.memberMethodFullNames,
+  }), [props.graph, props.phaseTree, props.rootMethodFullName, props.memberMethodFullNames]);
+  const [override, setOverride] = useState<{
+    baseGraph: GraphVisualisation["graph"];
+    opseqId: string;
+    focusMethodFullName: string;
+  } | null>(null);
+  const [pendingSelection, setPendingSelection] = useState<PendingOpseqSelection | null>(null);
+
+  const currentOverride = override?.baseGraph === baseVisualisation.graph ? override : null;
+  const visualisation = currentOverride
+    ? OPSEQ_VISUALISATIONS[currentOverride.opseqId] ?? baseVisualisation
+    : baseVisualisation;
+  const focusMethodFullName = currentOverride?.focusMethodFullName;
+
+  useEffect(() => {
+    props.onEntryPointChange?.(visualisation.graph.entryPoint);
+  }, [props.onEntryPointChange, visualisation.graph.entryPoint]);
+
+  const activateChoice = useCallback((choice: OpseqChoice, methodFullName: string) => {
+    setOverride({
+      baseGraph: baseVisualisation.graph,
+      opseqId: choice.id,
+      focusMethodFullName: methodFullName,
+    });
+    props.onOpseqChange?.(choice);
+    setPendingSelection(null);
+  }, [baseVisualisation.graph, props.onOpseqChange]);
+
+  const handleSelectProjectMethod = useCallback((methodFullName: string) => {
+    const choices = opseqChoicesForMethod(methodFullName);
+    if (choices.length === 1) {
+      activateChoice(choices[0], methodFullName);
+      return;
+    }
+    setPendingSelection({ methodFullName, choices });
+  }, [activateChoice]);
+
+  const data = useMemo(
+    () => makeGraphViewData(visualisation, handleSelectProjectMethod, focusMethodFullName),
+    [visualisation, handleSelectProjectMethod, focusMethodFullName],
   );
-  const data = useMemo(() => makeGraphViewData(visualisation), [visualisation]);
+  const graphViewKey = `${visualisation.graph.rootId ?? visualisation.graph.entryPoint ?? "empty"}:${focusMethodFullName ?? ""}`;
+
   return (
-    <GraphViewContext.Provider value={data}>
-      <GraphCanvasView />
-    </GraphViewContext.Provider>
+    <>
+      <GraphViewContext.Provider value={data}>
+        <GraphCanvasView key={graphViewKey} initialTab={props.initialPanelTab} />
+      </GraphViewContext.Provider>
+
+      <Dialog.Root
+        open={pendingSelection !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSelection(null);
+        }}
+      >
+        <Dialog.Content maxWidth="480px">
+          <Dialog.Title>
+            {pendingSelection?.choices.length === 0 ? "No operation sequence" : "Choose operation context"}
+          </Dialog.Title>
+          <Dialog.Description size="2" color="gray">
+            {pendingSelection?.choices.length === 0
+              ? `${shortLabel(pendingSelection.methodFullName)} is not part of a stored operation sequence.`
+              : `${shortLabel(pendingSelection?.methodFullName ?? "")} appears in ${pendingSelection?.choices.length ?? 0} operations. Select the root context to display.`}
+          </Dialog.Description>
+
+          {pendingSelection && pendingSelection.choices.length > 0 && (
+            <Flex direction="column" gap="2" mt="4">
+              {pendingSelection.choices.map((choice) => (
+                <button
+                  key={choice.id}
+                  onClick={() => activateChoice(choice, pendingSelection.methodFullName)}
+                  style={{
+                    all: "unset",
+                    boxSizing: "border-box",
+                    cursor: "pointer",
+                    padding: "10px 12px",
+                    borderRadius: 6,
+                    border: "1px solid var(--gray-a6)",
+                    background: "var(--gray-a2)",
+                  }}
+                >
+                  <Text size="2" weight="medium" as="div">{choice.label}</Text>
+                  <Text size="1" color="gray" as="div" mt="1" style={{ fontFamily: MONO }}>
+                    {shortLabel(choice.rootMethodFullName)}
+                  </Text>
+                </button>
+              ))}
+            </Flex>
+          )}
+
+          <Flex justify="end" mt="4">
+            <Dialog.Close>
+              <Button variant="soft" color="gray">Cancel</Button>
+            </Dialog.Close>
+          </Flex>
+        </Dialog.Content>
+      </Dialog.Root>
+    </>
   );
 }

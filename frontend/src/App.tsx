@@ -61,6 +61,7 @@ function ViewTab({
 
 export default function App() {
   const [view, setView] = useState<View>("anchored");
+  const [anchoredEntryPoint, setAnchoredEntryPoint] = useState(GRAPH.entryPoint);
 
   return (
     <Flex
@@ -104,7 +105,7 @@ export default function App() {
           </Text>
           <Text color="gray">·</Text>
           <Badge color="grass" variant="soft" style={{ fontFamily: MONO }}>
-            {GRAPH.entryPoint ? shortLabel(GRAPH.entryPoint) : "no anchor"}
+            {anchoredEntryPoint ? shortLabel(anchoredEntryPoint) : "no anchor"}
           </Badge>
         </Flex>
         <Flex align="center" gap="2">
@@ -140,7 +141,7 @@ export default function App() {
       <Flex direction="column" flexGrow="1" style={{ minHeight: 0 }}>
         {view === "anchored" ? (
           GRAPH.rootId ? (
-            <AnchoredGraphView />
+            <AnchoredGraphView onEntryPointChange={setAnchoredEntryPoint} />
           ) : (
             <Flex align="center" justify="center" flexGrow="1" style={{ background: "var(--canvas-background)" }}>
               <Box style={{ textAlign: "center" }}>
