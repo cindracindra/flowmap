@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from backend.src.flowmap.domain.cfg_pipeline import (  # noqa: E402
     classify_roots_and_orphans,
+    filter_and_classify_roots_and_orphans,
     filter_noise_cfg,
     find_roots_above,
     flatten_cfg,
@@ -67,7 +68,7 @@ def _full_codebase_raw() -> dict:
             node("c3", "call", "doHelper", "doProcessTwo"),
             node("c4", "call", "doY", "doProcessTwo"),
             node("m_doHelper", "entry", "doHelper"),
-            node("c5", "call", "doInner", "doHelper", arms=[("cs_helper", "try")]),
+            node("c5", "call", "doInner", "doHelper", arms=[("cs_helper", "catch1")]),
             node("m_unused", "entry", "unusedMethod"),
             node("leaf_doX", "leaf", "doX"),
             node("leaf_doY", "leaf", "doY"),
@@ -103,8 +104,9 @@ def _full_codebase_raw() -> dict:
             {
                 "id": "cs_helper", "kind": "TRY", "method": "doHelper", "line": 12,
                 "arms": [
-                    {"label": "try", "empty": False, "terminus": "continues", "firstCallId": "c5"},
-                    {"label": "catch1", "empty": True, "terminus": "throw"},
+                    {"label": "catch1", "empty": False, "terminus": "throw",
+                     "exceptionType": "java.lang.RuntimeException", "firstCallId": "c5"},
+                    {"label": "noCatch", "empty": True, "terminus": "continues"},
                 ],
             },
         ],
@@ -173,6 +175,59 @@ class ClassifyRootsAndOrphansTests(unittest.TestCase):
         self.assertNotIn("entryPoint", raw)
         self.assertEqual(raw["roots"], ["m_doA", "m_doProcessTwo"])
         self.assertEqual(raw["orphans"], ["m_unused"])
+
+    def test_sequence_flow_counts_without_an_invoke_target(self):
+        graph = Graph.from_dict({
+            "nodes": [
+                node("m_log", "entry", "log"),
+                node("c_log", "call", "external.Logger.info", "log"),
+            ],
+            "edges": [edge("m_log", "c_log")],
+        })
+
+        classified = classify_roots_and_orphans(graph)
+
+        self.assertEqual(classified.roots, ["m_log"])
+        self.assertEqual(classified.orphans, [])
+
+    def test_data_edges_do_not_make_an_entry_a_root(self):
+        graph = Graph.from_dict({
+            "nodes": [
+                node("m_empty", "entry", "empty"),
+                node("c_data", "call", "Thing.value", "empty"),
+            ],
+            "edges": [edge("m_empty", "c_data", "data")],
+        })
+
+        classified = classify_roots_and_orphans(graph)
+
+        self.assertEqual(classified.roots, [])
+        self.assertEqual(classified.orphans, ["m_empty"])
+
+    def test_filter_then_reclassify_preserves_and_updates_every_entry(self):
+        graph = Graph.from_dict({
+            "nodes": [
+                node("m_a", "entry", "A"),
+                node("c_noise", "call", "<operator>.assignment", "A"),
+                node("m_b", "entry", "B"),
+                node("c_work", "call", "external.Work.run", "B"),
+                node("m_empty", "entry", "Empty"),
+            ],
+            "edges": [
+                edge("m_a", "c_noise"),
+                edge("c_noise", "m_b", "invoke"),
+                edge("m_b", "c_work"),
+            ],
+        })
+
+        classified = filter_and_classify_roots_and_orphans(graph)
+
+        self.assertEqual(classified.roots, ["m_b"])
+        self.assertEqual(classified.orphans, ["m_a", "m_empty"])
+        self.assertEqual(
+            {n.id for n in classified.nodes if n.type == "entry"},
+            {"m_a", "m_b", "m_empty"},
+        )
 
 
 # --------------------------------------------------------------------------
@@ -338,6 +393,73 @@ class FilterNoiseCfgTests(unittest.TestCase):
             {("e", "c_real", "sequence")},
         )
 
+    def test_try_group_is_removed_when_every_catch_call_is_filtered(self):
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e", "entry", "run"),
+                node("c_try", "call", "Service.work", "run"),
+                node("c_noise", "call", "<operator>.assignment", "run",
+                     arms=[("cs", "catch1")]),
+                node("c_after", "call", "Service.after", "run"),
+            ],
+            "edges": [
+                edge("e", "c_try"),
+                edge("c_try", "c_noise"),
+                edge("c_try", "c_after"),
+                edge("c_noise", "c_after"),
+            ],
+            "branchGroups": [{
+                "id": "cs", "kind": "TRY", "method": "run",
+                "arms": [
+                    {"label": "catch1", "empty": False, "terminus": "continues",
+                     "exceptionType": "java.io.IOException", "firstCallId": "c_noise"},
+                    {"label": "noCatch", "empty": True, "terminus": "continues"},
+                ],
+            }],
+        })
+
+        filtered = filter_noise_cfg(graph)
+
+        self.assertEqual(filtered.branchGroups, [])
+        self.assertIn(
+            ("c_try", "c_after"),
+            {(e.source, e.target) for e in filtered.edges},
+        )
+
+    def test_try_group_and_exception_type_survive_with_visible_catch_work(self):
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e", "entry", "run"),
+                node("c_try", "call", "Service.work", "run"),
+                node("c_catch", "call", "Report.reject", "run", arms=[("cs", "catch1")]),
+                node("c_after", "call", "Service.after", "run"),
+            ],
+            "edges": [
+                edge("e", "c_try"),
+                edge("c_try", "c_catch"),
+                edge("c_try", "c_after"),
+                edge("c_catch", "c_after"),
+            ],
+            "branchGroups": [{
+                "id": "cs", "kind": "TRY", "method": "run",
+                "arms": [
+                    {"label": "catch1", "empty": False, "terminus": "continues",
+                     "exceptionType": "java.lang.IllegalArgumentException",
+                     "firstCallId": "c_catch"},
+                    {"label": "noCatch", "empty": True, "terminus": "continues"},
+                ],
+            }],
+        })
+
+        filtered = filter_noise_cfg(graph)
+
+        self.assertEqual(len(filtered.branchGroups), 1)
+        catch = next(a for a in filtered.branchGroups[0].arms if a.label == "catch1")
+        self.assertEqual(catch.exceptionType, "java.lang.IllegalArgumentException")
+        self.assertFalse(catch.empty)
+
     def test_leaf_disconnected_by_an_excluded_call_is_pruned(self):
         # run(): <operator>.println(...) -- a noise call whose only
         # target is a leaf that nothing else points at. Excluding the
@@ -491,9 +613,9 @@ class FilterNoiseCfgTests(unittest.TestCase):
             "entryPoint": "run",
             "nodes": [
                 node("e", "entry", "run"),
-                node("op_assign", "call", "<operator>.assignment", "run", arms=[("cs1", "try")]),
+                node("op_assign", "call", "<operator>.assignment", "run", arms=[("cs1", "catch1")]),
                 node("c_fetch", "call", "Service.fetch", "run",
-                     arms=[("cs1", "try"), ("cs2", "if")]),
+                     arms=[("cs1", "catch1"), ("cs2", "if")]),
             ],
             "edges": [
                 edge("e", "op_assign"),
@@ -505,7 +627,7 @@ class FilterNoiseCfgTests(unittest.TestCase):
         c_fetch = next(n for n in filtered.nodes if n.id == "c_fetch")
         self.assertEqual(
             {(t.groupId, t.armLabel) for t in c_fetch.branchArms},
-            {("cs1", "try"), ("cs2", "if")},
+            {("cs1", "catch1"), ("cs2", "if")},
         )
 
 
@@ -659,7 +781,7 @@ class RecomputeBranchGeometryTests(unittest.TestCase):
             "entryPoint": "run",
             "nodes": [
                 node("e", "entry", "run"),
-                node("c_try", "call", "Service.a", "run", arms=[("cs1", "try")]),
+                node("c_try", "call", "Service.a", "run"),
                 node("c_catch", "call", "Err.getMessage", "run", arms=[("cs1", "catch1")]),
                 node("c_after", "call", "Service.after", "run"),
             ],
@@ -672,10 +794,9 @@ class RecomputeBranchGeometryTests(unittest.TestCase):
             "branchGroups": [{
                 "id": "cs1", "kind": "TRY", "method": "run", "line": 3,
                 "arms": [
-                    {"label": "try", "empty": False, "terminus": "continues",
-                     "firstCallId": "c_try"},
                     {"label": "catch1", "empty": False, "terminus": "continues",
                      "firstCallId": "c_catch"},
+                    {"label": "noCatch", "empty": True, "terminus": "continues"},
                 ],
             }],
         }
@@ -913,6 +1034,8 @@ def _sibling_branches_raw() -> dict:
                 "arms": [{
                     "label": "if", "empty": False, "terminus": "throw",
                     "conditionCode": "from == null", "firstCallId": "c_guard",
+                }, {
+                    "label": "else", "empty": True, "terminus": "continues",
                 }],
             },
             {
@@ -928,6 +1051,278 @@ def _sibling_branches_raw() -> dict:
             },
         ],
     }
+
+
+# --------------------------------------------------------------------------
+# Convergence for the two shapes that used to report None: a guard clause
+# (one live path) and a fork that is itself a call (its continuation exists
+# only as a return edge). Both are the commonest shapes in real code, not
+# corner cases -- 8 of 16 groups on the sample project were one or the other.
+# --------------------------------------------------------------------------
+
+def _guard_clause_raw() -> dict:
+    """
+    void caller()   { guarded(); after(); }
+    void guarded()  { if (bad) { throw new EXC(); }  work(); }
+
+    The `if` arm throws, so it contributes no path at all. The only live
+    route out of the branch is the implicit `else` -- which full_cfg.sc now
+    emits as a real (empty, continuing) arm. Convergence is where that
+    surviving route resumes: work().
+    """
+    return {
+        "entryPoint": "caller",
+        "nodes": [
+            node("e_caller", "entry", "caller"),
+            node("c_guarded", "call", "guarded", "caller"),
+            node("c_after", "call", "pkg.AFTER.run", "caller"),
+            node("e_guarded", "entry", "guarded"),
+            node("c_throw", "call", "pkg.EXC.<init>", "guarded",
+                 dead=True, terminus="throw", arms=[("cs1", "if")]),
+            node("c_work", "call", "pkg.WORK.run", "guarded"),
+            node("leaf_after", "leaf", "pkg.AFTER.run"),
+            node("leaf_exc", "leaf", "pkg.EXC.<init>"),
+            node("leaf_work", "leaf", "pkg.WORK.run"),
+        ],
+        "edges": [
+            edge("e_caller", "c_guarded"),
+            edge("c_guarded", "c_after"),
+            edge("c_guarded", "e_guarded", "invoke"),
+            edge("e_guarded", "c_throw"),
+            edge("e_guarded", "c_work"),
+            edge("c_after", "leaf_after", "invoke"),
+            edge("c_throw", "leaf_exc", "invoke"),
+            edge("c_work", "leaf_work", "invoke"),
+        ],
+        "branchGroups": [{
+            "id": "cs1", "kind": "IF", "method": "guarded", "line": 2,
+            "branchPointIds": ["e_guarded"],
+            "arms": [
+                {"label": "if", "empty": False, "terminus": "throw",
+                 "conditionCode": "bad", "firstCallId": "c_throw"},
+                {"label": "else", "empty": True, "terminus": "continues"},
+            ],
+        }],
+    }
+
+
+def _call_fork_raw() -> dict:
+    """
+    void caller() { outer(); done(); }
+    void outer()  { if (probe()) { armCall(); }  tail(); }
+    void probe()  { deep(); }
+
+    The fork is `probe()` -- a CALL with a body of its own. Flattening
+    replaces a call site's own sequence edge with the callee's return edge,
+    so post-flatten this branch point has NO sequence successors: both the
+    arm and the implicit else are reached only through edges tagged
+    returnFrom=probe.
+    """
+    return {
+        "entryPoint": "caller",
+        "nodes": [
+            node("e_caller", "entry", "caller"),
+            node("c_outer", "call", "outer", "caller"),
+            node("c_done", "call", "pkg.DONE.run", "caller"),
+            node("e_outer", "entry", "outer"),
+            node("c_probe", "call", "probe", "outer"),
+            node("c_arm", "call", "pkg.ARM.run", "outer", arms=[("cs1", "if")]),
+            node("c_tail", "call", "pkg.TAIL.run", "outer"),
+            node("e_probe", "entry", "probe"),
+            node("c_deep", "call", "pkg.DEEP.run", "probe"),
+            node("leaf_done", "leaf", "pkg.DONE.run"),
+            node("leaf_arm", "leaf", "pkg.ARM.run"),
+            node("leaf_tail", "leaf", "pkg.TAIL.run"),
+            node("leaf_deep", "leaf", "pkg.DEEP.run"),
+        ],
+        "edges": [
+            edge("e_caller", "c_outer"),
+            edge("c_outer", "c_done"),
+            edge("c_outer", "e_outer", "invoke"),
+            edge("e_outer", "c_probe"),
+            edge("c_probe", "e_probe", "invoke"),
+            edge("c_probe", "c_arm"),
+            edge("c_probe", "c_tail"),
+            edge("c_arm", "c_tail"),
+            edge("e_probe", "c_deep"),
+            edge("c_done", "leaf_done", "invoke"),
+            edge("c_arm", "leaf_arm", "invoke"),
+            edge("c_tail", "leaf_tail", "invoke"),
+            edge("c_deep", "leaf_deep", "invoke"),
+        ],
+        "branchGroups": [{
+            "id": "cs1", "kind": "IF", "method": "outer", "line": 2,
+            "branchPointIds": ["c_probe"],
+            "arms": [
+                {"label": "if", "empty": False, "terminus": "continues",
+                 "conditionCode": "probe()", "firstCallId": "c_arm"},
+                {"label": "else", "empty": True, "terminus": "continues"},
+            ],
+        }],
+    }
+
+
+def _tag_propagation_raw() -> dict:
+    """
+    void caller() { outer(); plain(); }
+    void outer()  { if (x) { helper(); }  tail(); }
+    void helper() { deep(); }
+
+    helper() is the arm's only tagged call -- extraction tags LEXICALLY, so
+    everything helper() goes on to do carries no tag at all, even though it
+    runs solely because the arm was taken.
+
+    caller() also calls helper's sibling plain() from OUTSIDE any arm, which
+    is what makes flatten the only stage where this is answerable: pre-flatten
+    there is one node per method body, shared by every caller.
+    """
+    return {
+        "entryPoint": "caller",
+        "nodes": [
+            node("e_caller", "entry", "caller"),
+            node("c_outer", "call", "outer", "caller"),
+            node("c_plain", "call", "helper", "caller"),
+            node("e_outer", "entry", "outer"),
+            node("c_helper", "call", "helper", "outer", arms=[("cs1", "if")]),
+            node("c_tail", "call", "pkg.TAIL.run", "outer"),
+            node("e_helper", "entry", "helper"),
+            node("c_deep", "call", "pkg.DEEP.run", "helper"),
+            node("leaf_deep", "leaf", "pkg.DEEP.run"),
+            node("leaf_tail", "leaf", "pkg.TAIL.run"),
+        ],
+        "edges": [
+            edge("e_caller", "c_outer"),
+            edge("c_outer", "c_plain"),
+            edge("c_outer", "e_outer", "invoke"),
+            edge("c_plain", "e_helper", "invoke"),
+            edge("e_outer", "c_helper"),
+            edge("e_outer", "c_tail"),
+            edge("c_helper", "c_tail"),
+            edge("c_helper", "e_helper", "invoke"),
+            edge("e_helper", "c_deep"),
+            edge("c_deep", "leaf_deep", "invoke"),
+            edge("c_tail", "leaf_tail", "invoke"),
+        ],
+        "branchGroups": [{
+            "id": "cs1", "kind": "IF", "method": "outer", "line": 2,
+            "branchPointIds": ["e_outer"],
+            "arms": [
+                {"label": "if", "empty": False, "terminus": "continues",
+                 "conditionCode": "x", "firstCallId": "c_helper"},
+                {"label": "else", "empty": True, "terminus": "continues"},
+            ],
+        }],
+    }
+
+
+class ArmTagPropagationTests(unittest.TestCase):
+    def _flattened(self):
+        flattened = flatten_cfg(Graph.from_dict(_tag_propagation_raw()))
+        group = flattened.branchGroups[0]
+        in_arm = {
+            n.origId for n in flattened.nodes
+            if any(t.groupId == group.id and t.armLabel == "if" for t in n.branchArms)
+        }
+        return flattened, group, in_arm
+
+    def test_everything_the_arm_causes_to_run_carries_its_tag(self):
+        _, _, in_arm = self._flattened()
+
+        # The tagged call itself, the callee it invokes, that callee's body,
+        # and the external leaf underneath it.
+        self.assertEqual(in_arm, {"c_helper", "e_helper", "c_deep", "leaf_deep"})
+
+    def test_the_tag_stops_at_the_arm(self):
+        _, _, in_arm = self._flattened()
+
+        # tail() runs whether or not the branch was taken.
+        self.assertNotIn("c_tail", in_arm)
+        self.assertNotIn("e_outer", in_arm)
+        self.assertNotIn("c_outer", in_arm)
+
+    def test_the_same_callee_reached_outside_the_arm_stays_untagged(self):
+        # The reason this belongs to flatten and cannot be done earlier:
+        # helper() is ONE node before flattening, called both from inside
+        # the arm and from caller() directly. Only the per-call-site clones
+        # can carry different answers.
+        flattened, group, _ = self._flattened()
+        clones = [n for n in flattened.nodes if n.origId == "e_helper"]
+        self.assertEqual(len(clones), 2, "helper should be inlined once per call site")
+
+        tagged = [c for c in clones
+                  if any(t.groupId == group.id for t in c.branchArms)]
+        self.assertEqual(len(tagged), 1, "only the in-arm clone may carry the tag")
+
+    def test_propagated_tags_are_instance_scoped(self):
+        flattened, group, _ = self._flattened()
+        # Not the pre-clone "cs1" -- the group id the flattened graph
+        # actually holds, or nothing can match a group to its members.
+        self.assertTrue(group.id.startswith("cs1~"), group.id)
+        for n in flattened.nodes:
+            for tag in n.branchArms:
+                self.assertNotEqual(tag.groupId, "cs1", f"{n.id} kept a pre-clone id")
+
+
+class GuardAndCallForkConvergenceTests(unittest.TestCase):
+    def test_guard_clause_converges_where_the_surviving_path_resumes(self):
+        flattened = flatten_cfg(Graph.from_dict(_guard_clause_raw()))
+        group = flattened.branchGroups[0]
+        names = {n.id: n.calleeFullName for n in flattened.nodes}
+
+        # One live path is still a convergence: it is where the branch stops
+        # mattering, which is the bound a branch panel needs. Requiring two
+        # or more declined to answer for the commonest shape in real code.
+        self.assertIsNotNone(group.convergesAt)
+        self.assertEqual(names[group.convergesAt], "pkg.WORK.run")
+
+    def test_a_fork_that_is_a_call_has_no_sequence_successors(self):
+        # The premise of the next test, asserted so it cannot pass for the
+        # wrong reason if flattening's edge convention ever changes.
+        flattened = flatten_cfg(Graph.from_dict(_call_fork_raw()))
+        fork = flattened.branchGroups[0].branchPointIds[0]
+
+        plain = [e for e in flattened.edges
+                 if e.source == fork and e.type == "sequence"]
+        self.assertEqual(plain, [], "fork should own no sequence edge post-flatten")
+        returns = [e.target for e in flattened.edges
+                   if e.type == "sequence" and e.returnFrom == fork]
+        self.assertTrue(returns, "its continuations must exist as return edges")
+
+    def test_a_fork_that_is_a_call_still_finds_its_continuation(self):
+        flattened = flatten_cfg(Graph.from_dict(_call_fork_raw()))
+        group = flattened.branchGroups[0]
+        names = {n.id: n.calleeFullName for n in flattened.nodes}
+
+        self.assertIsNotNone(group.convergesAt)
+        self.assertEqual(names[group.convergesAt], "pkg.TAIL.run")
+
+    def test_a_guard_ending_its_method_converges_in_the_caller(self):
+        # `void guarded() { if (bad) throw ...; }` -- nothing after the
+        # guard at all. The surviving route is still real: not throwing
+        # means the method returns and the CALLER carries on. Flattening
+        # models that as a fallback edge off the callee's entry (its whole
+        # body dead-ended, so nothing consumed the continuation), and
+        # because that edge starts at the branch point it is picked up as
+        # the implicit path.
+        #
+        # This was originally written asserting None, on the assumption
+        # that removing work() removed the alternative. It does not -- the
+        # fall-through survives the method, which is exactly what the
+        # fallback edge is for.
+        raw = _guard_clause_raw()
+        drop = {"c_work", "leaf_work"}
+        raw["nodes"] = [n for n in raw["nodes"] if n["id"] not in drop]
+        raw["edges"] = [e for e in raw["edges"]
+                        if e["from"] not in drop and e["to"] not in drop]
+        raw["branchGroups"][0]["arms"] = [
+            {"label": "if", "empty": False, "terminus": "throw", "firstCallId": "c_throw"},
+            {"label": "else", "empty": True, "terminus": "continues"},
+        ]
+        flattened = flatten_cfg(Graph.from_dict(raw))
+        group = flattened.branchGroups[0]
+        names = {n.id: n.calleeFullName for n in flattened.nodes}
+
+        self.assertEqual(names[group.convergesAt], "pkg.AFTER.run")
 
 
 class SiblingBranchConvergenceTests(unittest.TestCase):
@@ -958,6 +1353,20 @@ class SiblingBranchConvergenceTests(unittest.TestCase):
 
         self.assertIsNotNone(group.convergesAt)
         self.assertEqual(names[group.convergesAt], "pkg.ACC.withdraw")
+
+    def test_later_sibling_heads_require_the_earlier_guard_to_continue(self):
+        flattened = flatten_cfg(Graph.from_dict(_sibling_branches_raw()))
+        guard = next(g for g in flattened.branchGroups if g.id.startswith("cs_guard~"))
+        fee = next(g for g in flattened.branchGroups if g.id.startswith("cs_fee~"))
+        fee_heads = {arm.firstCallId for arm in fee.arms if arm.firstCallId is not None}
+        routes = [edge for edge in flattened.edges if edge.target in fee_heads]
+        guard_else = next(arm for arm in guard.arms if arm.label == "else")
+
+        self.assertEqual(len(routes), 2)
+        self.assertTrue(fee_heads.issubset(set(guard_else.targetIds or [])))
+        for route in routes:
+            requirements = {(r.groupId, r.armLabel) for r in route.branchRequirements}
+            self.assertIn((guard.id, "else"), requirements)
 
     def test_empty_arm_does_not_fall_back_when_the_fork_continues_in_method(self):
         # The `else` arm is empty and continues, but the branch is NOT the
@@ -1145,6 +1554,125 @@ class FlattenCfgTests(unittest.TestCase):
         source_node = next(n for n in flattened.nodes if n.id == fb.source)
         self.assertEqual(source_node.type, "entry")
 
+    def test_empty_normal_arm_owns_fallback_return_but_throw_arm_does_not(self):
+        # transfer(): deposit(); after();
+        # deposit(): if (amount <= 0) throw ...; balance += amount;
+        #
+        # The balance update is filtered noise, so flattening needs a
+        # fallback entry->after edge for the empty normal arm. Selecting the
+        # throwing arm must never make that normal return executable.
+        graph = Graph.from_dict({
+            "entryPoint": "transfer",
+            "nodes": [
+                node("e_transfer", "entry", "transfer"),
+                node(
+                    "c_deposit", "call", "Account.deposit", "transfer",
+                ),
+                node(
+                    "c_catch", "call", "Ledger.noteAdjustment", "transfer",
+                    dead=True, arms=[("outer_try", "catch1")],
+                ),
+                node("c_after", "call", "Account.getBalance", "transfer"),
+                node("e_deposit", "entry", "Account.deposit"),
+                node(
+                    "c_throw", "call", "IllegalArgumentException.<init>",
+                    "Account.deposit", dead=True, arms=[("deposit_guard", "if")],
+                ),
+                node("leaf_throw", "leaf", "IllegalArgumentException.<init>"),
+                node("leaf_catch", "leaf", "Ledger.noteAdjustment"),
+                node("leaf_after", "leaf", "Account.getBalance"),
+            ],
+            "edges": [
+                edge("e_transfer", "c_deposit"),
+                # A sibling route reaches the continuation before the
+                # inlined deposit entry in global walk order. The empty arm
+                # must still claim its direct fallback edge rather than a
+                # later callee entry chosen as the convergence point.
+                edge("e_transfer", "c_after"),
+                edge("c_deposit", "c_catch"),
+                edge("c_deposit", "c_after"),
+                edge("c_deposit", "e_deposit", "invoke"),
+                edge("e_deposit", "c_throw"),
+                edge("c_throw", "leaf_throw", "invoke"),
+                edge("c_catch", "leaf_catch", "invoke"),
+                edge("c_after", "leaf_after", "invoke"),
+            ],
+            "branchGroups": [
+                {
+                    "id": "deposit_guard",
+                    "kind": "IF",
+                    "method": "Account.deposit",
+                    "line": 30,
+                    "branchPointIds": ["e_deposit"],
+                    "arms": [
+                        {
+                            "label": "if",
+                            "firstCallId": "c_throw",
+                            "empty": False,
+                            "terminus": "throw",
+                            "conditionCode": "amount <= 0",
+                        },
+                        {"label": "else", "empty": True, "terminus": "continues"},
+                    ],
+                },
+                {
+                    "id": "outer_try",
+                    "kind": "TRY",
+                    "method": "transfer",
+                    "line": 10,
+                    "branchPointIds": ["c_deposit"],
+                    "arms": [
+                        {
+                            "label": "catch1",
+                            "firstCallId": "c_catch",
+                            "empty": False,
+                            "terminus": "throw",
+                            "exceptionType": "java.lang.IllegalArgumentException",
+                        },
+                        {"label": "noCatch", "empty": True, "terminus": "continues"},
+                    ],
+                },
+            ],
+        })
+
+        flattened = flatten_cfg(graph)
+        group = next(g for g in flattened.branchGroups if g.id.startswith("deposit_guard~"))
+        entry = next(
+            n for n in flattened.nodes
+            if n.type == "entry" and n.calleeFullName == "Account.deposit"
+        )
+        throw = next(n for n in flattened.nodes if n.origId == "c_throw")
+        catch = next(n for n in flattened.nodes if n.origId == "c_catch")
+        after = next(n for n in flattened.nodes if n.origId == "c_after")
+        outer_try = next(g for g in flattened.branchGroups if g.id.startswith("outer_try~"))
+
+        throw_edge = next(
+            e for e in flattened.edges if e.source == entry.id and e.target == throw.id
+        )
+        normal_return = next(
+            e for e in flattened.edges if e.source == entry.id and e.target == after.id
+        )
+        catch_route = next(
+            e for e in flattened.edges if e.source == entry.id and e.target == catch.id
+        )
+
+        self.assertEqual(
+            [(r.groupId, r.armLabel) for r in throw_edge.branchRequirements],
+            [(group.id, "if")],
+        )
+        self.assertTrue(normal_return.fallback)
+        self.assertEqual(
+            {(r.groupId, r.armLabel) for r in normal_return.branchRequirements},
+            {(group.id, "else"), (outer_try.id, "noCatch")},
+        )
+        # The catch is an exceptional continuation, not deposit()'s empty
+        # normal arm. Selecting the nested throw plus catch reaches it;
+        # selecting deposit's else does not control this edge.
+        self.assertEqual(
+            {(r.groupId, r.armLabel) for r in catch_route.branchRequirements},
+            {(outer_try.id, "catch1")},
+        )
+
     def test_mutual_recursion_terminates_with_stub(self):
         # A: logStart(); B(); -- B: A();  (mutual, tail-call recursion).
         # Must not hang; the revisited method (A, from inside B) is cut
@@ -1183,6 +1711,49 @@ class FlattenCfgTests(unittest.TestCase):
         self.assertEqual(len(a_entry_ids), 2)
         stub_id = next(i for i in a_entry_ids if i != flattened.rootId)
         self.assertFalse(any(e.source == stub_id for e in flattened.edges))
+
+    def test_recursion_cutoff_stub_returns_to_the_pending_continuation(self):
+        # run(): recurse(); after(); -- recurse(): recurse();
+        # The revisited entry is the summary of all deeper frames. Its
+        # return must reach after(), rather than a generic fallback being
+        # attached to the first inlined recurse() entry.
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e_run", "entry", "run"),
+                node("c_recurse", "call", "recurse", "run"),
+                node("c_after", "call", "Worker.after", "run"),
+                node("e_recurse", "entry", "recurse"),
+                node("c_self", "call", "recurse", "recurse"),
+                node("leaf_after", "leaf", "Worker.after"),
+            ],
+            "edges": [
+                edge("e_run", "c_recurse"),
+                edge("c_recurse", "c_after"),
+                edge("c_recurse", "e_recurse", "invoke"),
+                edge("e_recurse", "c_self"),
+                edge("c_self", "e_recurse", "invoke"),
+                edge("c_after", "leaf_after", "invoke"),
+            ],
+        })
+
+        flattened = flatten_cfg(graph)
+        recurse_entries = [
+            n for n in flattened.nodes
+            if n.type == "entry" and n.calleeFullName == "recurse"
+        ]
+        self.assertEqual(len(recurse_entries), 2)
+        first, cutoff = sorted(recurse_entries, key=lambda n: n.depth)
+        after = next(n for n in flattened.nodes if n.origId == "c_after")
+        returns = [
+            e for e in flattened.edges
+            if e.type == "sequence" and e.target == after.id and e.returnFrom is not None
+        ]
+
+        self.assertEqual(len(returns), 1)
+        self.assertEqual(returns[0].source, cutoff.id)
+        self.assertNotEqual(returns[0].source, first.id)
+        self.assertTrue(returns[0].fallback)
 
     def test_same_callee_cloned_independently_per_call_site(self):
         # run(): helper(); helper();  -- TWO distinct call sites invoking

@@ -13,8 +13,8 @@ group involved in this guard clause:
     ledger.noteAdjustment(account);
     account.getBalance();
 
-The tests cover the existing throw truncation and the flattened
-``BranchArm.targetIds`` contract used by frontend reachability.
+The tests cover throw truncation, flattened arm targets, and the
+backend-authoritative edge requirements used by frontend reachability.
 """
 
 from __future__ import annotations
@@ -207,6 +207,29 @@ class ThrowingGuardContractTests(unittest.TestCase):
 
         self.assertEqual(arms["if"]["targetIds"], [])
         self.assertEqual(arms["else"]["targetIds"], [nodes_by_orig["note"].id])
+
+    def test_route_edges_carry_arm_requirements(self) -> None:
+        graph = _flattened_guard()
+        group = graph.branchGroups[0]
+        nodes_by_orig = {node.origId: node for node in graph.nodes}
+
+        into_throw = next(
+            edge for edge in graph.edges
+            if edge.target == nodes_by_orig["exception"].id
+        )
+        into_normal = next(
+            edge for edge in graph.edges
+            if edge.target == nodes_by_orig["note"].id
+        )
+
+        self.assertEqual(
+            [(r.groupId, r.armLabel) for r in into_throw.branchRequirements],
+            [(group.id, "if")],
+        )
+        self.assertEqual(
+            [(r.groupId, r.armLabel) for r in into_normal.branchRequirements],
+            [(group.id, "else")],
+        )
 
 
 if __name__ == "__main__":
