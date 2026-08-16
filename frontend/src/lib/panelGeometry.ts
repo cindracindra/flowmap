@@ -34,8 +34,13 @@ const EMPTY_PANEL_HEIGHT = 46;
 const EMPTY_PANEL_TOP_GAP = (ROW_HEIGHT - EMPTY_PANEL_HEIGHT) / 2;
 const LABEL_HEIGHT = 16;
 const LABEL_CLEARANCE = 10;
-const EDGE_PANEL_POSITION = 0.5;
 const NESTED_PANEL_GAP = 18;
+
+interface EmptyRoutePlacement {
+  from: NodePosition;
+  to: NodePosition;
+  position: number;
+}
 
 function overlapsLabel(
   box: { x: number; y: number; width: number; height: number },
@@ -64,6 +69,43 @@ export function computePanelGeometry(
   visibleEdges: FlowEdge[] = [],
 ): PanelGeometry[] {
   const geometries: PanelGeometry[] = [];
+
+  // Several sequential conditions can share one visible edge when their
+  // condition nodes were stripped from the graph. Their empty arms are still
+  // separate, selectable choices, so give each panel its own slot along that
+  // edge instead of putting every one at the midpoint.
+  const emptyRoutes = new Map<string, { panelId: string; from: NodePosition; to: NodePosition }[]>();
+  for (const panel of panels) {
+    const selectedId = selection.get(panel.id) ?? panel.defaultArmId;
+    const arm = panel.arms.find((candidate) => candidate.id === selectedId);
+    if (!arm?.empty) continue;
+    const routeTargetIds = panelRouteTargetIds(panel, panels, selection);
+    const routeEdge = visibleEdges.find((edge) =>
+      routeTargetIds.includes(edge.to)
+      && edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence")
+      && (panel.branchPointIds.includes(edge.from)
+        || (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))),
+    );
+    if (!routeEdge) continue;
+    const from = positions.get(routeEdge.from);
+    const to = positions.get(routeEdge.to);
+    if (!from || !to) continue;
+    const key = `${routeEdge.from}\u0000${routeEdge.to}\u0000${routeEdge.type}`;
+    const group = emptyRoutes.get(key);
+    const route = { panelId: panel.id, from, to };
+    if (group) group.push(route);
+    else emptyRoutes.set(key, [route]);
+  }
+  const emptyRoutePlacements = new Map<string, EmptyRoutePlacement>();
+  for (const routes of emptyRoutes.values()) {
+    routes.forEach((route, index) => {
+      emptyRoutePlacements.set(route.panelId, {
+        from: route.from,
+        to: route.to,
+        position: (index + 1) / (routes.length + 1),
+      });
+    });
+  }
 
   for (const panel of panels) {
     const selectedId = selection.get(panel.id) ?? panel.defaultArmId;
@@ -100,8 +142,10 @@ export function computePanelGeometry(
           (panel.branchPointIds.includes(edge.from) ||
             (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))),
         );
-    const routeFrom = routeEdge ? positions.get(routeEdge.from) : undefined;
-    const routeTo = routeEdge ? positions.get(routeEdge.to) : undefined;
+    const emptyPlacement = emptyRoutePlacements.get(panel.id);
+    const routeFrom = emptyPlacement?.from ?? (routeEdge ? positions.get(routeEdge.from) : undefined);
+    const routeTo = emptyPlacement?.to ?? (routeEdge ? positions.get(routeEdge.to) : undefined);
+    const routePosition = emptyPlacement?.position ?? 0.5;
     const box = memberBox
       // Nothing to wrap: an empty arm, or one whose nodes are all hidden by
       // an enclosing panel. Put an empty arm directly on its selected route
@@ -110,8 +154,8 @@ export function computePanelGeometry(
       // node, not at the original call-site node.
       ?? (routeFrom && routeTo
         ? {
-            x: routeFrom.x + (routeTo.x - routeFrom.x) * EDGE_PANEL_POSITION - 130,
-            y: routeFrom.y + (routeTo.y - routeFrom.y) * EDGE_PANEL_POSITION
+            x: routeFrom.x + (routeTo.x - routeFrom.x) * routePosition - 130,
+            y: routeFrom.y + (routeTo.y - routeFrom.y) * routePosition
               - EMPTY_PANEL_HEIGHT / 2,
             width: 260,
             height: EMPTY_PANEL_HEIGHT,

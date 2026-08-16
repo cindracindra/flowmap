@@ -815,36 +815,67 @@ function GraphCanvasView() {
 
   // An empty arm has no member node for row-banding to reserve. Without an
   // explicit gap, its visual box is painted over the immediate continuation.
+  // Consecutive stripped conditions can share that same edge, so reservations
+  // are cumulative: the arrow gets one row per compact panel. When it enters
+  // another panel's first member, reserve one more row for that panel's header.
   const branchBoundaryGaps = useMemo<RowGap[]>(
-    () => activePanels.flatMap((panel) => {
-      const selected = armSelection.get(panel.id) ?? panel.defaultArmId;
-      const arm = panel.arms.find((candidate) => candidate.id === selected);
-      const fromId = panel.branchPointIds[0];
-      if (!arm) return [];
+    () => {
+      const gaps: RowGap[] = [];
+      const emptyRoutes = new Map<string, { fromId: string; toId: string; count: number }>();
+      const selectedPanelHeadIds = new Set<string>();
 
-      if (arm.empty) {
-        const toId = panelRouteTargetIds(panel, activePanels, armSelection)
-          .find((id) => visibleIds.has(id));
-        if (!toId) return [];
-        return fromId && visibleIds.has(fromId) ? [{ fromId, toId, rows: 1 }] : [];
+      for (const panel of activePanels) {
+        const selected = armSelection.get(panel.id) ?? panel.defaultArmId;
+        const arm = panel.arms.find((candidate) => candidate.id === selected);
+        if (!arm || arm.empty) continue;
+        if (arm.headId && visibleIds.has(arm.headId)) selectedPanelHeadIds.add(arm.headId);
       }
 
-      // Route targets are entry nodes for non-empty arms. They must not be
-      // reused as the arm's continuation: doing so creates backwards row-gap
-      // constraints (especially for throw arms) and stretches every pass.
-      if (arm.terminus === "throw") return [];
-      const toId = arm.exitTargetId ?? panel.convergesAt;
-      if (!toId || !visibleIds.has(toId)) return [];
+      for (const panel of activePanels) {
+        const selected = armSelection.get(panel.id) ?? panel.defaultArmId;
+        const arm = panel.arms.find((candidate) => candidate.id === selected);
+        const fromId = panel.branchPointIds[0];
+        if (!arm) continue;
 
-      // A rectangle around an arm must end before its continuation starts.
-      // The flattened graph only guarantees every continuation is below its
-      // *direct* predecessor; a deeply inlined sibling can otherwise extend
-      // the arm's box below that continuation. Make the continuation follow
-      // every node the arm owns, so it cannot render inside the region.
-      return arm.memberIds
-        .filter((memberId) => visibleIds.has(memberId) && memberId !== toId)
-        .map((memberId) => ({ fromId: memberId, toId, rows: 1 }));
-    }),
+        if (arm.empty) {
+          const toId = panelRouteTargetIds(panel, activePanels, armSelection)
+            .find((id) => visibleIds.has(id));
+          if (!fromId || !toId || !visibleIds.has(fromId)) continue;
+          const key = `${fromId}\u0000${toId}`;
+          const route = emptyRoutes.get(key);
+          if (route) route.count++;
+          else emptyRoutes.set(key, { fromId, toId, count: 1 });
+          continue;
+        }
+
+        // Route targets are entry nodes for non-empty arms. They must not be
+        // reused as the arm's continuation: doing so creates backwards row-gap
+        // constraints (especially for throw arms) and stretches every pass.
+        if (arm.terminus === "throw") continue;
+        const toId = arm.exitTargetId ?? panel.convergesAt;
+        if (!toId || !visibleIds.has(toId)) continue;
+
+        // A rectangle around an arm must end before its continuation starts.
+        // The flattened graph only guarantees every continuation is below its
+        // *direct* predecessor; a deeply inlined sibling can otherwise extend
+        // the arm's box below that continuation. Make the continuation follow
+        // every node the arm owns, so it cannot render inside the region.
+        gaps.push(...arm.memberIds
+          .filter((memberId) => visibleIds.has(memberId) && memberId !== toId)
+          .map((memberId) => ({ fromId: memberId, toId, rows: 1 })));
+      }
+
+      for (const route of emptyRoutes.values()) {
+        gaps.push({
+          fromId: route.fromId,
+          toId: route.toId,
+          rows: route.count + (
+            route.count > 1 || selectedPanelHeadIds.has(route.toId) ? 1 : 0
+          ),
+        });
+      }
+      return gaps;
+    },
     [activePanels, armSelection, visibleIds],
   );
 
