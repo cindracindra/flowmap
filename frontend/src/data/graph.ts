@@ -10,6 +10,7 @@
 
 import {
   flattenedRaw,
+  fullGraphRaw,
   phaseTreeRaw,
   topicClusterRaw,
   topicOperationsRaw,
@@ -22,6 +23,7 @@ import { buildBranchPanels } from "../lib/branches";
 import { sortTopics } from "../lib/topics";
 
 export const GRAPH = flattenedRaw as unknown as FlowGraph;
+export const FULL_GRAPH = fullGraphRaw as unknown as FlowGraph;
 export const PHASE_TREE = phaseTreeRaw as unknown as PhaseTree;
 export const PHASES = PHASE_TREE.phases;
 export const ROOT_ID = GRAPH.rootId!;

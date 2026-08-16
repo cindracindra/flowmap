@@ -34,6 +34,9 @@ export interface FlowNode {
   // Flatten-stage, instance-scoped source loops whose body contains this
   // node. Multiple ids mean nested loops.
   loopIds?: string[];
+  // Flatten stage: this call was left as a cutoff because following it
+  // would enter the same method recursively.
+  recursive?: boolean;
   // flatten stage: the invoke-nesting level this CLONE was created at,
   // stamped server-side as the flattener builds it -- see
   // cfg_pipeline.py's `clone`. Every "invoke" edge therefore satisfies

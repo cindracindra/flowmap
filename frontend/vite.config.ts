@@ -23,6 +23,7 @@ function flowmapData(): Plugin {
       const jsonImport = (name: string) => JSON.stringify(path.join(outputDir, `${name}.json`))
       return [
         `export const classFilesRaw = ${JSON.stringify(config.classFiles ?? {})};`,
+        `export { default as fullGraphRaw } from ${jsonImport('full_cfg')};`,
         `export { default as flattenedRaw } from ${jsonImport('flattened_cfg')};`,
         `export { default as phaseTreeRaw } from ${jsonImport('phase_tree')};`,
         `export { default as topicClusterRaw } from ${jsonImport('topic_cluster')};`,

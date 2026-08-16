@@ -51,6 +51,89 @@ export interface ExplorerItem {
   children?: ExplorerItem[];
 }
 
+export interface ProjectExplorerItem {
+  name: string;
+  kind: "folder" | "file" | "method";
+  methodFullName?: string;
+  children?: ProjectExplorerItem[];
+}
+
+function sourcePathForClass(className: string, classFiles: Record<string, string>): string {
+  const outerClass = className.split("$")[0];
+  return classFiles[className]
+    ?? classFiles[outerClass]
+    ?? `src/main/java/${outerClass.replaceAll(".", "/")}.java`;
+}
+
+function methodName(fullName: string): string {
+  const [qualifiedName, signature = ""] = fullName.split(":", 2);
+  const name = qualifiedName.split(".").pop() ?? qualifiedName;
+  const parameters = signature.includes("(") ? signature.slice(signature.indexOf("(")) : "()";
+  return name === "<init>" ? `constructor${parameters}` : `${name}${parameters}`;
+}
+
+function compactFolderChains(items: ProjectExplorerItem[]): ProjectExplorerItem[] {
+  return items.map((item) => {
+    if (item.kind !== "folder") return item;
+
+    let name = item.name;
+    let children = item.children ?? [];
+    while (children.length === 1 && children[0].kind === "folder") {
+      name += `/${children[0].name}`;
+      children = children[0].children ?? [];
+    }
+    return {
+      ...item,
+      name,
+      children: compactFolderChains(children),
+    };
+  });
+}
+
+// Whole-project source tree for the anchored view. Only entry nodes represent
+// methods; call sites and leaves belong in the operation-specific tree.
+export function buildProjectExplorerTree(
+  nodes: FlowNode[],
+  classFiles: Record<string, string>,
+): ProjectExplorerItem[] {
+  const methodsByFile = new Map<string, FlowNode[]>();
+  for (const node of nodes) {
+    if (node.type !== "entry" || !node.calleeFullName) continue;
+    const file = sourcePathForClass(classOf(node.calleeFullName), classFiles);
+    const methods = methodsByFile.get(file);
+    if (methods) methods.push(node);
+    else methodsByFile.set(file, [node]);
+  }
+
+  const root: ProjectExplorerItem[] = [];
+  for (const [filePath, methods] of [...methodsByFile.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    const parts = filePath.split("/").filter(Boolean);
+    const fileName = parts.pop();
+    if (!fileName) continue;
+    let children = root;
+    for (const folder of parts) {
+      let item = children.find((candidate) => candidate.kind === "folder" && candidate.name === folder);
+      if (!item) {
+        item = { name: folder, kind: "folder", children: [] };
+        children.push(item);
+      }
+      children = item.children!;
+    }
+    children.push({
+      name: fileName,
+      kind: "file",
+      children: [...methods]
+        .sort((a, b) => (a.line ?? 0) - (b.line ?? 0) || a.calleeFullName!.localeCompare(b.calleeFullName!))
+        .map((node) => ({
+          name: methodName(node.calleeFullName!),
+          kind: "method",
+          methodFullName: node.calleeFullName,
+        })),
+    });
+  }
+  return compactFolderChains(root);
+}
+
 // Groups nodes by package -> owning class, replacing the mock's hand-authored
 // FILE_TREE with the real package/class structure derived from the trace.
 export function buildExplorerTree(nodes: FlowNode[]): ExplorerItem[] {

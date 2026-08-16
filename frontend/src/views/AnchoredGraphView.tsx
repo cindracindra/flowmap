@@ -6,7 +6,6 @@ import {
   Heading,
   Badge,
   IconButton,
-  TextField,
   ScrollArea,
   Separator,
   Tabs,
@@ -23,17 +22,19 @@ import {
   X,
   GitBranch,
   Minimize2,
-  Search,
   FolderOpen,
+  FileCode2,
   Package as PackageIcon,
   Hash,
   ArrowRight,
   AlertTriangle,
   Repeat2,
+  RotateCcw,
+  Info,
 } from "lucide-react";
 
 import { CLASS_FILES } from "../data/classFiles";
-import { ANCHORED_VISUALISATION, graphVisualisation, type GraphVisualisation } from "../data/graph";
+import { ANCHORED_VISUALISATION, FULL_GRAPH, graphVisualisation, type GraphVisualisation } from "../data/graph";
 import type { FlowNode, FlowEdge, LoopGroup, NodeType, Transition } from "../types/flowmap";
 import { computeLayout, type NodePosition, type RowGap } from "../lib/layout";
 import {
@@ -56,10 +57,11 @@ import {
   incomingEdges,
   outgoingEdges,
   computePhaseBBox,
-  computeBBox,
   TRANSITION_REASON_LABELS,
   buildExplorerTree,
+  buildProjectExplorerTree,
   type ExplorerItem,
+  type ProjectExplorerItem,
 } from "../lib/graph";
 
 const NODE_RADIUS: Record<NodeType, number> = { entry: 13, call: 10, leaf: 8 };
@@ -68,17 +70,13 @@ const NODE_COLORS: Record<NodeType, { fill: string; stroke: string; label: strin
   call: { fill: "var(--node-call-fill)", stroke: "var(--node-call-stroke)", label: "Call" },
   leaf: { fill: "var(--node-leaf-fill)", stroke: "var(--node-leaf-stroke)", label: "External / leaf" },
 };
-const NODE_BADGE_COLOR: Record<NodeType, "amber" | "teal" | "grass"> = {
-  entry: "amber",
-  call: "teal",
-  leaf: "grass",
-};
 const PHASE_COLORS = ["var(--phase-1)", "var(--phase-2)", "var(--phase-3)", "var(--phase-4)", "var(--phase-5)"];
 
 interface GraphViewData extends GraphVisualisation {
   rootId: string;
   nodesById: Map<string, FlowNode>;
   explorerTree: ExplorerItem[];
+  projectTree: ProjectExplorerItem[];
   panels: BranchPanel[];
   flowEdges: FlowEdge[];
   loopsById: Map<string, LoopGroup>;
@@ -90,10 +88,11 @@ function makeGraphViewData(visualisation: GraphVisualisation): GraphViewData {
   if (!rootId) throw new Error("A flattened graph must have a rootId");
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const explorerTree = buildExplorerTree(graph.nodes);
+  const projectTree = buildProjectExplorerTree(FULL_GRAPH.nodes, CLASS_FILES);
   const panels = buildBranchPanels(graph, rootId);
   const loopsById = new Map((graph.loopGroups ?? []).map((loop) => [loop.id, loop]));
   return {
-    graph, phaseTree, rootId, nodesById, explorerTree, panels, loopsById,
+    graph, phaseTree, rootId, nodesById, explorerTree, projectTree, panels, loopsById,
     flowEdges: graph.edges.filter((edge) => edge.type !== "data" && !edge.loopBack),
   };
 }
@@ -104,26 +103,6 @@ function useGraphViewData(): GraphViewData {
   const data = useContext(GraphViewContext);
   if (!data) throw new Error("AnchoredGraphView must be rendered inside GraphViewContext");
   return data;
-}
-
-interface CanvasBounds {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
-}
-
-// Recomputed per selection: collapsing a branch arm changes both which
-// nodes exist and how tall the trace is.
-function canvasBounds(positions: Map<string, NodePosition>): CanvasBounds {
-  const box = computeBBox(positions.keys(), positions, 60);
-  if (!box) return { minX: 0, minY: 0, maxX: 1, maxY: 1 };
-  return {
-    minX: box.x,
-    minY: box.y,
-    maxX: box.x + box.width,
-    maxY: box.y + box.height,
-  };
 }
 
 function nodeLabel(node: FlowNode): string {
@@ -254,84 +233,70 @@ function ExplorerRow({
   );
 }
 
-// ── Node search ──────────────────────────────────────────────────────────
-
-function NodeSearchPanel({
+function ProjectExplorerRow({
+  item,
+  depth,
   selectedNodeId,
   onSelect,
 }: {
+  item: ProjectExplorerItem;
+  depth: number;
   selectedNodeId: string | null;
   onSelect: (id: string) => void;
 }) {
   const { graph } = useGraphViewData();
-  const [query, setQuery] = useState("");
-  const q = query.trim().toLowerCase();
-  const results = q
-    ? graph.nodes.filter(
-        (n) =>
-          n.calleeFullName?.toLowerCase().includes(q) ||
-          n.code?.toLowerCase().includes(q) ||
-          n.callerMethod?.toLowerCase().includes(q),
-      )
-    : graph.nodes;
+  const [open, setOpen] = useState(true);
+  const isBranch = item.kind !== "method";
+  const activeNode = item.methodFullName
+    ? graph.nodes.find((node) => node.type === "entry" && node.calleeFullName === item.methodFullName)
+    : undefined;
+  const isSelected = activeNode?.id === selectedNodeId;
 
   return (
-    <Flex direction="column" style={{ height: "100%" }}>
-      <Box p="2" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
-        <TextField.Root
-          size="1"
-          placeholder="Search nodes…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        >
-          <TextField.Slot>
-            <Search size={13} />
-          </TextField.Slot>
-        </TextField.Root>
-      </Box>
-      <ScrollArea style={{ flex: 1 }}>
-        <Flex direction="column" py="1">
-          {results.length === 0 && (
-            <Text size="1" color="gray" align="center" mt="4">
-              No nodes found
-            </Text>
-          )}
-          {results.map((node) => {
-            const colors = NODE_COLORS[node.type];
-            const isSelected = node.id === selectedNodeId;
-            return (
-              <Box
-                key={node.id}
-                onClick={() => onSelect(node.id)}
-                px="3"
-                py="2"
-                style={{ cursor: "pointer", background: isSelected ? "var(--accent-a3)" : "transparent" }}
-              >
-                <Flex align="center" gap="2">
-                  <Box style={{ color: colors.stroke, display: "flex" }}>{getNodeIcon(node.type)}</Box>
-                  <Text size="1" truncate style={{ fontFamily: MONO, flex: 1 }}>
-                    {nodeLabel(node)}
-                  </Text>
-                  <Badge size="1" variant="soft" color={NODE_BADGE_COLOR[node.type]}>
-                    {colors.label}
-                  </Badge>
-                </Flex>
-                {node.callerMethod && (
-                  <Text
-                    size="1"
-                    color="gray"
-                    truncate
-                    style={{ fontFamily: MONO, paddingLeft: 20, display: "block" }}
-                  >
-                    {shortLabel(node.callerMethod)}
-                  </Text>
-                )}
-              </Box>
-            );
-          })}
-        </Flex>
-      </ScrollArea>
-    </Flex>
+    <Box>
+      <button
+        onClick={() => {
+          if (isBranch) setOpen((value) => !value);
+          else if (activeNode) onSelect(activeNode.id);
+        }}
+        title={item.methodFullName ?? item.name}
+        style={{
+          all: "unset",
+          boxSizing: "border-box",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          width: "100%",
+          padding: "5px 8px",
+          paddingLeft: 8 + depth * 14,
+          cursor: isBranch || activeNode ? "pointer" : "default",
+          borderRadius: 4,
+          color: isSelected ? "var(--accent-11)" : "var(--gray-11)",
+          background: isSelected ? "var(--accent-a3)" : "transparent",
+        }}
+      >
+        {isBranch ? (
+          open ? <ChevronDown size={12} /> : <ChevronRight size={12} />
+        ) : (
+          <Box style={{ width: 12, flexShrink: 0 }} />
+        )}
+        {item.kind === "folder" && <FolderOpen size={12} color="var(--amber-9)" />}
+        {item.kind === "file" && <FileCode2 size={12} color="var(--teal-9)" />}
+        {item.kind === "method" && <Hash size={12} color="var(--gray-9)" />}
+        <Text size="1" truncate style={{ fontFamily: MONO }}>
+          {item.name}
+        </Text>
+      </button>
+      {isBranch && open && item.children?.map((child, index) => (
+        <ProjectExplorerRow
+          key={`${child.kind}-${child.name}-${index}`}
+          item={child}
+          depth={depth + 1}
+          selectedNodeId={selectedNodeId}
+          onSelect={onSelect}
+        />
+      ))}
+    </Box>
   );
 }
 
@@ -500,228 +465,111 @@ function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void })
   );
 }
 
-// ── Branch switcher ──────────────────────────────────────────────────────
-
-// Distinguishing the two kinds is a requirement, not decoration, so it is
-// carried by an explicit text badge and a glyph -- never by colour alone.
-const PANEL_BADGE: Record<BranchPanel["kind"], { label: string; color: "iris" | "orange"; glyph: string }> = {
-  conditional: { label: "condition", color: "iris", glyph: "⑂" },
-  polymorphic: { label: "dispatch", color: "orange", glyph: "◈" },
+const NODE_EXPLANATIONS: Record<NodeType, string> = {
+  entry: "Starts execution inside a method.",
+  call: "Invokes another operation from this method.",
+  leaf: "Ends at an external or unresolved operation.",
 };
 
-// Self-contained phrases: the convergence NODE is named once per panel
-// below the arms, so an arm hint that ended in "rejoins at" would dangle.
-const EXIT_HINT: Record<string, string> = {
-  converges: "rejoins the flow",
-  returns: "returns to caller",
-  throws: "throws — never rejoins",
-  open: "does not rejoin",
+const EDGE_LEGEND_LABEL: Record<EdgeClass, string> = {
+  sequence: "seq",
+  invoke: "invoke",
+  return: "return",
+  fallback: "fallback",
 };
 
-function BranchSwitcher({
-  panels,
-  selection,
-  onSelect,
-  onFocus,
-  onHighlight,
-}: {
-  panels: BranchPanel[];
-  selection: BranchSelection;
-  onSelect: (panelId: string, armId: string) => void;
-  onFocus: (nodeId: string) => void;
-  onHighlight: (panelId: string | null) => void;
-}) {
-  const { nodesById } = useGraphViewData();
-  if (panels.length === 0) {
-    return (
-      <Text size="1" color="gray" align="center" mt="4" as="p">
-        No branches in this trace.
-      </Text>
-    );
-  }
-
+function LegendNodeShape({ type }: { type: NodeType }) {
+  const colors = NODE_COLORS[type];
   return (
-    <Flex direction="column" py="1">
-      {panels.map((panel) => {
-        const badge = PANEL_BADGE[panel.kind];
-        const selected = selection.get(panel.id) ?? panel.defaultArmId;
-        const convergeNode = panel.convergesAt ? nodesById.get(panel.convergesAt) : undefined;
+    <svg width="22" height="22" viewBox="0 0 22 22" style={{ flexShrink: 0 }} aria-hidden="true">
+      {type === "entry" ? (
+        <rect
+          x="5"
+          y="5"
+          width="12"
+          height="12"
+          transform="rotate(45 11 11)"
+          fill={colors.fill}
+          stroke={colors.stroke}
+        />
+      ) : (
+        <circle
+          cx="11"
+          cy="11"
+          r={type === "call" ? 7 : 6}
+          fill={colors.fill}
+          stroke={colors.stroke}
+          strokeDasharray={type === "leaf" ? "3 2" : undefined}
+        />
+      )}
+    </svg>
+  );
+}
 
-        return (
-          <Box
-            key={panel.id}
-            px="2"
-            py="2"
-            style={{ borderBottom: "1px solid var(--gray-a4)" }}
-            onMouseEnter={() => onHighlight(panel.id)}
-            onMouseLeave={() => onHighlight(null)}
-          >
-            <Flex align="center" gap="2" mb="1">
-              <Text size="2" style={{ color: `var(--${badge.color}-9)` }}>
-                {badge.glyph}
-              </Text>
-              <Badge size="1" variant="soft" color={badge.color}>
-                {badge.label}
-              </Badge>
-              <Text size="1" color="gray" style={{ fontFamily: MONO, marginLeft: "auto" }}>
-                {panel.structure.toLowerCase()}
-                {panel.line ? `:${panel.line}` : ""}
-              </Text>
-            </Flex>
-            <Text size="1" truncate style={{ fontFamily: MONO, display: "block" }}>
-              {panel.title}
-            </Text>
-            {panel.subtitle && (
-              <Text size="1" color="gray" truncate style={{ display: "block" }}>
-                {panel.subtitle}
-              </Text>
-            )}
+function GraphLegend() {
+  return (
+    <Card size="2" style={{ width: 330, maxHeight: "calc(100vh - 150px)", overflowY: "auto" }}>
+      <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        Node types
+      </Text>
+      <Flex direction="column" gap="2" mt="2">
+        {(Object.keys(NODE_COLORS) as NodeType[]).map((type) => (
+          <Flex key={type} align="center" gap="2">
+            <LegendNodeShape type={type} />
+            <Box>
+              <Text size="1" weight="bold" as="div">{NODE_COLORS[type].label}</Text>
+              <Text size="1" color="gray" as="div">{NODE_EXPLANATIONS[type]}</Text>
+            </Box>
+          </Flex>
+        ))}
+      </Flex>
 
-            <Flex direction="column" gap="1" mt="2">
-              {panel.arms
-                .filter((arm) => arm.role === "alternative")
-                .map((arm) => (
-                  <ArmButton
-                    key={arm.id}
-                    active={selected === arm.id}
-                    label={arm.label}
-                    hint={
-                      (arm.empty ? "no calls · " : `${arm.memberIds.length} nodes · `) +
-                      EXIT_HINT[arm.exitKind]
-                    }
-                    onClick={() => onSelect(panel.id, arm.id)}
-                  />
-                ))}
-            </Flex>
+      <Separator size="4" my="3" />
+      <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        Edge types
+      </Text>
+      <Flex direction="column" gap="2" mt="2">
+        {(Object.keys(EDGE_STYLE) as EdgeClass[]).map((kind) => (
+          <Flex key={kind} align="center" gap="2">
+            <svg width="28" height="10" style={{ flexShrink: 0 }} aria-hidden="true">
+              <line
+                x1="1"
+                y1="5"
+                x2="26"
+                y2="5"
+                stroke={EDGE_STYLE[kind].color}
+                strokeWidth="1.5"
+                strokeDasharray={EDGE_STYLE[kind].dash}
+              />
+            </svg>
+            <Box>
+              <Text size="1" weight="bold" as="div">{EDGE_LEGEND_LABEL[kind]}</Text>
+              <Text size="1" color="gray" as="div">{EDGE_STYLE[kind].label}</Text>
+            </Box>
+          </Flex>
+        ))}
+      </Flex>
 
-            {convergeNode && (
-              <Text
-                size="1"
-                color="gray"
-                truncate
-                style={{ display: "block", marginTop: 6, cursor: "pointer" }}
-                onClick={() => onFocus(panel.convergesAt!)}
-              >
-                ↳ converges at {nodeLabel(convergeNode)}
-              </Text>
-            )}
+      <Separator size="4" my="3" />
+      <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
+        Icons
+      </Text>
+      <Flex direction="column" gap="2" mt="2">
+        <Flex align="center" gap="2">
+          <Repeat2 size={16} color="var(--orange-9)" style={{ flexShrink: 0, margin: 3 }} />
+          <Box>
+            <Text size="1" weight="bold" as="div">Loop</Text>
+            <Text size="1" color="gray" as="div">Executes inside a source-code loop.</Text>
           </Box>
-        );
-      })}
-    </Flex>
-  );
-}
-
-function ArmButton({
-  active,
-  label,
-  hint,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  hint: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        all: "unset",
-        boxSizing: "border-box",
-        display: "block",
-        width: "100%",
-        padding: "4px 7px",
-        borderRadius: 4,
-        cursor: "pointer",
-        background: active ? "var(--accent-a3)" : "transparent",
-        border: `1px solid ${active ? "var(--accent-a7)" : "var(--gray-a5)"}`,
-      }}
-    >
-      <Text
-        size="1"
-        truncate
-        style={{
-          fontFamily: MONO,
-          display: "block",
-          color: active ? "var(--accent-11)" : "var(--gray-11)",
-        }}
-      >
-        {label}
-      </Text>
-      <Text size="1" color="gray" truncate style={{ display: "block" }}>
-        {hint}
-      </Text>
-    </button>
-  );
-}
-
-// ── Minimap ──────────────────────────────────────────────────────────────
-
-function Minimap({
-  selectedId,
-  positions,
-  bounds,
-}: {
-  selectedId: string | null;
-  positions: Map<string, NodePosition>;
-  bounds: CanvasBounds;
-}) {
-  const { graph, phaseTree } = useGraphViewData();
-  const phases = phaseTree.phases;
-  const W = 160;
-  const H = 120;
-  const { minX, minY, maxX, maxY } = bounds;
-  const scale = Math.min((W - 8) / (maxX - minX), (H - 8) / (maxY - minY));
-
-  return (
-    <Card
-      size="1"
-      style={{ position: "absolute", bottom: "64px", right: "16px", padding: 0, overflow: "hidden" }}
-    >
-      <svg width={W} height={H}>
-        {phases.map((phase, i) => {
-          const bbox = computePhaseBBox(phase, positions, 20);
-          if (!bbox) return null;
-          return (
-            <rect
-              key={i}
-              x={(bbox.x - minX) * scale + 4}
-              y={(bbox.y - minY) * scale + 4}
-              width={bbox.width * scale}
-              height={bbox.height * scale}
-              rx={2}
-              fill="none"
-              stroke={PHASE_COLORS[i % PHASE_COLORS.length]}
-              strokeWidth={0.5}
-              opacity={0.6}
-            />
-          );
-        })}
-        {graph.nodes.map((node) => {
-          const pos = positions.get(node.id);
-          if (!pos) return null;
-          const colors = NODE_COLORS[node.type];
-          const x = (pos.x - minX) * scale + 4;
-          const y = (pos.y - minY) * scale + 4;
-          return (
-            <circle
-              key={node.id}
-              cx={x}
-              cy={y}
-              r={Math.max(1.2, NODE_RADIUS[node.type] * scale * 0.7)}
-              fill={colors.fill}
-              stroke={node.id === selectedId ? "var(--accent-9)" : colors.stroke}
-              strokeWidth={node.id === selectedId ? 1.5 : 0.6}
-            />
-          );
-        })}
-      </svg>
-      <Box px="2" py="1" style={{ borderTop: "1px solid var(--gray-a5)" }}>
-        <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-          minimap
-        </Text>
-      </Box>
+        </Flex>
+        <Flex align="center" gap="2">
+          <RotateCcw size={16} color="var(--purple-9)" style={{ flexShrink: 0, margin: 3 }} />
+          <Box>
+            <Text size="1" weight="bold" as="div">Recurse</Text>
+            <Text size="1" color="gray" as="div">Calls the current method recursively.</Text>
+          </Box>
+        </Flex>
+      </Flex>
     </Card>
   );
 }
@@ -729,12 +577,62 @@ function Minimap({
 // ── Main App ─────────────────────────────────────────────────────────────
 
 // ── Anchored graph view ──────────────────────────────────────────────────
-// The trace itself: explorer / node search / branch switcher on the left,
+// The trace itself: project explorer / operation tree on the left,
 // the flattened CFG on the canvas, a node detail panel on the right. Owns
 // its own status bar, since every number in it counts something that only
 // exists in this view.
 
-type PanelTab = "explorer" | "search" | "branches";
+type PanelTab = "explore" | "operation";
+type ResizeSide = "left" | "right";
+
+const LEFT_PANEL_MIN = 180;
+const LEFT_PANEL_MAX = 560;
+const RIGHT_PANEL_MIN = 240;
+const RIGHT_PANEL_MAX = 600;
+
+function clampPanelWidth(width: number, side: ResizeSide): number {
+  const min = side === "left" ? LEFT_PANEL_MIN : RIGHT_PANEL_MIN;
+  const absoluteMax = side === "left" ? LEFT_PANEL_MAX : RIGHT_PANEL_MAX;
+  const responsiveMax = typeof window === "undefined" ? absoluteMax : window.innerWidth * 0.45;
+  return Math.round(Math.min(Math.max(width, min), Math.max(min, Math.min(absoluteMax, responsiveMax))));
+}
+
+function PanelResizeHandle({
+  side,
+  active,
+  onMouseDown,
+  onKeyboardResize,
+}: {
+  side: ResizeSide;
+  active: boolean;
+  onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
+  onKeyboardResize: (delta: number) => void;
+}) {
+  return (
+    <Box
+      role="separator"
+      aria-label={`Resize ${side} panel`}
+      aria-orientation="vertical"
+      tabIndex={0}
+      onMouseDown={onMouseDown}
+      onKeyDown={(event) => {
+        if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+        event.preventDefault();
+        const screenDelta = event.key === "ArrowRight" ? 16 : -16;
+        onKeyboardResize(side === "left" ? screenDelta : -screenDelta);
+      }}
+      style={{
+        width: 6,
+        flexShrink: 0,
+        cursor: "col-resize",
+        background: active ? "var(--accent-a5)" : "var(--gray-a3)",
+        borderLeft: `1px solid ${active ? "var(--accent-a7)" : "var(--gray-a5)"}`,
+        borderRight: `1px solid ${active ? "var(--accent-a7)" : "var(--gray-a5)"}`,
+        outline: "none",
+      }}
+    />
+  );
+}
 
 function GraphCanvasView() {
   const {
@@ -743,6 +641,7 @@ function GraphCanvasView() {
     rootId: ROOT_ID,
     nodesById: NODES_BY_ID,
     explorerTree: EXPLORER_TREE,
+    projectTree: PROJECT_TREE,
     panels: PANELS,
     flowEdges: FLOW_EDGES,
     loopsById: LOOPS_BY_ID,
@@ -756,7 +655,12 @@ function GraphCanvasView() {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<PanelTab>("explorer");
+  const [leftWidth, setLeftWidth] = useState(240);
+  const [rightWidth, setRightWidth] = useState(288);
+  const [resizingSide, setResizingSide] = useState<ResizeSide | null>(null);
+  const resizeStartRef = useRef<{ side: ResizeSide; x: number; width: number } | null>(null);
+  const [activeTab, setActiveTab] = useState<PanelTab>("explore");
+  const [legendOpen, setLegendOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Branch panels are the default overlay: they are what the graph is for.
   // Phases answer a different question and would fight them for the same
@@ -940,7 +844,6 @@ function GraphCanvasView() {
     ),
     [GRAPH],
   );
-  const bounds = useMemo(() => canvasBounds(positions), [positions]);
   const panelGeometry = useMemo(
     () => computePanelGeometry(
       activePanels,
@@ -979,8 +882,11 @@ function GraphCanvasView() {
   }, []);
 
   const handleSelectFromPanel = useCallback((id: string) => {
-    setSelectedId(id);
-    setRightOpen(true);
+    setSelectedId((previousId) => {
+      const nextId = previousId === id ? null : id;
+      setRightOpen(nextId !== null);
+      return nextId;
+    });
   }, []);
 
   const handleMouseDown = useCallback(
@@ -1001,6 +907,46 @@ function GraphCanvasView() {
   );
 
   const handleMouseUp = useCallback(() => setIsPanning(false), []);
+
+  const beginPanelResize = useCallback((side: ResizeSide, event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    resizeStartRef.current = {
+      side,
+      x: event.clientX,
+      width: side === "left" ? leftWidth : rightWidth,
+    };
+    setResizingSide(side);
+  }, [leftWidth, rightWidth]);
+
+  useEffect(() => {
+    if (!resizingSide) return;
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    const handleResize = (event: MouseEvent) => {
+      const start = resizeStartRef.current;
+      if (!start) return;
+      const pointerDelta = event.clientX - start.x;
+      const nextWidth = start.width + (start.side === "left" ? pointerDelta : -pointerDelta);
+      if (start.side === "left") setLeftWidth(clampPanelWidth(nextWidth, "left"));
+      else setRightWidth(clampPanelWidth(nextWidth, "right"));
+    };
+    const finishResize = () => {
+      resizeStartRef.current = null;
+      setResizingSide(null);
+    };
+
+    window.addEventListener("mousemove", handleResize);
+    window.addEventListener("mouseup", finishResize);
+    return () => {
+      window.removeEventListener("mousemove", handleResize);
+      window.removeEventListener("mouseup", finishResize);
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+    };
+  }, [resizingSide]);
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
@@ -1051,12 +997,13 @@ function GraphCanvasView() {
       <Flex flexGrow="1" style={{ minHeight: 0 }}>
         {/* Left panel */}
         {leftOpen && (
-          <Box
-            flexShrink="0"
-            width="240px"
-            style={{ borderRight: "1px solid var(--gray-a5)", background: "var(--color-panel-solid)" }}
-          >
-            <Flex direction="column" style={{ height: "100%" }}>
+          <>
+            <Box
+              flexShrink="0"
+              width={`${leftWidth}px`}
+              style={{ background: "var(--color-panel-solid)" }}
+            >
+              <Flex direction="column" style={{ height: "100%" }}>
               <Tabs.Root
                 value={activeTab}
                 onValueChange={(v) => setActiveTab(v as PanelTab)}
@@ -1064,24 +1011,35 @@ function GraphCanvasView() {
               >
                 <Flex align="center" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
                   <Tabs.List style={{ flex: 1 }}>
-                    <Tabs.Trigger value="explorer">
+                    <Tabs.Trigger value="explore">
                       <FolderOpen size={12} style={{ marginRight: 6 }} />
-                      Explorer
+                      Explore
                     </Tabs.Trigger>
-                    <Tabs.Trigger value="search">
-                      <Search size={12} style={{ marginRight: 6 }} />
-                      Nodes
-                    </Tabs.Trigger>
-                    <Tabs.Trigger value="branches">
+                    <Tabs.Trigger value="operation">
                       <GitBranch size={12} style={{ marginRight: 6 }} />
-                      Branches
+                      Operation
                     </Tabs.Trigger>
                   </Tabs.List>
                   <IconButton size="1" variant="ghost" color="gray" onClick={() => setLeftOpen(false)}>
                     <Minimize2 size={13} />
                   </IconButton>
                 </Flex>
-                <Tabs.Content value="explorer" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                <Tabs.Content value="explore" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
+                  <ScrollArea style={{ height: "100%" }}>
+                    <Box py="1">
+                      {PROJECT_TREE.map((item, i) => (
+                        <ProjectExplorerRow
+                          key={`${item.kind}-${item.name}-${i}`}
+                          item={item}
+                          depth={0}
+                          selectedNodeId={selectedId}
+                          onSelect={handleSelectFromPanel}
+                        />
+                      ))}
+                    </Box>
+                  </ScrollArea>
+                </Tabs.Content>
+                <Tabs.Content value="operation" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
                   <ScrollArea style={{ height: "100%" }}>
                     <Box py="1">
                       {EXPLORER_TREE.map((item, i) => (
@@ -1096,118 +1054,16 @@ function GraphCanvasView() {
                     </Box>
                   </ScrollArea>
                 </Tabs.Content>
-                <Tabs.Content value="search" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                  <NodeSearchPanel selectedNodeId={selectedId} onSelect={handleSelectFromPanel} />
-                </Tabs.Content>
-                <Tabs.Content value="branches" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                  <ScrollArea style={{ height: "100%" }}>
-                    <BranchSwitcher
-                      panels={activePanels}
-                      selection={armSelection}
-                      onSelect={handleArmSelect}
-                      onFocus={handleSelectFromPanel}
-                      onHighlight={setHoveredPanelId}
-                    />
-                  </ScrollArea>
-                </Tabs.Content>
               </Tabs.Root>
-
-              {/* Legend */}
-              <Box p="3" flexShrink="0" style={{ borderTop: "1px solid var(--gray-a5)" }}>
-                <Text
-                  size="1"
-                  weight="bold"
-                  color="gray"
-                  style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}
-                >
-                  Node types
-                </Text>
-                <Flex direction="column" gap="1" mt="2">
-                  {(Object.entries(NODE_COLORS) as [NodeType, (typeof NODE_COLORS)[NodeType]][]).map(
-                    ([type, c]) => (
-                      <Flex key={type} align="center" gap="2">
-                        <Box
-                          style={{
-                            width: 10,
-                            height: 10,
-                            borderRadius: "50%",
-                            background: c.fill,
-                            border: `1px solid ${c.stroke}`,
-                            flexShrink: 0,
-                          }}
-                        />
-                        <Text size="1" color="gray">
-                          {c.label}
-                        </Text>
-                      </Flex>
-                    ),
-                  )}
-                  <Flex align="center" gap="2">
-                    <Repeat2 size={12} color="var(--orange-9)" />
-                    <Text size="1" color="gray">
-                      Inside loop
-                    </Text>
-                  </Flex>
-                </Flex>
-                <Separator size="4" my="2" />
-                <Text
-                  size="1"
-                  weight="bold"
-                  color="gray"
-                  style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}
-                >
-                  Edges
-                </Text>
-                <Flex direction="column" gap="1" mt="2">
-                  {(Object.keys(EDGE_STYLE) as EdgeClass[]).map((kind) => (
-                    <Flex key={kind} align="center" gap="2">
-                      <svg width="16" height="8" style={{ flexShrink: 0 }}>
-                        <line
-                          x1="0"
-                          y1="4"
-                          x2="16"
-                          y2="4"
-                          stroke={EDGE_STYLE[kind].color}
-                          strokeWidth="1.5"
-                          strokeDasharray={EDGE_STYLE[kind].dash}
-                        />
-                      </svg>
-                      <Text size="1" color="gray">
-                        {kind}
-                      </Text>
-                    </Flex>
-                  ))}
-                </Flex>
-                <Separator size="4" my="2" />
-                <Text
-                  size="1"
-                  weight="bold"
-                  color="gray"
-                  style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}
-                >
-                  Phases
-                </Text>
-                <Flex direction="column" gap="1" mt="2">
-                  {PHASES.map((_, i) => (
-                    <Flex key={i} align="center" gap="2">
-                      <Box
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 2,
-                          border: `1px solid ${PHASE_COLORS[i % PHASE_COLORS.length]}`,
-                          flexShrink: 0,
-                        }}
-                      />
-                      <Text size="1" color="gray">
-                        Phase {i + 1}
-                      </Text>
-                    </Flex>
-                  ))}
-                </Flex>
-              </Box>
-            </Flex>
-          </Box>
+              </Flex>
+            </Box>
+            <PanelResizeHandle
+              side="left"
+              active={resizingSide === "left"}
+              onMouseDown={(event) => beginPanelResize("left", event)}
+              onKeyboardResize={(delta) => setLeftWidth((width) => clampPanelWidth(width + delta, "left"))}
+            />
+          </>
         )}
 
         {/* Graph canvas */}
@@ -1388,6 +1244,19 @@ function GraphCanvasView() {
                         />
                       </g>
                     )}
+                    {node.recursive && (
+                      <g pointerEvents="none">
+                        <title>Recursive call</title>
+                        <RotateCcw
+                          x={pos.x - r - 18 - (loopLabels.length > 0 ? 16 : 0)}
+                          y={pos.y - 6}
+                          width={12}
+                          height={12}
+                          color="var(--purple-9)"
+                          strokeWidth={1.8}
+                        />
+                      </g>
+                    )}
                     <text
                       x={pos.x + r + 9}
                       y={pos.y}
@@ -1419,6 +1288,27 @@ function GraphCanvasView() {
               )}
             </g>
           </svg>
+
+          <Flex
+            direction="column"
+            align="end"
+            gap="2"
+            style={{ position: "absolute", bottom: 64, right: 16 }}
+          >
+            {legendOpen && <GraphLegend />}
+            <Tooltip content={legendOpen ? "Hide legend" : "Show legend"}>
+              <IconButton
+                aria-label={legendOpen ? "Hide graph legend" : "Show graph legend"}
+                aria-expanded={legendOpen}
+                size="2"
+                variant="surface"
+                color="gray"
+                onClick={() => setLegendOpen((open) => !open)}
+              >
+                <Info size={15} />
+              </IconButton>
+            </Tooltip>
+          </Flex>
 
           {/* Zoom controls */}
           <Card
@@ -1477,25 +1367,31 @@ function GraphCanvasView() {
               <ChevronRight size={14} />
             </IconButton>
           )}
-
-          <Minimap selectedId={selectedId} positions={positions} bounds={bounds} />
         </Box>
 
         {/* Right detail panel */}
         {rightOpen && selectedNode && (
-          <Box
-            flexShrink="0"
-            width="288px"
-            style={{ borderLeft: "1px solid var(--gray-a5)", background: "var(--color-panel-solid)" }}
-          >
-            <DetailPanel
-              node={selectedNode}
-              onClose={() => {
-                setRightOpen(false);
-                setSelectedId(null);
-              }}
+          <>
+            <PanelResizeHandle
+              side="right"
+              active={resizingSide === "right"}
+              onMouseDown={(event) => beginPanelResize("right", event)}
+              onKeyboardResize={(delta) => setRightWidth((width) => clampPanelWidth(width + delta, "right"))}
             />
-          </Box>
+            <Box
+              flexShrink="0"
+              width={`${rightWidth}px`}
+              style={{ background: "var(--color-panel-solid)" }}
+            >
+              <DetailPanel
+                node={selectedNode}
+                onClose={() => {
+                  setRightOpen(false);
+                  setSelectedId(null);
+                }}
+              />
+            </Box>
+          </>
         )}
       </Flex>
       {/* Status bar */}
