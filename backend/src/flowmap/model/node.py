@@ -53,6 +53,12 @@ class Node:
     # call that isn't part of any branch arm.
     branchArms: list[BranchArmRef] = field(default_factory=list)
 
+    # Source loops whose body contains this node. Flattening scopes these
+    # ids per method instance and propagates them into inlined callees, so
+    # the UI can mark every operation executed by an iteration. A list is
+    # required for nested loops.
+    loopIds: list[str] = field(default_factory=list)
+
     # flatten_cfg only: the invoke-nesting level THIS CLONE was created
     # at (0 at the root, +1 per invoke edge crossed), stamped as the
     # flattener recurses -- not a property of the original node, which is
@@ -74,6 +80,7 @@ class Node:
             deadEnd=data.get("deadEnd"),
             terminus=data.get("terminus"),
             branchArms=[BranchArmRef.from_dict(t) for t in data.get("branchArms", [])],
+            loopIds=list(data.get("loopIds", [])),
             depth=data.get("depth"),
         )
 
@@ -93,6 +100,8 @@ class Node:
                 result[name] = value
         if self.branchArms:
             result["branchArms"] = [t.to_dict() for t in self.branchArms]
+        if self.loopIds:
+            result["loopIds"] = self.loopIds
         if self.deadEnd:
             result["deadEnd"] = True
         return result

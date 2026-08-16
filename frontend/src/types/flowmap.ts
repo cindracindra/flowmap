@@ -31,6 +31,9 @@ export interface FlowNode {
   // A LIST because a call inside an `if` inside a `try` is in both arms
   // at once -- test membership, never read [0].
   branchArms?: BranchArmRef[];
+  // Flatten-stage, instance-scoped source loops whose body contains this
+  // node. Multiple ids mean nested loops.
+  loopIds?: string[];
   // flatten stage: the invoke-nesting level this CLONE was created at,
   // stamped server-side as the flattener builds it -- see
   // cfg_pipeline.py's `clone`. Every "invoke" edge therefore satisfies
@@ -50,6 +53,9 @@ export interface FlowEdge {
   type: EdgeType;
   returnFrom?: string;
   fallback?: boolean;
+  // A dominance-defined loop repetition edge. Retained as CFG metadata,
+  // but omitted from the linear process route and layout.
+  loopBack?: boolean;
   // Flatten stage: branch selections required for this edge to execute.
   // TRY normal completion names its explicit empty `noCatch` arm.
   branchRequirements?: BranchRequirement[];
@@ -73,7 +79,8 @@ export interface BranchArmRef {
 export type ArmTerminus = "throw" | "return" | "continues";
 
 // Mirrors model/branch.py. One entry per IF/TRY control structure found
-// during extraction; SWITCH/FOR/WHILE/DO aren't split into arms yet.
+// during extraction. Loops are repetition regions in LoopGroup rather than
+// mutually-exclusive branch arms; SWITCH is not split into arms yet.
 export interface BranchArm {
   label: string;
   // The arm's head: its first call in CFG order, recomputed server-side
@@ -143,6 +150,16 @@ export interface BranchGroup {
   returnsTo?: string[];
 }
 
+export type LoopKind = "FOR" | "FOR_EACH" | "WHILE" | "DO" | "DO_WHILE";
+
+export interface LoopGroup {
+  id: string;
+  kind: LoopKind;
+  method?: string;
+  line?: number;
+  conditionCode?: string;
+}
+
 export interface FlowGraph {
   entryPoint?: string;
   nodes: FlowNode[];
@@ -151,6 +168,7 @@ export interface FlowGraph {
   roots?: string[];
   orphans?: string[];
   branchGroups?: BranchGroup[];
+  loopGroups?: LoopGroup[];
 }
 
 export type TransitionReason =

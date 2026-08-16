@@ -2,6 +2,8 @@ import dataclasses
 import itertools
 from collections import Counter, deque
 
+import networkx as nx
+
 from model import (
     BranchArm,
     BranchArmRef,
@@ -9,6 +11,7 @@ from model import (
     BranchRequirement,
     Edge,
     Graph,
+    LoopGroup,
     Node,
 )
 from domain.util import is_noise, is_jdk_call_site_strip
@@ -137,12 +140,19 @@ def slice_from_root(graph: Graph, root_id: str) -> Graph:
         if (g.method in sliced_method_names if g.method is not None
             else g.id in tagged_group_ids)
     ]
+    tagged_loop_ids = {loop_id for n in sliced_nodes for loop_id in n.loopIds}
+    sliced_loops = [
+        loop for loop in graph.loopGroups
+        if (loop.method in sliced_method_names if loop.method is not None
+            else loop.id in tagged_loop_ids)
+    ]
 
     return Graph(
         entryPoint=root.calleeFullName,
         nodes=sliced_nodes,
         edges=sliced_edges,
         branchGroups=sliced_groups,
+        loopGroups=sliced_loops,
     )
 
 
@@ -165,6 +175,52 @@ def _adjacency_out(edges: list[Edge]) -> dict[str, list[str]]:
     for edge in edges:
         adjacency.setdefault(edge.source, []).append(edge.target)
     return adjacency
+
+
+def _tag_loop_back_edges(
+    nodes: list[Node], edges: list[Edge], root_id: str
+) -> list[Edge]:
+    """Mark dominance-defined loop back-edges without removing them.
+
+    Invoke edges into internal entries participate in dominance so an
+    inlined method remains reachable from the flattened root. Only sequence
+    edges are tagged: recursion is represented by invoke structure and has a
+    separate cutoff rule.
+    """
+    nodes_by_id = {node.id: node for node in nodes}
+    flow = nx.DiGraph()
+    flow.add_nodes_from(nodes_by_id)
+    for edge in edges:
+        if edge.type == "sequence" or (
+            edge.type == "invoke" and nodes_by_id.get(edge.target, None) is not None
+            and nodes_by_id[edge.target].type == "entry"
+        ):
+            flow.add_edge(edge.source, edge.target)
+
+    if root_id not in flow:
+        return edges
+    dominators = nx.immediate_dominators(flow, root_id)
+
+    def dominates(candidate: str, node_id: str) -> bool:
+        current = node_id
+        seen: set[str] = set()
+        while True:
+            if current == candidate:
+                return True
+            if current in seen:
+                return False
+            seen.add(current)
+            parent = dominators.get(current)
+            if parent is None or parent == current:
+                return False
+            current = parent
+
+    return [
+        dataclasses.replace(edge, loopBack=True)
+        if edge.type == "sequence" and dominates(edge.target, edge.source)
+        else edge
+        for edge in edges
+    ]
 
 
 def _resolve_kept_targets(
@@ -530,6 +586,11 @@ def _scope_group_to_instance(
     )
 
 
+def _scope_loop_to_instance(loop: LoopGroup, suffix: str) -> LoopGroup:
+    """Give one inlined method instance its own loop identity."""
+    return dataclasses.replace(loop, id=f"{loop.id}~{suffix}")
+
+
 def _resolve_convergence(
     nodes: list[Node], edges: list[Edge], groups: list[BranchGroup], root_id: str
 ) -> list[BranchGroup]:
@@ -871,9 +932,15 @@ def flatten_cfg(cfg: Graph) -> Graph:
         if group.method is not None:
             groups_by_method.setdefault(group.method, []).append(group)
 
+    loops_by_method: dict[str, list[LoopGroup]] = {}
+    for loop in cfg.loopGroups:
+        if loop.method is not None:
+            loops_by_method.setdefault(loop.method, []).append(loop)
+
     flat_nodes: dict[str, Node] = {}
     flat_edges: list[Edge] = []
     flat_groups: list[BranchGroup] = []
+    flat_loops: list[LoopGroup] = []
     seen_edges: set[tuple[str, str, str]] = set()
     id_counter = itertools.count()
 
@@ -928,6 +995,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
         visited_methods: frozenset[str],
         depth: int,
         inherited_tags: tuple[BranchArmRef, ...] = (),
+        inherited_loop_ids: tuple[str, ...] = (),
     ) -> tuple[str, bool]:
         """
         Clones and wires ONE method's own reachable body (recursing into
@@ -974,6 +1042,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # rewrite can no longer wait until the end the way it used to.
         suffix = entry_new_id.rsplit("~", 1)[-1]
         scoped_ids = {g.id for g in groups_by_method.get(method_name, ())}
+        scoped_loop_ids = {loop.id for loop in loops_by_method.get(method_name, ())}
 
         def tags_for(original_id: str) -> list[BranchArmRef]:
             """
@@ -1002,6 +1071,13 @@ def flatten_cfg(cfg: Graph) -> Graph:
                     unique.append(tag)
             return unique
 
+        def loops_for(original_id: str) -> list[str]:
+            own = (
+                f"{loop_id}~{suffix}" if loop_id in scoped_loop_ids else loop_id
+                for loop_id in nodes_by_id[original_id].loopIds
+            )
+            return list(dict.fromkeys((*inherited_loop_ids, *own)))
+
         if method_name in visited_methods:
             # Recursion cutoff: no body is inlined, but the stub represents
             # all deeper recursive execution and therefore consumes the
@@ -1012,6 +1088,10 @@ def flatten_cfg(cfg: Graph) -> Graph:
             if inherited_tags:
                 flat_nodes[entry_new_id] = dataclasses.replace(
                     flat_nodes[entry_new_id], branchArms=tags_for(entry_original_id)
+                )
+            if inherited_loop_ids:
+                flat_nodes[entry_new_id] = dataclasses.replace(
+                    flat_nodes[entry_new_id], loopIds=loops_for(entry_original_id)
                 )
             for continuation in continuations:
                 emit_edge(
@@ -1025,6 +1105,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # method share one leaf clone (`local_clone` dedups by original id),
         # so their arms are unioned rather than one overwriting the other.
         leaf_tags: dict[str, list[BranchArmRef]] = {}
+        leaf_loop_ids: dict[str, list[str]] = {}
 
         continuation_consumed = False
         deeper_visited = visited_methods | {method_name}
@@ -1059,6 +1140,10 @@ def flatten_cfg(cfg: Graph) -> Graph:
                     if (tag.groupId, tag.armLabel) not in present:
                         present.add((tag.groupId, tag.armLabel))
                         bucket.append(tag)
+                loop_bucket = leaf_loop_ids.setdefault(leaf_new_id, [])
+                for loop_id in loops_for(original_id):
+                    if loop_id not in loop_bucket:
+                        loop_bucket.append(loop_id)
 
             if internal_targets:
                 is_new_continuation = False
@@ -1138,6 +1223,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
                         target, callee_continuations, callee_return_from,
                         deeper_visited, depth + 1,
                         inherited_tags=tuple(callee_tags),
+                        inherited_loop_ids=tuple(loops_for(original_id)),
                     )
                     if dispatch_id is not None:
                         # No conditionCode: what selects this arm is the
@@ -1232,6 +1318,9 @@ def flatten_cfg(cfg: Graph) -> Graph:
                 _scope_group_to_instance(group, suffix, local_clone, continuations)
             )
 
+        for loop in loops_by_method.get(method_name, ()):
+            flat_loops.append(_scope_loop_to_instance(loop, suffix))
+
         # Final arm membership for every clone this instance made. Runs
         # unconditionally, not only when this method owns groups: a method
         # with no branches of its own still inherits the arms of the call
@@ -1241,9 +1330,12 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # rewriting one in place would corrupt every sibling instance.
         for original_id, new_id in local_clone.items():
             tags = leaf_tags[new_id] if new_id in leaf_tags else tags_for(original_id)
-            if tags:
+            loop_ids = (
+                leaf_loop_ids[new_id] if new_id in leaf_loop_ids else loops_for(original_id)
+            )
+            if tags or loop_ids:
                 flat_nodes[new_id] = dataclasses.replace(
-                    flat_nodes[new_id], branchArms=tags
+                    flat_nodes[new_id], branchArms=tags, loopIds=loop_ids
                 )
 
         return entry_new_id, continuation_consumed
@@ -1260,6 +1352,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
     groups = _resolve_convergence(nodes, flat_edges, flat_groups, root_new_id)
     groups += [g for g in cfg.branchGroups if g.method is None]
     flat_edges = _annotate_branch_requirements(flat_edges, groups)
+    flat_edges = _tag_loop_back_edges(nodes, flat_edges, root_new_id)
 
     return Graph(
         entryPoint=cfg.entryPoint,
@@ -1267,4 +1360,5 @@ def flatten_cfg(cfg: Graph) -> Graph:
         nodes=nodes,
         edges=flat_edges,
         branchGroups=groups,
+        loopGroups=flat_loops + [loop for loop in cfg.loopGroups if loop.method is None],
     )

@@ -5,6 +5,7 @@ from typing import Any
 
 from .branch import BranchGroup
 from .edge import Edge
+from .loop import LoopGroup
 from .node import Node
 
 
@@ -31,6 +32,7 @@ class Graph:
     orphans: list[str] = field(default_factory=list)
 
     branchGroups: list[BranchGroup] = field(default_factory=list)
+    loopGroups: list[LoopGroup] = field(default_factory=list)
 
     @property
     def deadEndIds(self) -> list[str]:
@@ -48,6 +50,7 @@ class Graph:
             roots=list(data.get("roots", [])),
             orphans=list(data.get("orphans", [])),
             branchGroups=[BranchGroup.from_dict(g) for g in data.get("branchGroups", [])],
+            loopGroups=[LoopGroup.from_dict(g) for g in data.get("loopGroups", [])],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -65,4 +68,6 @@ class Graph:
             result["orphans"] = self.orphans
         if self.branchGroups:
             result["branchGroups"] = [g.to_dict() for g in self.branchGroups]
+        if self.loopGroups:
+            result["loopGroups"] = [g.to_dict() for g in self.loopGroups]
         return result

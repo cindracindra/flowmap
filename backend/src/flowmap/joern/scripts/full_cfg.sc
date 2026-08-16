@@ -5,9 +5,11 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   val nodes = mutable.LinkedHashMap[String, ujson.Obj]()
   val edges = mutable.ArrayBuffer[ujson.Obj]()
   val branchGroups = mutable.ArrayBuffer[ujson.Obj]()
+  val loopGroups = mutable.ArrayBuffer[ujson.Obj]()
 
   // (groupId, armLabel) pairs per call id.
   type ArmTags = mutable.Map[Long, mutable.ArrayBuffer[(String, String)]]
+  type LoopTags = mutable.Map[Long, mutable.ArrayBuffer[String]]
 
   def addNode(id: String, obj: ujson.Obj): Unit = {
     if (!nodes.contains(id)) nodes(id) = obj
@@ -167,6 +169,51 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     )
   }
 
+  // Loops are repetition metadata, not mutually-exclusive branch arms.
+  // Keep their source guard even when its implementation is stripped as
+  // java.util/operator noise, and tag calls in the lexical BODY only.
+  // Java loop bodies are represented by BLOCK children even when the
+  // source omitted braces; selecting BLOCK also excludes a traditional
+  // for-loop's one-time initializer and per-iteration update expressions.
+  def emitLoopGroup(
+    cs: ControlStructure, methodFullName: String, loopTags: LoopTags
+  ): Unit = {
+    val groupId = s"loop${cs.id}"
+    // FOR has two BLOCK children in the Java CPG: order 1 is initializer,
+    // the LAST block is the repeating body. WHILE/DO use the same final
+    // block convention. Taking every block incorrectly marks `int i = 0`
+    // as repeated.
+    val bodyCalls = cs.astChildren.l
+      .filter(_.label == "BLOCK").lastOption.toList
+      .flatMap(_.ast.isCall.l)
+      .groupBy(_.id).values.map(_.head).toList
+    bodyCalls.foreach { c =>
+      loopTags.getOrElseUpdate(c.id, mutable.ArrayBuffer()) += groupId
+    }
+    val rawCondition = cs.condition.headOption.map(_.code).getOrElse("").trim
+    // Enhanced-for is lowered to WHILE by the Java frontend, whose
+    // "condition" code is the whole source loop. Recover its source-facing
+    // kind and keep only the header for the UI tooltip.
+    val isSourceFor = rawCondition.startsWith("for (")
+    val displayCondition =
+      if (isSourceFor) rawCondition.takeWhile(_ != '{').trim
+      else rawCondition
+    val sourceKind =
+      if (isSourceFor && displayCondition.contains(":")) "FOR_EACH"
+      else if (isSourceFor) "FOR"
+      else cs.controlStructureType
+    val loopObj = ujson.Obj(
+      "id" -> groupId,
+      "kind" -> sourceKind,
+      "method" -> methodFullName,
+      "line" -> cs.lineNumber.getOrElse(-1)
+    )
+    Option(displayCondition).filter(_.nonEmpty).foreach { code =>
+      loopObj("conditionCode") = ujson.Str(code)
+    }
+    loopGroups += loopObj
+  }
+
   cpg.method.isExternal(false).whereNot(_.isAbstract).l.foreach { method =>
     val entryId = s"m${method.id}"
     addNode(entryId, ujson.Obj(
@@ -193,6 +240,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     // an IF that is some other IF's else-chain continuation is folded
     // into that chain's group instead of getting one of its own.
     val armTags: ArmTags = mutable.Map()
+    val loopTags: LoopTags = mutable.Map()
     val controlStructures = method.controlStructure.l
     val ifs = controlStructures.filter(_.controlStructureType == "IF")
     val chainedIfIds = ifs.flatMap(cs => elseChainNext(cs).map(_.id)).toSet
@@ -206,6 +254,11 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     }
     controlStructures.filter(_.controlStructureType == "TRY").foreach { cs =>
       emitTryGroup(cs, method, armTags)
+    }
+    controlStructures.filter(cs =>
+      Set("FOR", "WHILE", "DO", "DO_WHILE").contains(cs.controlStructureType)
+    ).foreach { cs =>
+      emitLoopGroup(cs, method.fullName, loopTags)
     }
 
     // first call(s) reached from method entry, skipping non-call nodes
@@ -235,6 +288,11 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           tagArr.arr.addOne(ujson.Obj("groupId" -> ujson.Str(groupId), "armLabel" -> ujson.Str(label)))
         }
         callNode("branchArms") = tagArr
+      }
+      loopTags.get(call.id).foreach { ids =>
+        val loopArr = ujson.Arr()
+        ids.distinct.foreach(id => loopArr.arr.addOne(ujson.Str(id)))
+        callNode("loopIds") = loopArr
       }
       terminusById.get(call.id).foreach { t => callNode("terminus") = ujson.Str(t) }
       addNode(callId, callNode)
@@ -277,7 +335,8 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   ujson.Obj(
     "nodes" -> nodes.values.toList,
     "edges" -> edges.toList,
-    "branchGroups" -> branchGroups.toList
+    "branchGroups" -> branchGroups.toList,
+    "loopGroups" -> loopGroups.toList
   )
 }
 

@@ -440,7 +440,7 @@ export function visibleGraphSelection(
     ]),
   );
 
-  const flowEdges = graph.edges.filter((edge) => edge.type !== "data");
+  const flowEdges = graph.edges.filter((edge) => edge.type !== "data" && !edge.loopBack);
   const hasAuthoritativeRequirements = flowEdges.some(
     (edge) => edge.branchRequirements !== undefined,
   );

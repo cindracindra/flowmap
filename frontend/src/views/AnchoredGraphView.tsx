@@ -29,11 +29,12 @@ import {
   Hash,
   ArrowRight,
   AlertTriangle,
+  Repeat2,
 } from "lucide-react";
 
 import { CLASS_FILES } from "../data/classFiles";
 import { ANCHORED_VISUALISATION, graphVisualisation, type GraphVisualisation } from "../data/graph";
-import type { FlowNode, FlowEdge, NodeType, Transition } from "../types/flowmap";
+import type { FlowNode, FlowEdge, LoopGroup, NodeType, Transition } from "../types/flowmap";
 import { computeLayout, type NodePosition, type RowGap } from "../lib/layout";
 import {
   defaultSelection,
@@ -80,6 +81,7 @@ interface GraphViewData extends GraphVisualisation {
   explorerTree: ExplorerItem[];
   panels: BranchPanel[];
   flowEdges: FlowEdge[];
+  loopsById: Map<string, LoopGroup>;
 }
 
 function makeGraphViewData(visualisation: GraphVisualisation): GraphViewData {
@@ -89,9 +91,10 @@ function makeGraphViewData(visualisation: GraphVisualisation): GraphViewData {
   const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
   const explorerTree = buildExplorerTree(graph.nodes);
   const panels = buildBranchPanels(graph, rootId);
+  const loopsById = new Map((graph.loopGroups ?? []).map((loop) => [loop.id, loop]));
   return {
-    graph, phaseTree, rootId, nodesById, explorerTree, panels,
-    flowEdges: graph.edges.filter((edge) => edge.type !== "data"),
+    graph, phaseTree, rootId, nodesById, explorerTree, panels, loopsById,
+    flowEdges: graph.edges.filter((edge) => edge.type !== "data" && !edge.loopBack),
   };
 }
 
@@ -734,7 +737,16 @@ function Minimap({
 type PanelTab = "explorer" | "search" | "branches";
 
 function GraphCanvasView() {
-  const { graph: GRAPH, phaseTree, rootId: ROOT_ID, nodesById: NODES_BY_ID, explorerTree: EXPLORER_TREE, panels: PANELS, flowEdges: FLOW_EDGES } = useGraphViewData();
+  const {
+    graph: GRAPH,
+    phaseTree,
+    rootId: ROOT_ID,
+    nodesById: NODES_BY_ID,
+    explorerTree: EXPLORER_TREE,
+    panels: PANELS,
+    flowEdges: FLOW_EDGES,
+    loopsById: LOOPS_BY_ID,
+  } = useGraphViewData();
   const PHASES = phaseTree.phases;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [armSelection, setArmSelection] = useState<BranchSelection>(() => defaultSelection(PANELS));
@@ -1057,6 +1069,12 @@ function GraphCanvasView() {
                       </Flex>
                     ),
                   )}
+                  <Flex align="center" gap="2">
+                    <Repeat2 size={12} color="var(--orange-9)" />
+                    <Text size="1" color="gray">
+                      Inside loop
+                    </Text>
+                  </Flex>
                 </Flex>
                 <Separator size="4" my="2" />
                 <Text
@@ -1242,6 +1260,12 @@ function GraphCanvasView() {
                 const isSelected = node.id === selectedId;
                 const isHovered = node.id === hoveredId;
                 const isDimmed = connectedIds ? !connectedIds.has(node.id) : false;
+                const loopLabels = (node.loopIds ?? []).map((loopId) => {
+                  const loop = LOOPS_BY_ID.get(loopId);
+                  if (!loop) return "loop";
+                  const kind = loop.kind.toLowerCase().replace("_", " ");
+                  return loop.conditionCode ? `${kind}: ${loop.conditionCode}` : kind;
+                });
 
                 return (
                   <g
@@ -1278,6 +1302,19 @@ function GraphCanvasView() {
                       />
                     )}
                     {isSelected && <circle cx={pos.x} cy={pos.y} r={r * 0.35} fill={colors.stroke} opacity={0.7} />}
+                    {loopLabels.length > 0 && (
+                      <g pointerEvents="none">
+                        <title>{`Inside ${loopLabels.join("; ")}`}</title>
+                        <Repeat2
+                          x={pos.x - r - 18}
+                          y={pos.y - 6}
+                          width={12}
+                          height={12}
+                          color="var(--orange-9)"
+                          strokeWidth={1.8}
+                        />
+                      </g>
+                    )}
                     <text
                       x={pos.x + r + 9}
                       y={pos.y}

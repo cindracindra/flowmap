@@ -26,6 +26,10 @@ class Edge:
     # wired directly to it instead.
     fallback: bool = False
 
+    # Flatten stage: a sequence edge that repeats a source-level loop.
+    # Kept as semantic metadata, but excluded from the linear visual route.
+    loopBack: bool = False
+
     # flatten_cfg only: every branch selection that must hold for this
     # edge to execute. This is edge control-flow metadata, not node arm
     # membership: most importantly, a filtered zero-call normal arm owns
@@ -40,6 +44,7 @@ class Edge:
             type=data["type"],
             returnFrom=data.get("returnFrom"),
             fallback=data.get("fallback", False),
+            loopBack=data.get("loopBack", False),
             branchRequirements=[
                 BranchRequirement.from_dict(r)
                 for r in data.get("branchRequirements", [])
@@ -52,6 +57,8 @@ class Edge:
             result["returnFrom"] = self.returnFrom
         if self.fallback:
             result["fallback"] = True
+        if self.loopBack:
+            result["loopBack"] = True
         if self.branchRequirements:
             result["branchRequirements"] = [
                 requirement.to_dict() for requirement in self.branchRequirements

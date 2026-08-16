@@ -2,6 +2,7 @@ from .branch import ArmTerminus, BranchArm, BranchArmRef, BranchGroup, BranchReq
 from .class_document import ClassDocument
 from .edge import Edge, EdgeType
 from .graph import Graph
+from .loop import LoopGroup, LoopKind
 from .method_document import MethodDocument
 from .node import Node, NodeType, Terminus
 from .phase import Phase, Transition, TransitionReason
@@ -16,6 +17,8 @@ __all__ = [
     "Edge",
     "EdgeType",
     "Graph",
+    "LoopGroup",
+    "LoopKind",
     "BranchGroup",
     "BranchArm",
     "BranchArmRef",

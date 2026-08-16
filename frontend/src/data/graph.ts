@@ -36,9 +36,10 @@ export const PANELS = buildBranchPanels(GRAPH, ROOT_ID);
 
 // "data" edges are a phase-discovery input, not control flow -- they answer
 // "these two calls touch the same value", which is not a step the reader
-// takes through the trace. They are excluded from every view here; the
-// pipeline still emits and uses them.
-export const FLOW_EDGES = GRAPH.edges.filter((e) => e.type !== "data");
+// takes through the trace. A loop back-edge is likewise retained as CFG
+// metadata but is not a second forward process step. Both are excluded
+// from the linear view here; the pipeline still emits and uses them.
+export const FLOW_EDGES = GRAPH.edges.filter((e) => e.type !== "data" && !e.loopBack);
 
 // Mode 1 output: one cluster per HDBSCAN label, noise bucket included.
 // Same story as above -- static until there is an API to fetch it from.
