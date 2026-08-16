@@ -23,7 +23,7 @@ from service.topic import (
 )
 
 from domain.cfg_pipeline import (
-    classify_roots_and_orphans,
+    filter_and_classify_roots_and_orphans,
     slice_from_root,
     slice_anchored_cfg,
     filter_noise_cfg,
@@ -141,7 +141,7 @@ def build_all_opseq_visualisations(full_cfg: Graph) -> dict[str, dict]:
 
 def export_cfg_visualisations(full_cfg: Graph, output_dir: Path, anchor_name: str) -> None:
     """Export all non-LLM graph artifacts, including every operation graph."""
-    full_cfg = classify_roots_and_orphans(full_cfg)
+    full_cfg = filter_and_classify_roots_and_orphans(full_cfg)
     export_to_json(output_dir / "full_cfg.json", full_cfg.to_dict())
     export_to_json(output_dir / "opseq_visualisations.json", build_all_opseq_visualisations(full_cfg))
 
@@ -232,7 +232,7 @@ if __name__ == "__main__":
             formed_by_llm = not any(cluster.statistical_terms for cluster in topic_clusters)
             clusters_by_label = {cluster.label: cluster for cluster in topic_clusters}
 
-            full_cfg = classify_roots_and_orphans(full_cfg)
+            full_cfg = filter_and_classify_roots_and_orphans(full_cfg)
             root_methods = root_method_full_names(full_cfg)
 
             opseq_topic_assignment = {}

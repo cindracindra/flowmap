@@ -2,13 +2,25 @@ import dataclasses
 import itertools
 from collections import Counter, deque
 
-from model import BranchArm, BranchArmRef, BranchGroup, Edge, Graph, Node
+from model import (
+    BranchArm,
+    BranchArmRef,
+    BranchGroup,
+    BranchRequirement,
+    Edge,
+    Graph,
+    Node,
+)
 from domain.util import is_noise, is_jdk_call_site_strip
 
 
 def classify_roots_and_orphans(graph: Graph) -> Graph:
-    """Returns a new Graph with `roots`/`orphans` populated from `graph`'s own
-    "invoke" edges."""
+    """Classify uncalled entries by their surviving executable flow.
+
+    An entry with no incoming internal invocation is a root when its method
+    owns at least one surviving sequence/invoke edge, otherwise an orphan.
+    Data edges deliberately do not make a method operational.
+    """
 
     nodes_by_id = {n.id: n for n in graph.nodes}
     entry_id_by_fullname = {
@@ -16,28 +28,33 @@ def classify_roots_and_orphans(graph: Graph) -> Graph:
     }
 
     invoke_in: dict[str, int] = {}
-    entries_with_outgoing_calls: set[str] = set()
+    entries_with_executable_flow: set[str] = set()
     for e in graph.edges:
-        if e.type != "invoke":
+        if e.type not in ("sequence", "invoke"):
             continue
-        invoke_in[e.target] = invoke_in.get(e.target, 0) + 1
-        call_node = nodes_by_id.get(e.source)
-        if call_node is None or call_node.callerMethod is None:
-            continue
-        entry_id = entry_id_by_fullname.get(call_node.callerMethod)
-        if entry_id is not None:
-            entries_with_outgoing_calls.add(entry_id)
+        source_node = nodes_by_id.get(e.source)
+        if source_node is not None:
+            if source_node.type == "entry":
+                entries_with_executable_flow.add(source_node.id)
+            elif source_node.callerMethod is not None:
+                owner_id = entry_id_by_fullname.get(source_node.callerMethod)
+                if owner_id is not None:
+                    entries_with_executable_flow.add(owner_id)
+
+        if e.type == "invoke" and nodes_by_id.get(e.target, None) is not None:
+            if nodes_by_id[e.target].type == "entry":
+                invoke_in[e.target] = invoke_in.get(e.target, 0) + 1
 
     entry_ids = [n.id for n in graph.nodes if n.type == "entry"]
     roots = sorted(
         id_
         for id_ in entry_ids
-        if invoke_in.get(id_, 0) == 0 and id_ in entries_with_outgoing_calls
+        if invoke_in.get(id_, 0) == 0 and id_ in entries_with_executable_flow
     )
     orphans = sorted(
         id_
         for id_ in entry_ids
-        if invoke_in.get(id_, 0) == 0 and id_ not in entries_with_outgoing_calls
+        if invoke_in.get(id_, 0) == 0 and id_ not in entries_with_executable_flow
     )
 
     return dataclasses.replace(graph, roots=roots, orphans=orphans)
@@ -330,10 +347,9 @@ def _recompute_branch_geometry(
         # The fork hangs off whatever leads INTO an arm without being part
         # of THAT arm. Excluding the arm's own members is what stops a loop
         # inside an arm from nominating its own tail (which points back at
-        # its head) as the branch point. Excluding the whole GROUP would be
-        # wrong: a try/catch forks at the end of the try body, so the catch
-        # arm's predecessors are try-arm members and are exactly the nodes
-        # wanted.
+        # its head) as the branch point. For TRY, the untagged try-tail is
+        # the predecessor of each catch head and is therefore the desired
+        # branch point.
         candidates: set[str] = set()
         for arm in arms:
             if arm.firstCallId is None:
@@ -347,7 +363,7 @@ def _recompute_branch_geometry(
         # Of those, the ones that genuinely fork. An IF's condition has the
         # arms as its successors; a TRY's try-tail has the handler and the
         # normal continuation. What this rules out is the method entry,
-        # which leads into the try arm without being where anything splits.
+        # which leads into the try body without being where anything splits.
         # When nothing forks there is no visible split -- the other path
         # has no surviving node (a guard at the end of a method, a try
         # whose method ends right after the catch). One anchor is enough
@@ -359,6 +375,14 @@ def _recompute_branch_geometry(
             branch_points = sorted(forking, key=rank)
         else:
             branch_points = [max(candidates, key=rank)] if candidates else []
+
+        # The try body and finally are ordinary flow outside this group.
+        # With no surviving catch work, only the empty noCatch arm remains,
+        # so TRY is transparent and should not leave behind a panel.
+        if group.kind == "TRY" and not any(
+            arm.label != "noCatch" and not arm.empty for arm in arms
+        ):
+            continue
 
         rebuilt.append(dataclasses.replace(
             group, arms=arms, branchPointIds=branch_points,
@@ -376,7 +400,7 @@ def _tag_dead_ends(nodes: list[Node]) -> list[Node]:
     ]
 
 
-def filter_noise_cfg(cfg: Graph) -> Graph:
+def filter_noise_cfg(cfg: Graph, *, preserve_all_entries: bool = False) -> Graph:
     """
     Drops noise/JDK-bookkeeping "call" nodes, bridging around each gap so
     the surrounding flow stays connected (e.g. A -> B -> C with B
@@ -443,6 +467,8 @@ def filter_noise_cfg(cfg: Graph) -> Graph:
     connected_ids = {e.source for e in kept_edges} | {e.target for e in kept_edges}
     root_ids = {n.id for n in kept_nodes if n.type == "entry" and n.calleeFullName == cfg.entryPoint}
     root_ids |= set(cfg.roots)
+    if preserve_all_entries:
+        root_ids |= {n.id for n in kept_nodes if n.type == "entry"}
     kept_nodes = [
         n for n in kept_nodes
         if n.id in connected_ids or n.id in root_ids
@@ -454,6 +480,19 @@ def filter_noise_cfg(cfg: Graph) -> Graph:
         edges=kept_edges,
         branchGroups=_recompute_branch_geometry(kept_nodes, kept_edges, cfg.branchGroups),
     )
+
+
+def filter_and_classify_roots_and_orphans(graph: Graph) -> Graph:
+    """Two-pass whole-codebase operation analysis.
+
+    The first pass records the raw structure. Filtering then keeps every
+    method entry temporarily so entries exposed or emptied by filtering are
+    available to the final classification. The returned graph is filtered
+    and its roots/orphans describe that filtered graph.
+    """
+    initially_classified = classify_roots_and_orphans(graph)
+    filtered = filter_noise_cfg(initially_classified, preserve_all_entries=True)
+    return classify_roots_and_orphans(filtered)
 
 
 def _scope_group_to_instance(
@@ -543,8 +582,17 @@ def _resolve_convergence(
         for tag in node.branchArms:
             members.setdefault((tag.groupId, tag.armLabel), set()).add(node.id)
 
+    catch_head_ids = {
+        arm.firstCallId
+        for group in groups if group.kind == "TRY"
+        for arm in group.arms
+        if arm.label != "noCatch" and arm.firstCallId is not None
+    }
+
     def with_arm_targets(
-        group: BranchGroup, convergence: str | None,
+        group: BranchGroup,
+        convergence: str | None,
+        implicit_targets: list[str] | None = None,
     ) -> BranchGroup:
         arms: list[BranchArm] = []
         for arm in group.arms:
@@ -552,6 +600,12 @@ def _resolve_convergence(
                 target_ids: list[str] = []
             elif arm.terminus == "return":
                 target_ids = list(group.returnsTo)
+            elif group.kind != "TRY" and arm.empty and implicit_targets:
+                # The empty arm is represented by these direct route edges.
+                # They are more precise than the eventual convergence point,
+                # which may already have been reached through another caller
+                # path and therefore rank before this inlined branch.
+                target_ids = list(dict.fromkeys(implicit_targets))
             else:
                 target_ids = [convergence] if convergence is not None else []
             arms.append(dataclasses.replace(arm, targetIds=target_ids))
@@ -590,12 +644,38 @@ def _resolve_convergence(
         # empty the every-path intersection, and a branch that plainly
         # converges reported None.
         implicit_continuations = 0
+        implicit_targets: list[str] = []
+        later_sibling_heads = {
+            arm.firstCallId
+            for later in groups
+            if later.id != group.id
+            and later.method == group.method
+            and set(later.branchPointIds) & set(group.branchPointIds)
+            and (later.line or 0) > (group.line or 0)
+            for arm in later.arms
+            if arm.firstCallId is not None
+        }
         for branch_point in group.branchPointIds:
             successors = list(sequence_out.get(branch_point, ()))
             successors += continuation_out.get(branch_point, ())
             for successor in successors:
-                if successor in group_members or nodes_by_id[successor].deadEnd:
+                if successor in later_sibling_heads:
+                    # This is a real direct route for an earlier group's
+                    # empty continuing arm even when the later arm throws.
+                    # Keep it as a target; dead ends are still excluded from
+                    # the live-path convergence calculation below.
+                    implicit_targets.append(successor)
+                if (
+                    successor in group_members
+                    or nodes_by_id[successor].deadEnd
+                    # A callee inside TRY is flattened with both its normal
+                    # continuation and catch heads. A nested empty arm owns
+                    # only normal completion; the enclosing TRY owns catches.
+                    or (successor in catch_head_ids and successor not in group_members)
+                ):
                     continue
+                if successor not in later_sibling_heads:
+                    implicit_targets.append(successor)
                 paths.append(
                     _reachable_non_members(successor, set(), group_members, flow_out)
                 )
@@ -618,6 +698,7 @@ def _resolve_convergence(
         # `report.recordSuccess(...)` instead of `from.withdraw(amount + fee)`.
         if any(arm.empty and arm.terminus == "continues" for arm in group.arms):
             if group.returnsTo and implicit_continuations == 0:
+                implicit_targets.extend(group.returnsTo)
                 paths.append(set(group.returnsTo))
 
         # Evaluated for ONE surviving path too, not just two or more.
@@ -650,8 +731,91 @@ def _resolve_convergence(
                 if count == len(paths) and rank(node_id) > last_fork
             ]
             converges_at = min(shared, key=rank) if shared else None
-        resolved.append(with_arm_targets(group, converges_at))
+        resolved.append(with_arm_targets(group, converges_at, implicit_targets))
     return resolved
+
+
+def _annotate_branch_requirements(
+    edges: list[Edge], groups: list[BranchGroup]
+) -> list[Edge]:
+    """Stamp each fork/return edge with its backend-known arm selection.
+
+    Node arm membership cannot describe an empty arm: after noise filtering
+    there is no node to tag, and flattening represents normal completion by
+    a fallback return edge.  This pass runs after instance scoping and
+    convergence resolution, when both the real cloned branch points and all
+    synthesized return edges exist.
+
+    Explicit arm heads are matched by firstCallId. Empty/implicit routes are
+    matched only against that arm's resolved targetIds. This distinction is
+    essential for a call inside TRY: flattening gives its callee both the
+    normal continuation and the catch head, but only the former belongs to
+    the callee's empty normal arm; the latter belongs to the enclosing catch.
+    """
+    requirements: list[list[BranchRequirement]] = [
+        list(edge.branchRequirements) for edge in edges
+    ]
+
+    for group in groups:
+        route_type = "invoke" if group.kind == "DISPATCH" else "sequence"
+        selectable = list(group.arms)
+        shared_later_heads = {
+            arm.firstCallId
+            for later in groups
+            if later.id != group.id
+            and later.method == group.method
+            and set(later.branchPointIds) & set(group.branchPointIds)
+            and (later.line or 0) > (group.line or 0)
+            for arm in later.arms
+            if arm.firstCallId is not None
+        }
+
+        explicit_by_target = {
+            arm.firstCallId: arm.label
+            for arm in selectable
+            if arm.firstCallId is not None
+        }
+        empty_arms = [arm for arm in selectable if arm.firstCallId is None]
+        for index, edge in enumerate(edges):
+            if edge.type != route_type:
+                continue
+            point = (
+                edge.source
+                if edge.source in group.branchPointIds
+                else edge.returnFrom
+                if edge.returnFrom in group.branchPointIds
+                else None
+            )
+            if point is None:
+                continue
+
+            if edge.target in explicit_by_target:
+                arm_label = explicit_by_target[edge.target]
+            else:
+                matching_empty = [
+                    arm for arm in empty_arms
+                    if edge.target in (arm.targetIds or [])
+                ]
+                if not matching_empty and edge.target in shared_later_heads:
+                    # Stripped conditions can make sequential groups share
+                    # one anchor. Reaching a later group's head means every
+                    # earlier group took its empty continuing route.
+                    matching_empty = [
+                        arm for arm in empty_arms
+                        if arm.terminus == "continues"
+                    ]
+                if len(matching_empty) != 1:
+                    continue
+                arm_label = matching_empty[0].label
+
+            requirement = BranchRequirement(group.id, arm_label)
+            if requirement not in requirements[index]:
+                requirements[index].append(requirement)
+
+    return [
+        dataclasses.replace(edge, branchRequirements=edge_requirements)
+        for edge, edge_requirements in zip(edges, requirements, strict=True)
+    ]
 
 
 def flatten_cfg(cfg: Graph) -> Graph:
@@ -839,13 +1003,22 @@ def flatten_cfg(cfg: Graph) -> Graph:
             return unique
 
         if method_name in visited_methods:
-            # Recursion cutoff: no body is inlined, but the stub itself
-            # still only runs because of whatever arm called it.
+            # Recursion cutoff: no body is inlined, but the stub represents
+            # all deeper recursive execution and therefore consumes the
+            # continuation propagated to it. Wiring that return here keeps
+            # it on the cutoff entry; returning False would make the generic
+            # caller fallback incorrectly originate at the first inlined
+            # entry instead.
             if inherited_tags:
                 flat_nodes[entry_new_id] = dataclasses.replace(
                     flat_nodes[entry_new_id], branchArms=tags_for(entry_original_id)
                 )
-            return entry_new_id, False
+            for continuation in continuations:
+                emit_edge(
+                    entry_new_id, continuation, "sequence",
+                    return_from=return_from, fallback=True,
+                )
+            return entry_new_id, bool(continuations)
 
         # Leaves are keyed by CLONE id, not original: a leaf takes the arms
         # of the call site that invoked it, and two call sites in this same
@@ -1086,6 +1259,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
     # with a graph extracted before groups carried `method`).
     groups = _resolve_convergence(nodes, flat_edges, flat_groups, root_new_id)
     groups += [g for g in cfg.branchGroups if g.method is None]
+    flat_edges = _annotate_branch_requirements(flat_edges, groups)
 
     return Graph(
         entryPoint=cfg.entryPoint,

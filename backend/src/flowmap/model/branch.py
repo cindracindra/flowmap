@@ -20,6 +20,25 @@ class BranchArmRef:
         return {"groupId": self.groupId, "armLabel": self.armLabel}
 
 
+@dataclass(frozen=True, slots=True)
+class BranchRequirement:
+    """A branch selection required for an edge to be executable.
+
+    The label names a real arm in the corresponding group. TRY normal
+    completion uses its explicit empty ``noCatch`` arm.
+    """
+
+    groupId: str
+    armLabel: str
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> BranchRequirement:
+        return cls(groupId=data["groupId"], armLabel=data["armLabel"])
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"groupId": self.groupId, "armLabel": self.armLabel}
+
+
 @dataclass(slots=True)
 class BranchArm:
     label: str
@@ -44,6 +63,11 @@ class BranchArm:
     # `else` arm (no condition of its own) and on every TRY arm.
     conditionCode: str | None = None
 
+    # TRY catch arms only: the declared caught exception type. Kept
+    # separate from conditionCode because a catch type is dispatch metadata,
+    # not a boolean expression.
+    exceptionType: str | None = None
+
     # Flatten stage only: visible destinations after this arm exits.
     # None means this stage has not resolved destinations yet. The final
     # flattened graph always carries a list: [] for a throw or for flow
@@ -65,6 +89,7 @@ class BranchArm:
             empty=data.get("empty", False),
             terminus=data.get("terminus"),
             conditionCode=data.get("conditionCode"),
+            exceptionType=data.get("exceptionType"),
             targetIds=(list(data["targetIds"]) if "targetIds" in data else None),
         )
 
@@ -74,6 +99,8 @@ class BranchArm:
             result["terminus"] = self.terminus
         if self.conditionCode is not None:
             result["conditionCode"] = self.conditionCode
+        if self.exceptionType is not None:
+            result["exceptionType"] = self.exceptionType
         if self.firstCallId is not None:
             result["firstCallId"] = self.firstCallId
         if self.targetIds is not None:

@@ -123,27 +123,45 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     )
   }
 
-  // Emits ONE group for try block
-  def emitTryGroup(cs: ControlStructure, methodFullName: String, armTags: ArmTags): Unit = {
+  // Emits ONE group for a try's mutually exclusive outcomes. The try body
+  // itself is the common spine before the fork, and finally is common flow
+  // after it, so neither is an arm. Normal completion is an explicit empty
+  // arm alongside the catch bodies.
+  def emitTryGroup(cs: ControlStructure, method: Method, armTags: ArmTags): Unit = {
     val groupId = s"cs${cs.id}"
     val armRoots = cs.astChildren.l
     val arms = ujson.Arr()
+    val ordinaryVariableNames = (method.parameter.name.l ++ method.local.name.l).toSet
     var catchIdx = 0
-    armRoots.zipWithIndex.foreach { case (armRoot, idx) =>
+    armRoots.foreach { armRoot =>
       val structureType = armRoot match {
         case c: ControlStructure => c.controlStructureType
         case _                   => ""
       }
-      val label = structureType match {
-        case "CATCH"   => catchIdx += 1; s"catch$catchIdx"
-        case "FINALLY" => "finally"
-        case _         => if (idx == 0) "try" else s"arm$idx"
+      if (structureType == "CATCH") {
+        catchIdx += 1
+        addArm(groupId, s"catch$catchIdx", None, armRoot, arms, armTags)
+        // The Java frontend does not emit the catch declaration itself
+        // beneath the CATCH node. Usages of its variable are identifiers
+        // with the correct type, though, and unlike ordinary parameters/
+        // locals their name is absent from the method declaration lists.
+        val exceptionType = armRoot.ast.isIdentifier
+          .filterNot(i => ordinaryVariableNames.contains(i.name))
+          .map(_.typeFullName)
+          .find(t => t.nonEmpty && t != "<empty>")
+        exceptionType.foreach { t =>
+          arms.arr.last.obj("exceptionType") = ujson.Str(t)
+        }
       }
-      addArm(groupId, label, None, armRoot, arms, armTags)
     }
+    arms.arr.addOne(ujson.Obj(
+      "label" -> "noCatch",
+      "empty" -> ujson.Bool(true),
+      "terminus" -> ujson.Str("continues")
+    ))
     branchGroups += ujson.Obj(
       "id" -> groupId, "kind" -> "TRY",
-      "method" -> methodFullName,
+      "method" -> method.fullName,
       "line" -> cs.lineNumber.getOrElse(-1),
       "arms" -> arms
     )
@@ -187,7 +205,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       emitIfChain(head, method.fullName, armTags)
     }
     controlStructures.filter(_.controlStructureType == "TRY").foreach { cs =>
-      emitTryGroup(cs, method.fullName, armTags)
+      emitTryGroup(cs, method, armTags)
     }
 
     // first call(s) reached from method entry, skipping non-call nodes
@@ -227,15 +245,21 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       }
 
       // interprocedural traversal
-      val calleeMethods = call.callee.whereNot(_.isAbstract)
-        .filter(m => m.isExternal || m.block.astChildren.nonEmpty).l
-      if (calleeMethods.isEmpty) {
+      // Keep "Joern resolved nothing" distinct from "Joern resolved a
+      // known method whose body is empty". The latter is common for an
+      // implicit default constructor: the call site is real, but there is
+      // no body to inline and therefore no entry/leaf target to emit.
+      val resolvedCallees = call.callee.whereNot(_.isAbstract).l
+      val traversableCallees = resolvedCallees.filter(
+        m => m.isExternal || m.block.astChildren.nonEmpty
+      )
+      if (resolvedCallees.isEmpty) {
         addNode(callId + "_unresolved", ujson.Obj(
           "id" -> (callId + "_unresolved"), "type" -> "leaf", "reason" -> "unresolved"
         ))
         edges += ujson.Obj("from" -> callId, "to" -> (callId + "_unresolved"), "type" -> "invoke")
       } else {
-        calleeMethods.foreach { callee =>
+        traversableCallees.foreach { callee =>
           val calleeEntryId = s"m${callee.id}"
           if (callee.isExternal) {
             addNode(calleeEntryId, ujson.Obj(

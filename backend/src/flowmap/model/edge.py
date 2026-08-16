@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from .branch import BranchRequirement
 
 EdgeType = Literal["sequence", "invoke", "data"]
 
@@ -24,6 +26,12 @@ class Edge:
     # wired directly to it instead.
     fallback: bool = False
 
+    # flatten_cfg only: every branch selection that must hold for this
+    # edge to execute. This is edge control-flow metadata, not node arm
+    # membership: most importantly, a filtered zero-call normal arm owns
+    # the synthesized fallback return edge that represents it.
+    branchRequirements: list[BranchRequirement] = field(default_factory=list)
+
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Edge:
         return cls(
@@ -32,6 +40,10 @@ class Edge:
             type=data["type"],
             returnFrom=data.get("returnFrom"),
             fallback=data.get("fallback", False),
+            branchRequirements=[
+                BranchRequirement.from_dict(r)
+                for r in data.get("branchRequirements", [])
+            ],
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -40,4 +52,8 @@ class Edge:
             result["returnFrom"] = self.returnFrom
         if self.fallback:
             result["fallback"] = True
+        if self.branchRequirements:
+            result["branchRequirements"] = [
+                requirement.to_dict() for requirement in self.branchRequirements
+            ]
         return result
