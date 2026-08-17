@@ -29,6 +29,15 @@ class Node:
     # entry, call: source line number (-1 if Joern couldn't resolve one).
     line: int | None = None
 
+    # entry, call: source file containing the method/call. The extraction
+    # service normalizes Joern's filename relative to the configured source
+    # directory so consumers do not need a hand-maintained class/file map.
+    sourceFile: str | None = None
+
+    # entry only: Joern generated this default constructor because the
+    # class declares none. Explicit zero-argument constructors remain false.
+    implicitConstructor: bool | None = None
+
     # leaf only, when calleeFullName is absent: why no callee was
     # resolved (currently always "unresolved" -- see inter_cfg.sc).
     reason: str | None = None
@@ -75,6 +84,8 @@ class Node:
             callerMethod=data.get("callerMethod"),
             code=data.get("code"),
             line=data.get("line"),
+            sourceFile=data.get("sourceFile"),
+            implicitConstructor=data.get("implicitConstructor"),
             reason=data.get("reason"),
             origId=data.get("origId"),
             deadEnd=data.get("deadEnd"),
@@ -91,6 +102,8 @@ class Node:
             ("callerMethod", self.callerMethod),
             ("code", self.code),
             ("line", self.line),
+            ("sourceFile", self.sourceFile),
+            ("implicitConstructor", self.implicitConstructor),
             ("reason", self.reason),
             ("origId", self.origId),
             ("terminus", self.terminus),

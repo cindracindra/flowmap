@@ -15,6 +15,14 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     if (!nodes.contains(id)) nodes(id) = obj
   }
 
+  // Static initializers can carry Joern's "<empty>" method filename even
+  // though their owning type declaration has the real source location.
+  def methodSourceFile(method: Method): String = {
+    val direct = method.filename
+    if (direct.nonEmpty && direct != "<empty>") direct
+    else method.typeDecl.filename.headOption.getOrElse(direct)
+  }
+
   // Distinguishes an explicit `return` from an implicit end-of-method,
   // for a call that has NO further call ahead of it. 
   def classifyTerminus(startPoints: List[CfgNode]): String = {
@@ -216,10 +224,16 @@ def buildFullCodebaseCfg(): ujson.Obj = {
 
   cpg.method.isExternal(false).whereNot(_.isAbstract).l.foreach { method =>
     val entryId = s"m${method.id}"
-    addNode(entryId, ujson.Obj(
+    val entryNode = ujson.Obj(
       "id" -> entryId, "type" -> "entry",
-      "calleeFullName" -> method.fullName, "line" -> method.lineNumber.getOrElse(-1)
-    ))
+      "calleeFullName" -> method.fullName,
+      "sourceFile" -> methodSourceFile(method),
+      "line" -> method.lineNumber.getOrElse(-1)
+    )
+    if (method.name == "<init>" && method.code == "<empty>") {
+      entryNode("implicitConstructor") = ujson.Bool(true)
+    }
+    addNode(entryId, entryNode)
 
     val methodCalls = method.call.l
 
@@ -280,6 +294,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       val callNode = ujson.Obj(
         "id" -> callId, "type" -> "call",
         "callerMethod" -> method.fullName, "calleeFullName" -> call.methodFullName,
+        "sourceFile" -> methodSourceFile(method),
         "code" -> call.code, "line" -> call.lineNumber.getOrElse(-1)
       )
       armTags.get(call.id).foreach { tags =>

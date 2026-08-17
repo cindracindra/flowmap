@@ -225,7 +225,7 @@ if __name__ == "__main__":
             session.load_cpg(cpg_output_path)
             if args.mode in ("topics", "all"):
                 class_docs, method_docs = extract_class_and_method_documents(session)
-            full_cfg = extract_full_cfg(session)
+            full_cfg = extract_full_cfg(session, SOURCE_DIR)
         finally:
             session.stop()
 

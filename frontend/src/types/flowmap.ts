@@ -16,6 +16,9 @@ export interface FlowNode {
   callerMethod?: string;
   code?: string;
   line?: number;
+  sourceFile?: string;
+  // Entry only: generated default constructor, not declared in source.
+  implicitConstructor?: boolean;
   reason?: string;
   origId?: string;
   deadEnd?: boolean;

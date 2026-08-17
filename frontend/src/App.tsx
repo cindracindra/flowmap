@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Flex, Text, Badge, Button, IconButton } from "@radix-ui/themes";
+import { Flex, Text, Badge, Button, IconButton } from "@radix-ui/themes";
 import { GitBranch, Upload, Settings, Compass, Waypoints } from "lucide-react";
 
 import { GRAPH } from "./data/graph";
@@ -140,18 +140,7 @@ export default function App() {
           away and back deliberately. */}
       <Flex direction="column" flexGrow="1" style={{ minHeight: 0 }}>
         {view === "anchored" ? (
-          GRAPH.rootId ? (
-            <AnchoredGraphView onEntryPointChange={setAnchoredEntryPoint} />
-          ) : (
-            <Flex align="center" justify="center" flexGrow="1" style={{ background: "var(--canvas-background)" }}>
-              <Box style={{ textAlign: "center" }}>
-                <Text size="2" weight="medium">No anchored graph selected</Text>
-                <Text as="p" size="1" color="gray" mt="2">
-                  Set ANCHOR_NAME and regenerate the CFG artifacts to show a top-level trace.
-                </Text>
-              </Box>
-            </Flex>
-          )
+          <AnchoredGraphView onEntryPointChange={setAnchoredEntryPoint} />
         ) : <TopicDiscoveryView />}
       </Flex>
     </Flex>

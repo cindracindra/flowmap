@@ -152,3 +152,7 @@ export function opseqChoicesForMethod(methodFullName: string): OpseqChoice[] {
     };
   }).sort((a, b) => a.label.localeCompare(b.label));
 }
+
+export function methodParticipatesInOpseq(methodFullName: string): boolean {
+  return opseqIdsByMethod.has(methodFullName);
+}

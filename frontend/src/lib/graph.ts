@@ -58,11 +58,31 @@ export interface ProjectExplorerItem {
   children?: ProjectExplorerItem[];
 }
 
-function sourcePathForClass(className: string, classFiles: Record<string, string>): string {
+export function sourcePathForClass(className: string, classFiles: Record<string, string>): string {
   const outerClass = className.split("$")[0];
   return classFiles[className]
     ?? classFiles[outerClass]
     ?? `src/main/java/${outerClass.replaceAll(".", "/")}.java`;
+}
+
+function parsedSourceFilesByClass(nodes: FlowNode[]): Map<string, string> {
+  const files = new Map<string, string>();
+  for (const node of nodes) {
+    if (
+      node.type === "entry"
+      && node.calleeFullName
+      && node.sourceFile
+      && !node.sourceFile.startsWith("<")
+    ) {
+      files.set(classOf(node.calleeFullName), node.sourceFile);
+    }
+  }
+  return files;
+}
+
+export function parsedSourceFileForClass(nodes: FlowNode[], className: string): string | undefined {
+  const files = parsedSourceFilesByClass(nodes);
+  return files.get(className) ?? files.get(className.split("$")[0]);
 }
 
 function methodName(fullName: string): string {
@@ -97,9 +117,17 @@ export function buildProjectExplorerTree(
   classFiles: Record<string, string>,
 ): ProjectExplorerItem[] {
   const methodsByFile = new Map<string, FlowNode[]>();
+  const parsedFiles = parsedSourceFilesByClass(nodes);
   for (const node of nodes) {
     if (node.type !== "entry" || !node.calleeFullName) continue;
-    const file = sourcePathForClass(classOf(node.calleeFullName), classFiles);
+    const method = splitMethodFullName(node.calleeFullName).method;
+    if (method === "<clinit>" || (method === "<init>" && node.implicitConstructor)) continue;
+    const parsedSourceFile = node.sourceFile && !node.sourceFile.startsWith("<")
+      ? node.sourceFile
+      : parsedFiles.get(classOf(node.calleeFullName))
+        ?? parsedFiles.get(classOf(node.calleeFullName).split("$")[0]);
+    const file = parsedSourceFile
+      ?? sourcePathForClass(classOf(node.calleeFullName), classFiles);
     const methods = methodsByFile.get(file);
     if (methods) methods.push(node);
     else methodsByFile.set(file, [node]);

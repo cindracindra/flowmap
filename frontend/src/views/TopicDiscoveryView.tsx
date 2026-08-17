@@ -33,6 +33,7 @@ function TopicRow({
   onSelect: () => void;
 }) {
   const isNoise = topic.label === NOISE_LABEL;
+  const hasLlmLabel = Boolean(topic.llm_label?.trim());
   const unnamed = isUnnamed(topic);
   const operations = OPERATIONS_BY_TOPIC[String(topic.label)] ?? [];
 
@@ -66,6 +67,11 @@ function TopicRow({
         >
           {topicLabel(topic)}
         </Text>
+        {hasLlmLabel && (
+          <Badge size="1" variant="outline" color="violet">
+            LLM label
+          </Badge>
+        )}
         {unnamed && !isNoise && (
           <Badge size="1" variant="outline" color="gray">
             unlabelled
@@ -153,9 +159,9 @@ function TopicDetailView({
         <IconButton size="1" variant="ghost" color="gray" onClick={onBack} title="Back to all topics">
           <ChevronLeft size={14} />
         </IconButton>
-        <Text size="1" color="gray">
+        <BreadcrumbButton onClick={onBack}>
           All Topics
-        </Text>
+        </BreadcrumbButton>
         <Text color="gray">/</Text>
         <Text size="1" weight="medium">
           {topicLabel(topic)}
@@ -171,16 +177,6 @@ function TopicDetailView({
           <Text as="p" size="1" color="gray" mt="1">
             {operations.length} assigned {operations.length === 1 ? "operation" : "operations"}
           </Text>
-
-          {topic.statistical_terms.length > 0 && (
-            <Flex gap="1" wrap="wrap" mt="3">
-              {topic.statistical_terms.map((term) => (
-                <Badge key={term} size="1" variant="soft" color="teal" style={{ fontFamily: MONO }}>
-                  {term}
-                </Badge>
-              ))}
-            </Flex>
-          )}
 
           <Separator size="4" my="4" />
 
@@ -253,7 +249,9 @@ function TopicDetailView({
 function BreadcrumbButton({ children, onClick }: { children: string; onClick: () => void }) {
   return (
     <button
+      type="button"
       onClick={onClick}
+      title={`Go to ${children}`}
       style={{
         all: "unset",
         cursor: "pointer",

@@ -43,6 +43,7 @@ import {
   FULL_GRAPH,
   OPSEQ_VISUALISATIONS,
   graphVisualisation,
+  methodParticipatesInOpseq,
   opseqChoicesForMethod,
   type GraphVisualisation,
   type OpseqChoice,
@@ -72,6 +73,8 @@ import {
   TRANSITION_REASON_LABELS,
   buildExplorerTree,
   buildProjectExplorerTree,
+  parsedSourceFileForClass,
+  sourcePathForClass,
   type ExplorerItem,
   type ProjectExplorerItem,
 } from "../lib/graph";
@@ -94,11 +97,15 @@ interface GraphViewData extends GraphVisualisation {
   loopsById: Map<string, LoopGroup>;
   focusMethodFullName?: string;
   onSelectProjectMethod: (methodFullName: string) => void;
+  treeOpenOverrides: Map<string, boolean>;
+  onToggleTreePath: (path: string, defaultOpen: boolean) => void;
 }
 
 function makeGraphViewData(
   visualisation: GraphVisualisation,
   onSelectProjectMethod: (methodFullName: string) => void,
+  treeOpenOverrides: Map<string, boolean>,
+  onToggleTreePath: (path: string, defaultOpen: boolean) => void,
   focusMethodFullName?: string,
 ): GraphViewData {
   const { graph, phaseTree } = visualisation;
@@ -111,7 +118,7 @@ function makeGraphViewData(
   const loopsById = new Map((graph.loopGroups ?? []).map((loop) => [loop.id, loop]));
   return {
     graph, phaseTree, rootId, nodesById, explorerTree, projectTree, panels, loopsById,
-    focusMethodFullName, onSelectProjectMethod,
+    focusMethodFullName, onSelectProjectMethod, treeOpenOverrides, onToggleTreePath,
     flowEdges: graph.edges.filter((edge) => edge.type !== "data" && !edge.loopBack),
   };
 }
@@ -188,24 +195,31 @@ function edgePath(from: NodePosition, to: NodePosition, fromR: number, toR: numb
 function ExplorerRow({
   item,
   depth,
+  path,
   selectedNodeId,
   onSelect,
 }: {
   item: ExplorerItem;
   depth: number;
+  path: string;
   selectedNodeId: string | null;
   onSelect: (id: string) => void;
 }) {
-  const { nodesById } = useGraphViewData();
-  const [open, setOpen] = useState(depth < 2);
+  const { nodesById, treeOpenOverrides, onToggleTreePath } = useGraphViewData();
   const isBranch = item.kind !== "node";
+  const defaultOpen = depth < 2;
+  const open = treeOpenOverrides.get(`operation:${path}`) ?? defaultOpen;
   const isSelected = item.nodeId === selectedNodeId;
   const node = item.nodeId ? nodesById.get(item.nodeId) : undefined;
 
   return (
     <Box>
       <button
-        onClick={() => (isBranch ? setOpen((o) => !o) : item.nodeId && onSelect(item.nodeId))}
+        onClick={() => (
+          isBranch
+            ? onToggleTreePath(`operation:${path}`, defaultOpen)
+            : item.nodeId && onSelect(item.nodeId)
+        )}
         style={{
           all: "unset",
           boxSizing: "border-box",
@@ -244,6 +258,7 @@ function ExplorerRow({
             key={child.nodeId ?? `${child.name}-${i}`}
             item={child}
             depth={depth + 1}
+            path={`${path}/${child.kind}:${child.name}`}
             selectedNodeId={selectedNodeId}
             onSelect={onSelect}
           />
@@ -255,18 +270,33 @@ function ExplorerRow({
 function ProjectExplorerRow({
   item,
   depth,
+  path,
   selectedNodeId,
   forceOpen = false,
+  onSelectProjectMethod: onSelectOverride,
+  treeOpenOverrides: openOverridesOverride,
+  onToggleTreePath: onToggleOverride,
 }: {
   item: ProjectExplorerItem;
   depth: number;
+  path: string;
   selectedNodeId: string | null;
   forceOpen?: boolean;
+  onSelectProjectMethod?: (methodFullName: string) => void;
+  treeOpenOverrides?: Map<string, boolean>;
+  onToggleTreePath?: (path: string, defaultOpen: boolean) => void;
 }) {
-  const { graph, onSelectProjectMethod } = useGraphViewData();
-  const [open, setOpen] = useState(true);
+  const data = useContext(GraphViewContext);
+  const graph = data?.graph ?? FULL_GRAPH;
+  const onSelectProjectMethod = onSelectOverride ?? data?.onSelectProjectMethod;
+  const treeOpenOverrides = openOverridesOverride ?? data?.treeOpenOverrides ?? new Map();
+  const onToggleTreePath = onToggleOverride ?? data?.onToggleTreePath;
   const isBranch = item.kind !== "method";
-  const isOpen = forceOpen || open;
+  const storedOpen = treeOpenOverrides.get(`project:${path}`) ?? true;
+  const isOpen = forceOpen || storedOpen;
+  const participatesInOpseq = item.methodFullName
+    ? methodParticipatesInOpseq(item.methodFullName)
+    : true;
   const activeNode = item.methodFullName
     ? graph.nodes.find((node) => node.type === "entry" && node.calleeFullName === item.methodFullName)
     : undefined;
@@ -276,10 +306,15 @@ function ProjectExplorerRow({
     <Box>
       <button
         onClick={() => {
-          if (isBranch) setOpen((value) => !value);
-          else if (item.methodFullName) onSelectProjectMethod(item.methodFullName);
+          if (isBranch) onToggleTreePath?.(`project:${path}`, true);
+          else if (item.methodFullName) onSelectProjectMethod?.(item.methodFullName);
         }}
-        title={item.methodFullName ?? item.name}
+        title={item.methodFullName
+          ? `${item.methodFullName}${participatesInOpseq ? "" : " — Not part of an operation sequence"}`
+          : item.name}
+        aria-label={item.methodFullName
+          ? `${item.name}${participatesInOpseq ? "" : ", not part of an operation sequence"}`
+          : item.name}
         style={{
           all: "unset",
           boxSizing: "border-box",
@@ -291,8 +326,11 @@ function ProjectExplorerRow({
           paddingLeft: 8 + depth * 14,
           cursor: "pointer",
           borderRadius: 4,
-          color: isSelected ? "var(--accent-11)" : "var(--gray-11)",
+          color: isSelected
+            ? "var(--accent-11)"
+            : participatesInOpseq ? "var(--gray-11)" : "var(--gray-8)",
           background: isSelected ? "var(--accent-a3)" : "transparent",
+          opacity: participatesInOpseq ? 1 : 0.55,
         }}
       >
         {isBranch ? (
@@ -302,7 +340,9 @@ function ProjectExplorerRow({
         )}
         {item.kind === "folder" && <FolderOpen size={12} color="var(--amber-9)" />}
         {item.kind === "file" && <FileCode2 size={12} color="var(--teal-9)" />}
-        {item.kind === "method" && <Hash size={12} color="var(--gray-9)" />}
+        {item.kind === "method" && (
+          <Hash size={12} color={participatesInOpseq ? "var(--gray-9)" : "var(--gray-7)"} />
+        )}
         <Text size="1" truncate style={{ fontFamily: MONO }}>
           {item.name}
         </Text>
@@ -312,8 +352,12 @@ function ProjectExplorerRow({
           key={`${child.kind}-${child.name}-${index}`}
           item={child}
           depth={depth + 1}
+          path={`${path}/${child.kind}:${child.name}`}
           selectedNodeId={selectedNodeId}
           forceOpen={forceOpen}
+          onSelectProjectMethod={onSelectOverride}
+          treeOpenOverrides={openOverridesOverride}
+          onToggleTreePath={onToggleOverride}
         />
       ))}
     </Box>
@@ -380,7 +424,14 @@ function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void })
   const phaseIdx = phaseIndexForNode(node.id, phases);
   const phase = phaseIdx !== null ? phases[phaseIdx] : null;
   const ownerClass = ownerClassOf(node);
-  const file = CLASS_FILES[ownerClass];
+  const parsedSourceFile = node.sourceFile && !node.sourceFile.startsWith("<")
+    ? node.sourceFile
+    : parsedSourceFileForClass(FULL_GRAPH.nodes, ownerClass);
+  const file = parsedSourceFile ?? (
+    node.type !== "leaf" && ownerClass !== "(unknown)"
+      ? sourcePathForClass(ownerClass, CLASS_FILES)
+      : undefined
+  );
 
   return (
     <ScrollArea style={{ height: "100%" }}>
@@ -1102,6 +1153,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                             key={`${item.kind}-${item.name}-${i}`}
                             item={item}
                             depth={0}
+                            path={`${item.kind}:${item.name}`}
                             selectedNodeId={selectedId}
                             forceOpen={exploreQuery.trim().length > 0}
                           />
@@ -1118,6 +1170,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                           key={item.name + i}
                           item={item}
                           depth={0}
+                          path={`${item.kind}:${item.name}`}
                           selectedNodeId={selectedId}
                           onSelect={handleSelectFromPanel}
                         />
@@ -1562,7 +1615,154 @@ interface AnchoredGraphViewProps extends Partial<GraphVisualisation> {
   initialPanelTab?: PanelTab;
 }
 
+function EmptyAnchoredSelection({
+  onSelectProjectMethod,
+  treeOpenOverrides,
+  onToggleTreePath,
+}: {
+  onSelectProjectMethod: (methodFullName: string) => void;
+  treeOpenOverrides: Map<string, boolean>;
+  onToggleTreePath: (path: string, defaultOpen: boolean) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [leftWidth, setLeftWidth] = useState(240);
+  const [resizing, setResizing] = useState(false);
+  const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
+  const projectTree = useMemo(
+    () => buildProjectExplorerTree(FULL_GRAPH.nodes, CLASS_FILES),
+    [],
+  );
+  const filteredTree = useMemo(
+    () => filterProjectTree(projectTree, query),
+    [projectTree, query],
+  );
+
+  const beginResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    resizeStartRef.current = { x: event.clientX, width: leftWidth };
+    setResizing(true);
+  }, [leftWidth]);
+
+  useEffect(() => {
+    if (!resizing) return;
+    const previousUserSelect = document.body.style.userSelect;
+    const previousCursor = document.body.style.cursor;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    const handleResize = (event: MouseEvent) => {
+      const start = resizeStartRef.current;
+      if (!start) return;
+      setLeftWidth(clampPanelWidth(start.width + event.clientX - start.x, "left"));
+    };
+    const finishResize = () => {
+      resizeStartRef.current = null;
+      setResizing(false);
+    };
+
+    window.addEventListener("mousemove", handleResize);
+    window.addEventListener("mouseup", finishResize);
+    return () => {
+      window.removeEventListener("mousemove", handleResize);
+      window.removeEventListener("mouseup", finishResize);
+      document.body.style.userSelect = previousUserSelect;
+      document.body.style.cursor = previousCursor;
+    };
+  }, [resizing]);
+
+  return (
+    <Flex width="100%" height="100%" style={{ minHeight: 0 }}>
+      <Box
+        flexShrink="0"
+        width={`${leftWidth}px`}
+        style={{
+          background: "var(--color-panel-solid)",
+        }}
+      >
+        <Flex direction="column" height="100%">
+          <Flex
+            align="center"
+            px="3"
+            flexShrink="0"
+            height="36px"
+            style={{ borderBottom: "1px solid var(--gray-a5)" }}
+          >
+            <FolderOpen size={12} style={{ marginRight: 6 }} />
+            <Text size="1" weight="medium">Explore</Text>
+          </Flex>
+          <Box p="2" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
+            <TextField.Root
+              size="1"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search project…"
+              aria-label="Search project files and methods"
+            >
+              <TextField.Slot><Search size={12} /></TextField.Slot>
+            </TextField.Root>
+          </Box>
+          <ScrollArea style={{ flex: 1, minHeight: 0 }}>
+            <Box p="1">
+              {filteredTree.map((item, index) => (
+                <ProjectExplorerRow
+                  key={`${item.kind}-${item.name}-${index}`}
+                  item={item}
+                  depth={0}
+                  path={`${item.kind}:${item.name}`}
+                  selectedNodeId={null}
+                  forceOpen={query.trim().length > 0}
+                  onSelectProjectMethod={onSelectProjectMethod}
+                  treeOpenOverrides={treeOpenOverrides}
+                  onToggleTreePath={onToggleTreePath}
+                />
+              ))}
+              {filteredTree.length === 0 && (
+                <Text size="1" color="gray" as="p" align="center" mt="3">
+                  No matching methods.
+                </Text>
+              )}
+            </Box>
+          </ScrollArea>
+        </Flex>
+      </Box>
+      <PanelResizeHandle
+        side="left"
+        active={resizing}
+        onMouseDown={beginResize}
+        onKeyboardResize={(delta) => (
+          setLeftWidth((width) => clampPanelWidth(width + delta, "left"))
+        )}
+      />
+
+      <Flex
+        align="center"
+        justify="center"
+        flexGrow="1"
+        p="5"
+        style={{ minWidth: 0, background: "var(--canvas-background)" }}
+      >
+        <Box style={{ textAlign: "center" }}>
+          <Text size="2" weight="medium">Choose an operation sequence</Text>
+          <Text as="p" size="1" color="gray" mt="2">
+            Select a method in Explore to open one of its stored operation contexts.
+          </Text>
+        </Box>
+      </Flex>
+    </Flex>
+  );
+}
+
 export default function AnchoredGraphView(props: AnchoredGraphViewProps = {}) {
+  const [treeOpenOverrides, setTreeOpenOverrides] = useState<Map<string, boolean>>(
+    () => new Map(),
+  );
+  const handleToggleTreePath = useCallback((path: string, defaultOpen: boolean) => {
+    setTreeOpenOverrides((previous) => {
+      const next = new Map(previous);
+      next.set(path, !(previous.get(path) ?? defaultOpen));
+      return next;
+    });
+  }, []);
   const baseVisualisation = useMemo<GraphVisualisation>(() => ({
     ...graphVisualisation(
       props.graph ?? ANCHORED_VISUALISATION.graph,
@@ -1608,16 +1808,38 @@ export default function AnchoredGraphView(props: AnchoredGraphViewProps = {}) {
   }, [activateChoice]);
 
   const data = useMemo(
-    () => makeGraphViewData(visualisation, handleSelectProjectMethod, focusMethodFullName),
-    [visualisation, handleSelectProjectMethod, focusMethodFullName],
+    () => visualisation.graph.rootId
+      ? makeGraphViewData(
+        visualisation,
+        handleSelectProjectMethod,
+        treeOpenOverrides,
+        handleToggleTreePath,
+        focusMethodFullName,
+      )
+      : null,
+    [
+      visualisation,
+      handleSelectProjectMethod,
+      treeOpenOverrides,
+      handleToggleTreePath,
+      focusMethodFullName,
+    ],
   );
   const graphViewKey = `${visualisation.graph.rootId ?? visualisation.graph.entryPoint ?? "empty"}:${focusMethodFullName ?? ""}`;
 
   return (
     <>
-      <GraphViewContext.Provider value={data}>
-        <GraphCanvasView key={graphViewKey} initialTab={props.initialPanelTab} />
-      </GraphViewContext.Provider>
+      {data ? (
+        <GraphViewContext.Provider value={data}>
+          <GraphCanvasView key={graphViewKey} initialTab={props.initialPanelTab} />
+        </GraphViewContext.Provider>
+      ) : (
+        <EmptyAnchoredSelection
+          onSelectProjectMethod={handleSelectProjectMethod}
+          treeOpenOverrides={treeOpenOverrides}
+          onToggleTreePath={handleToggleTreePath}
+        />
+      )}
 
       <Dialog.Root
         open={pendingSelection !== null}

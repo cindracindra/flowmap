@@ -28,8 +28,8 @@ _ACCESSOR_PREFIX = _SYNTHETIC["accessor_prefix"]
 _LAMBDA_PATTERN = _SYNTHETIC["lambda_infix_regex"]
 _ANON_PATTERN = _SYNTHETIC["anonymous_class_suffix_regex"]
 
-_DEFAULT_LABEL_MODEL = "llama-3.1-8b-instant"
-_DEFAULT_WHOLE_CORPUS_MODEL = "llama-3.3-70b-versatile"
+_DEFAULT_LABEL_MODEL = "openai/gpt-oss-20b"
+_DEFAULT_WHOLE_CORPUS_MODEL = "openai/gpt-oss-120b"
 
 _MAX_TERMS_PER_CLASS = 15
 
@@ -110,7 +110,9 @@ def label_cluster(
                 {"role": "user", "content": _cluster_prompt(cluster, class_by_full_name)},
             ],
             temperature=0,
-            max_tokens=20,
+            max_completion_tokens=128,
+            reasoning_effort="low",
+            include_reasoning=False,
         )
         label = (response.choices[0].message.content or "").strip()
         return label or _fallback_label(cluster)
@@ -156,6 +158,8 @@ def discover_topics_whole_corpus(
             ],
             temperature=0,
             response_format={"type": "json_object"},
+            reasoning_effort="low",
+            include_reasoning=False,
         )
     except GroqError as e:
         raise RuntimeError(
@@ -273,8 +277,10 @@ def classify_operation(
                 },
             ],
             temperature=0,
-            max_tokens=30,
+            max_completion_tokens=128,
             response_format={"type": "json_object"},
+            reasoning_effort="low",
+            include_reasoning=False,
         )
     except GroqError as exc:
         raise RuntimeError(f"classify_operation: Groq call failed: {exc}") from exc
@@ -332,11 +338,12 @@ def label_opseq(
                 {"role": "user", "content": content},
             ],
             temperature=0,
-            max_tokens=20,
+            max_completion_tokens=128,
+            reasoning_effort="low",
+            include_reasoning=False,
         )
     except GroqError as exc:
         raise RuntimeError(f"label_opseq: Groq call failed: {exc}") from exc
 
     text = (response.choices[0].message.content or "").strip()
     return text or None
-
