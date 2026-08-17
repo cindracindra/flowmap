@@ -76,6 +76,11 @@ class LabelClusterTests(unittest.TestCase):
         client.chat.completions.create.return_value = _mock_response("Account Management")
         self.assertEqual(topic.label_cluster(client, self.cluster), "Account Management")
 
+        request = client.chat.completions.create.call_args.kwargs
+        self.assertEqual(request["model"], "openai/gpt-oss-20b")
+        self.assertEqual(request["reasoning_effort"], "low")
+        self.assertFalse(request["include_reasoning"])
+
     def test_falls_back_on_api_error(self):
         client = MagicMock()
         client.chat.completions.create.side_effect = GroqError("boom")
@@ -120,6 +125,11 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
         client.chat.completions.create.return_value = _mock_response(content)
 
         result = topic.discover_topics_whole_corpus(client, self.docs)
+
+        request = client.chat.completions.create.call_args.kwargs
+        self.assertEqual(request["model"], "openai/gpt-oss-120b")
+        self.assertEqual(request["reasoning_effort"], "low")
+        self.assertFalse(request["include_reasoning"])
 
         self.assertEqual(len(result), 3)
         self.assertEqual(result[0].label, 0)

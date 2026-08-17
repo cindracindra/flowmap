@@ -20,7 +20,8 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
       "code": "this.doX()",
-      "line": 25
+      "line": 25,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182401",
@@ -42,7 +43,8 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
       "code": "this.doY()",
-      "line": 30
+      "line": 30,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182402",
@@ -56,21 +58,20 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
       "code": "this.doInner()",
-      "line": 34
+      "line": 34,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182403",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
-      "line": 37,
-      "deadEnd": true
+      "line": 37
     },
     {
       "id": "m107374182404",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
-      "line": 41,
-      "deadEnd": true
+      "line": 41
     },
     {
       "id": "m107374182405",
@@ -85,6 +86,7 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
       "code": "new IllegalArgumentException(\"doY\")",
       "line": 46,
+      "terminus": "throw",
       "deadEnd": true
     },
     {
@@ -96,8 +98,7 @@
       "id": "m107374182407",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
-      "line": 54,
-      "deadEnd": true
+      "line": 54
     }
   ],
   "edges": [

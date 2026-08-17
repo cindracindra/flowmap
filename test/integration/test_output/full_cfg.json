@@ -20,7 +20,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
       "code": "this.doX()",
-      "line": 25
+      "line": 25,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182401",
@@ -42,7 +43,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
       "code": "this.doY()",
-      "line": 30
+      "line": 30,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182402",
@@ -56,7 +58,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
       "code": "this.doInner()",
-      "line": 34
+      "line": 34,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182403",
@@ -70,7 +73,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doInner:void()",
       "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
       "code": "System.out.println(\"doInner\")",
-      "line": 38
+      "line": 38,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182410",
@@ -102,7 +106,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doX:void()",
       "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
       "code": "System.out.println(\"doX\")",
-      "line": 42
+      "line": 42,
+      "terminus": "fallthrough"
     },
     {
       "id": "c30064771080",
@@ -124,7 +129,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
       "calleeFullName": "<operator>.throw",
       "code": "throw new IllegalArgumentException(\"doY\");",
-      "line": 46
+      "line": 46,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182412",
@@ -150,7 +156,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
       "code": "new IllegalArgumentException(\"doY\")",
-      "line": 46
+      "line": 46,
+      "terminus": "throw"
     },
     {
       "id": "m107374182411",
@@ -188,7 +195,8 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
       "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
       "code": "System.out.println(\"Analyze this with joern-parse, not `java`. \" + \"See test/test_full_cfg.py for the expected roots/orphans shape.\")",
-      "line": 57
+      "line": 57,
+      "terminus": "fallthrough"
     },
     {
       "id": "c30064771086",
@@ -394,5 +402,7 @@
       "to": "m107374182415",
       "type": "invoke"
     }
-  ]
+  ],
+  "branchGroups": [],
+  "loopGroups": []
 }

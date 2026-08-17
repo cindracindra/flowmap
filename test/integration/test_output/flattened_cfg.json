@@ -6,7 +6,8 @@
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doA:void()",
         "line": 23,
-        "origId": "m107374182400"
+        "origId": "m107374182400",
+        "depth": 0
       },
       {
         "id": "c30064771072~1",
@@ -15,7 +16,8 @@
         "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
         "code": "this.doHelper()",
         "line": 24,
-        "origId": "c30064771072"
+        "origId": "c30064771072",
+        "depth": 0
       },
       {
         "id": "c30064771073~2",
@@ -24,14 +26,17 @@
         "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
         "code": "this.doX()",
         "line": 25,
-        "origId": "c30064771073"
+        "origId": "c30064771073",
+        "terminus": "fallthrough",
+        "depth": 0
       },
       {
         "id": "m107374182402~3",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
         "line": 33,
-        "origId": "m107374182402"
+        "origId": "m107374182402",
+        "depth": 1
       },
       {
         "id": "c30064771076~4",
@@ -40,7 +45,9 @@
         "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
         "code": "this.doInner()",
         "line": 34,
-        "origId": "c30064771076"
+        "origId": "c30064771076",
+        "terminus": "fallthrough",
+        "depth": 1
       },
       {
         "id": "m107374182403~5",
@@ -48,7 +55,7 @@
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "line": 37,
         "origId": "m107374182403",
-        "deadEnd": true
+        "depth": 2
       },
       {
         "id": "m107374182404~6",
@@ -56,7 +63,7 @@
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
         "line": 41,
         "origId": "m107374182404",
-        "deadEnd": true
+        "depth": 1
       }
     ],
     "edges": [
@@ -71,6 +78,12 @@
         "type": "sequence"
       },
       {
+        "from": "m107374182403~5",
+        "to": "c30064771073~2",
+        "type": "sequence",
+        "returnFrom": "c30064771072~1"
+      },
+      {
         "from": "c30064771076~4",
         "to": "m107374182403~5",
         "type": "invoke"
@@ -79,13 +92,6 @@
         "from": "c30064771072~1",
         "to": "m107374182402~3",
         "type": "invoke"
-      },
-      {
-        "from": "m107374182402~3",
-        "to": "c30064771073~2",
-        "type": "sequence",
-        "returnFrom": "c30064771072~1",
-        "fallback": true
       },
       {
         "from": "c30064771073~2",
@@ -103,7 +109,8 @@
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
         "line": 28,
-        "origId": "m107374182401"
+        "origId": "m107374182401",
+        "depth": 0
       },
       {
         "id": "c30064771074~1",
@@ -112,7 +119,8 @@
         "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
         "code": "this.doHelper()",
         "line": 29,
-        "origId": "c30064771074"
+        "origId": "c30064771074",
+        "depth": 0
       },
       {
         "id": "c30064771075~2",
@@ -121,14 +129,17 @@
         "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
         "code": "this.doY()",
         "line": 30,
-        "origId": "c30064771075"
+        "origId": "c30064771075",
+        "terminus": "fallthrough",
+        "depth": 0
       },
       {
         "id": "m107374182402~3",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
         "line": 33,
-        "origId": "m107374182402"
+        "origId": "m107374182402",
+        "depth": 1
       },
       {
         "id": "c30064771076~4",
@@ -137,7 +148,9 @@
         "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
         "code": "this.doInner()",
         "line": 34,
-        "origId": "c30064771076"
+        "origId": "c30064771076",
+        "terminus": "fallthrough",
+        "depth": 1
       },
       {
         "id": "m107374182403~5",
@@ -145,14 +158,15 @@
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "line": 37,
         "origId": "m107374182403",
-        "deadEnd": true
+        "depth": 2
       },
       {
         "id": "m107374182405~6",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
         "line": 45,
-        "origId": "m107374182405"
+        "origId": "m107374182405",
+        "depth": 1
       },
       {
         "id": "c30064771084~7",
@@ -162,13 +176,16 @@
         "code": "new IllegalArgumentException(\"doY\")",
         "line": 46,
         "origId": "c30064771084",
+        "terminus": "throw",
+        "depth": 1,
         "deadEnd": true
       },
       {
         "id": "m107374182411~8",
         "type": "leaf",
         "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
-        "origId": "m107374182411"
+        "origId": "m107374182411",
+        "depth": 2
       }
     ],
     "edges": [
@@ -183,6 +200,12 @@
         "type": "sequence"
       },
       {
+        "from": "m107374182403~5",
+        "to": "c30064771075~2",
+        "type": "sequence",
+        "returnFrom": "c30064771074~1"
+      },
+      {
         "from": "c30064771076~4",
         "to": "m107374182403~5",
         "type": "invoke"
@@ -191,13 +214,6 @@
         "from": "c30064771074~1",
         "to": "m107374182402~3",
         "type": "invoke"
-      },
-      {
-        "from": "m107374182402~3",
-        "to": "c30064771075~2",
-        "type": "sequence",
-        "returnFrom": "c30064771074~1",
-        "fallback": true
       },
       {
         "from": "m107374182405~6",
@@ -226,7 +242,7 @@
         "calleeFullName": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
         "line": 54,
         "origId": "m107374182407",
-        "deadEnd": true
+        "depth": 0
       }
     ],
     "edges": [],

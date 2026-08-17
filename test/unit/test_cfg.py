@@ -22,7 +22,7 @@ from backend.src.flowmap.domain.cfg_pipeline import (  # noqa: E402
 )
 from backend.src.flowmap.model import Graph  # noqa: E402
 
-def node(id_, type_, callee=None, caller=None, dead=False, terminus=None, arms=None):
+def node(id_, type_, callee=None, caller=None, dead=False, terminus=None, arms=None, loops=None):
     """`arms` is the raw `branchArms` shape full_cfg.sc emits -- a list of
     (groupId, armLabel) pairs, since one call can be in several arms at
     once (an `if` inside a `try`)."""
@@ -37,11 +37,16 @@ def node(id_, type_, callee=None, caller=None, dead=False, terminus=None, arms=N
         d["terminus"] = terminus
     if arms:
         d["branchArms"] = [{"groupId": g, "armLabel": a} for g, a in arms]
+    if loops:
+        d["loopIds"] = list(loops)
     return d
 
 
-def edge(frm, to, type_="sequence"):
-    return {"from": frm, "to": to, "type": type_}
+def edge(frm, to, type_="sequence", loop_back=False):
+    result = {"from": frm, "to": to, "type": type_}
+    if loop_back:
+        result["loopBack"] = True
+    return result
 
 
 # --------------------------------------------------------------------------
@@ -1672,6 +1677,65 @@ class FlattenCfgTests(unittest.TestCase):
             {(r.groupId, r.armLabel) for r in catch_route.branchRequirements},
             {(outer_try.id, "catch1")},
         )
+
+    def test_loop_body_is_cloned_once_and_back_edge_is_metadata(self):
+        # run(): while (...) { helper(); tail(); } after();
+        # The body and helper subtree appear once. The repetition edge stays
+        # in the CFG but is explicitly marked so a linear view can omit it.
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e_run", "entry", "run"),
+                node("c_helper", "call", "helper", "run", loops=["loop1"]),
+                node("c_tail", "call", "Worker.tail", "run", loops=["loop1"]),
+                node("c_after", "call", "Worker.after", "run"),
+                node("e_helper", "entry", "helper"),
+                node("c_inner", "call", "Worker.inner", "helper"),
+            ],
+            "edges": [
+                edge("e_run", "c_helper"),
+                edge("c_helper", "c_tail"),
+                edge("c_tail", "c_helper"),
+                edge("c_tail", "c_after"),
+                edge("c_helper", "e_helper", "invoke"),
+                edge("e_helper", "c_inner"),
+            ],
+            "loopGroups": [{
+                "id": "loop1", "kind": "WHILE", "method": "run",
+                "line": 2, "conditionCode": "hasMore()",
+            }],
+        })
+
+        flattened = flatten_cfg(graph)
+        by_orig = {}
+        for item in flattened.nodes:
+            by_orig.setdefault(item.origId, []).append(item)
+
+        for original_id in ("c_helper", "c_tail", "e_helper", "c_inner"):
+            self.assertEqual(len(by_orig[original_id]), 1)
+            self.assertEqual(by_orig[original_id][0].loopIds, ["loop1~0"])
+        self.assertEqual(by_orig["c_after"][0].loopIds, [])
+
+        self.assertEqual(
+            [(loop.id, loop.kind, loop.conditionCode) for loop in flattened.loopGroups],
+            [("loop1~0", "WHILE", "hasMore()")],
+        )
+        back_edges = [item for item in flattened.edges if item.loopBack]
+        self.assertEqual(len(back_edges), 1)
+        self.assertEqual(back_edges[0].source, by_orig["c_tail"][0].id)
+        self.assertEqual(back_edges[0].target, by_orig["c_helper"][0].id)
+
+    def test_loop_metadata_round_trips(self):
+        raw = {
+            "nodes": [node("e", "entry", "run", loops=["outer", "inner"])],
+            "edges": [edge("a", "b", loop_back=True)],
+            "loopGroups": [
+                {"id": "outer", "kind": "FOR", "method": "run", "line": 1},
+                {"id": "inner", "kind": "DO", "method": "run", "line": 2,
+                 "conditionCode": "ready()"},
+            ],
+        }
+        self.assertEqual(Graph.from_dict(raw).to_dict(), raw)
 
     def test_mutual_recursion_terminates_with_stub(self):
         # A: logStart(); B(); -- B: A();  (mutual, tail-call recursion).
