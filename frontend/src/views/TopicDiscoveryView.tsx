@@ -4,13 +4,17 @@ import {
   ChevronLeft,
   Layers,
   FileText,
-  Boxes,
   GitBranch,
 } from "lucide-react";
 
-import { OPERATIONS_BY_TOPIC, OPSEQ_VISUALISATIONS, TOPICS } from "../data/graph";
+import {
+  ALLOCATED_OPSEQ_COUNT,
+  OPERATIONS_BY_TOPIC,
+  OPSEQ_VISUALISATIONS,
+  TOPICS,
+} from "../data/graph";
 import type { TopicCluster, TopicOperation } from "../types/topics";
-import { topicLabel, isUnnamed, NOISE_LABEL } from "../lib/topics";
+import { topicLabel, isUnnamed } from "../lib/topics";
 import { MONO } from "../lib/ui";
 import AnchoredGraphView from "./AnchoredGraphView";
 
@@ -32,7 +36,6 @@ function TopicRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const isNoise = topic.label === NOISE_LABEL;
   const hasLlmLabel = Boolean(topic.llm_label?.trim());
   const unnamed = isUnnamed(topic);
   const operations = OPERATIONS_BY_TOPIC[String(topic.label)] ?? [];
@@ -56,8 +59,8 @@ function TopicRow({
       }}
     >
       <Flex align="center" gap="2">
-        <Box style={{ color: isNoise ? "var(--gray-9)" : "var(--accent-9)", display: "flex" }}>
-          {isNoise ? <Boxes size={13} /> : <Layers size={13} />}
+        <Box style={{ color: "var(--accent-9)", display: "flex" }}>
+          <Layers size={13} />
         </Box>
         <Text
           size="2"
@@ -72,12 +75,12 @@ function TopicRow({
             LLM label
           </Badge>
         )}
-        {unnamed && !isNoise && (
+        {unnamed && (
           <Badge size="1" variant="outline" color="gray">
             unlabelled
           </Badge>
         )}
-        <Badge size="1" variant="soft" color={isNoise ? "gray" : "teal"} style={{ fontFamily: MONO }}>
+        <Badge size="1" variant="soft" color="teal" style={{ fontFamily: MONO }}>
           {operations.length}
         </Badge>
       </Flex>
@@ -105,8 +108,8 @@ function TopicList({
       <Box p="4" style={{ maxWidth: 720, margin: "0 auto" }}>
         <Heading size="3">Topics</Heading>
         <Text as="p" size="1" color="gray" mt="1">
-          {Object.keys(OPSEQ_VISUALISATIONS).length} operation sequences across{" "}
-          {TOPICS.filter((topic) => topic.label !== NOISE_LABEL).length} topics. Click a topic to see
+          {ALLOCATED_OPSEQ_COUNT} operation sequences across{" "}
+          {TOPICS.length} topics. Click a topic to see
           its assigned operation sequences.
         </Text>
         <Flex direction="column" gap="2" mt="3">
@@ -283,9 +286,8 @@ export default function TopicDiscoveryView() {
     setDisplayedOperationLabel(operation.label);
   }, []);
 
-  const opseqCount = Object.keys(OPSEQ_VISUALISATIONS).length;
-  const noiseCount = OPERATIONS_BY_TOPIC[String(NOISE_LABEL)]?.length ?? 0;
-  const topicCount = TOPICS.filter((topic) => topic.label !== NOISE_LABEL).length;
+  const opseqCount = ALLOCATED_OPSEQ_COUNT;
+  const topicCount = TOPICS.length;
 
   return (
     <Flex direction="column" flexGrow="1" overflow="hidden" style={{ minHeight: 0 }}>
@@ -384,12 +386,6 @@ export default function TopicDiscoveryView() {
         </Text>
         <Text size="1" color="gray" style={{ fontFamily: MONO }}>
           {opseqCount} opseqs
-        </Text>
-        <Text size="1" color="gray">
-          ·
-        </Text>
-        <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-          {noiseCount} unclustered
         </Text>
         <Flex align="center" gap="2" ml="auto">
           {selectedTopic && (

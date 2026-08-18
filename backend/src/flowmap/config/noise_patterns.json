@@ -9,7 +9,7 @@
     ],
     "synthetic": {
       "accessor_prefix": "access$",
-      "lambda_infix_regex": "^lambda\\$.*\\$\\d+$",
+      "lambda_infix_regex": "^(?:lambda\\$.*\\$\\d+|<lambda>\\d+)(?::.*)?$",
       "anonymous_class_suffix_regex": "\\$\\d+$"
     }
   },
@@ -30,6 +30,7 @@
     "<unresolvedNamespace>",
     "<unknownFullName>",
     "<empty>",
+    "<lambda>",
     "<init>"
   ],
   "resolve_not_strip": [

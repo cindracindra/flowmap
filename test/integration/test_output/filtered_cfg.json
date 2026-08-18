@@ -4,7 +4,8 @@
       "id": "m107374182400",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doA:void()",
-      "line": 23
+      "line": 23,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "c30064771072",
@@ -12,7 +13,8 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
       "code": "this.doHelper()",
-      "line": 24
+      "line": 24,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "c30064771073",
@@ -21,13 +23,15 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
       "code": "this.doX()",
       "line": 25,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "terminus": "fallthrough"
     },
     {
       "id": "m107374182401",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
-      "line": 28
+      "line": 28,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "c30064771074",
@@ -35,7 +39,8 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
       "code": "this.doHelper()",
-      "line": 29
+      "line": 29,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "c30064771075",
@@ -44,13 +49,15 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
       "code": "this.doY()",
       "line": 30,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "terminus": "fallthrough"
     },
     {
       "id": "m107374182402",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
-      "line": 33
+      "line": 33,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "c30064771076",
@@ -59,25 +66,29 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
       "code": "this.doInner()",
       "line": 34,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "terminus": "fallthrough"
     },
     {
       "id": "m107374182403",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
-      "line": 37
+      "line": 37,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "m107374182404",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
-      "line": 41
+      "line": 41,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "m107374182405",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
-      "line": 45
+      "line": 45,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     },
     {
       "id": "c30064771084",
@@ -86,6 +97,7 @@
       "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
       "code": "new IllegalArgumentException(\"doY\")",
       "line": 46,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "terminus": "throw",
       "deadEnd": true
     },
@@ -98,7 +110,8 @@
       "id": "m107374182407",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
-      "line": 54
+      "line": 54,
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java"
     }
   ],
   "edges": [
@@ -171,5 +184,133 @@
   "orphans": [
     "m107374182406",
     "m107374182408"
-  ]
+  ],
+  "semanticFeatures": {
+    "c30064771072": {
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void",
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "helper"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "output",
+        "ddg"
+      ]
+    },
+    "c30064771073": {
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void",
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "x"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "output",
+        "ddg"
+      ]
+    },
+    "c30064771074": {
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void",
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "helper"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "output",
+        "ddg"
+      ]
+    },
+    "c30064771075": {
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void",
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "y"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "output",
+        "ddg"
+      ]
+    },
+    "c30064771076": {
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void",
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "inner"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "output",
+        "ddg"
+      ]
+    },
+    "c30064771084": {
+      "receiver": "$obj0",
+      "receiverType": "java.lang.IllegalArgumentException",
+      "outputType": "void",
+      "arguments": [
+        "\"doY\""
+      ],
+      "argumentTypes": [
+        "java.lang.String"
+      ],
+      "domainTypes": [
+        "java.lang.IllegalArgumentException",
+        "java.lang.String"
+      ],
+      "methodTerms": [
+        "init"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "output",
+        "ddg"
+      ]
+    }
+  }
 }

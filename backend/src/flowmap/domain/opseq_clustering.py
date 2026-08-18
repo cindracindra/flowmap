@@ -13,6 +13,9 @@ from domain.util import (
 )
 
 
+OperationClassifyFn = Callable[[Graph, list[TopicCluster], list[MethodDocument]], int | None]
+
+
 def _entry_terms(node_callee_full_name: str, method_documents: dict[str, MethodDocument]) -> list[str]:
     """
     Term list for one "entry" node's method - rich per-method document 
@@ -39,9 +42,13 @@ def build_operation_document(
     """
     method_by_full_name = {m.fullName: m for m in method_documents}
     tokens: list[str] = []
+    seen_methods: set[str] = set()
     for node in operation_cfg.nodes:
         if node.type != "entry" or not node.calleeFullName:
             continue
+        if node.calleeFullName in seen_methods:
+            continue
+        seen_methods.add(node.calleeFullName)
         tokens.extend(_entry_terms(node.calleeFullName, method_by_full_name))
     return " ".join(tokens)
 
@@ -55,27 +62,111 @@ def compute_topic_centroids(
     """
     Calculate mean embedding of each cluster's member classes.
     """
-    docs_by_full_name = {
-        c.fullName: preprocess_document(c.terms) for c in class_documents
-    }
+    docs_by_full_name = {c.fullName: preprocess_document(c.terms) for c in class_documents}
+    nonempty = [(name, doc) for name, doc in docs_by_full_name.items() if doc.strip()]
+    if not nonempty:
+        return {}
+    names, documents = zip(*nonempty)
+    embedding_by_full_name = dict(
+        zip(names, embed_documents(list(documents), model_name=model_name))
+    )
     centroids: dict[int, np.ndarray] = {}
     for cluster in clusters:
         if cluster.label == -1:
             continue
         member_docs = [
-            docs_by_full_name[fn]
+            embedding_by_full_name[fn]
             for fn in cluster.member_full_names
-            if docs_by_full_name.get(fn, "").strip()
+            if fn in embedding_by_full_name
         ]
         if not member_docs:
             continue
-        embeddings = embed_documents(member_docs, model_name=model_name)
-        centroid = embeddings.mean(axis=0)
-        centroids[cluster.label] = centroid / np.linalg.norm(centroid)
+        centroid = np.mean(member_docs, axis=0)
+        norm = np.linalg.norm(centroid)
+        if norm > 0:
+            centroids[cluster.label] = centroid / norm
     return centroids
 
 
-OperationClassifyFn = Callable[[Graph, list[TopicCluster], list[MethodDocument]], int | None]
+def _assign_documents_by_centroid(
+    documents_by_id: dict[str, str],
+    centroids: dict[int, np.ndarray],
+    *,
+    model_name: str,
+) -> dict[str, list[TopicAssignment]]:
+    """Embed all operations together and retain only each row's best topic."""
+    assignments = {operation_id: [] for operation_id in documents_by_id}
+    nonempty = [
+        (operation_id, document)
+        for operation_id, document in documents_by_id.items()
+        if document.strip()
+    ]
+    if not nonempty or not centroids:
+        return assignments
+
+    operation_ids, documents = zip(*nonempty)
+    operation_embeddings = embed_documents(list(documents), model_name=model_name)
+    topic_labels = list(centroids)
+    centroid_matrix = np.vstack([centroids[label] for label in topic_labels])
+    similarity_matrix = operation_embeddings @ centroid_matrix.T
+
+    for row, operation_id in enumerate(operation_ids):
+        best_index = int(np.argmax(similarity_matrix[row]))
+        assignments[operation_id] = [
+            TopicAssignment(
+                label=topic_labels[best_index],
+                similarity=float(similarity_matrix[row, best_index]),
+            )
+        ]
+    return assignments
+
+
+def assign_operation_topics_batch(
+    operations: dict[str, Graph],
+    clusters: list[TopicCluster],
+    method_documents: list[MethodDocument],
+    centroids: dict[int, np.ndarray],
+    *,
+    formed_by_llm: bool = False,
+    classify_fn: OperationClassifyFn | None = None,
+    model_name: str = "all-MiniLM-L6-v2",
+) -> dict[str, list[TopicAssignment]]:
+    """
+    Assign a complete set of opseqs. Statistical assignments share the
+    discovery-time centroids and use one embedding batch for all operations.
+    """
+    assignments: dict[str, list[TopicAssignment]] = {}
+    embedding_fallback: dict[str, Graph] = {}
+
+    if formed_by_llm and classify_fn is not None:
+        for operation_id, operation_cfg in operations.items():
+            try:
+                label = classify_fn(operation_cfg, clusters, method_documents)
+            except RuntimeError as exc:
+                print(
+                    f"assign_operation_topics_batch: classify_fn failed ({exc!r}), "
+                    "falling back to embedding nearest-centroid"
+                )
+                embedding_fallback[operation_id] = operation_cfg
+            else:
+                assignments[operation_id] = (
+                    [TopicAssignment(label=label, similarity=1.0)]
+                    if label is not None
+                    else []
+                )
+    else:
+        embedding_fallback = dict(operations)
+
+    if embedding_fallback:
+        documents = {
+            operation_id: build_operation_document(operation_cfg, method_documents)
+            for operation_id, operation_cfg in embedding_fallback.items()
+        }
+        assignments.update(
+            _assign_documents_by_centroid(documents, centroids, model_name=model_name)
+        )
+
+    return {operation_id: assignments.get(operation_id, []) for operation_id in operations}
 
 
 def _assign_by_embedding(
@@ -85,7 +176,6 @@ def _assign_by_embedding(
     method_documents: list[MethodDocument],
     *,
     model_name: str,
-    top_k: int,
 ) -> list[TopicAssignment]:
     document = build_operation_document(operation_cfg, method_documents)
     if not document.strip():
@@ -101,11 +191,8 @@ def _assign_by_embedding(
         (label, float(np.dot(operation_embedding, centroid)))
         for label, centroid in centroids.items()
     ]
-    similarities.sort(key=lambda pair: pair[1], reverse=True)
-    return [
-        TopicAssignment(label=label, similarity=sim)
-        for label, sim in similarities[:top_k]
-    ]
+    label, similarity = max(similarities, key=lambda pair: pair[1])
+    return [TopicAssignment(label=label, similarity=similarity)]
 
 
 def assign_operation_topics(
@@ -117,7 +204,6 @@ def assign_operation_topics(
     formed_by_llm: bool = False,
     classify_fn: OperationClassifyFn | None = None,
     model_name: str = "all-MiniLM-L6-v2",
-    top_k: int = 2,
 ) -> list[TopicAssignment]:
     """
     Topic assignment for one opseq (a single root's filter_noise_cfg
@@ -141,5 +227,4 @@ def assign_operation_topics(
         class_documents,
         method_documents,
         model_name=model_name,
-        top_k=top_k,
     )

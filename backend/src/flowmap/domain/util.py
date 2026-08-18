@@ -1,6 +1,7 @@
 import json
 import re
 import numpy as np
+from functools import lru_cache
 from pathlib import Path
 
 import nltk
@@ -109,6 +110,12 @@ def preprocess_document(terms: list[str]) -> str:
     return " ".join(tokens)
 
 
+@lru_cache(maxsize=None)
+def get_embedding_model(model_name: str) -> SentenceTransformer:
+    """Load each embedding model once per process."""
+    return SentenceTransformer(model_name)
+
+
 def embed_documents(
     texts: list[str], model_name: str = "all-MiniLM-L6-v2"
 ) -> np.ndarray:
@@ -116,6 +123,6 @@ def embed_documents(
     Encode each preprocessed document with a local sentence-transformers
     model.
     """
-    model = SentenceTransformer(model_name)
+    model = get_embedding_model(model_name)
     embeddings = model.encode(texts, normalize_embeddings=True)
     return np.asarray(embeddings)

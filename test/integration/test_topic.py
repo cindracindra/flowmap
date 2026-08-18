@@ -50,6 +50,8 @@ class TopicDiscoveryPipelineTests(unittest.TestCase):
         self.assertEqual(doc.className, "OperationalChains")
         self.assertEqual(doc.package, "com.flowmap.fixture")
         self.assertIn("doA", doc.terms)
+        self.assertIn("doA", doc.methodNames)
+        self.assertTrue(doc.identifiers)
         # String-literal content, quotes stripped (see class_document.sc's
         # stripQuotes) -- confirms the LITERAL.code extraction is wired.
         self.assertTrue(any("Analyze this" in t for t in doc.terms))

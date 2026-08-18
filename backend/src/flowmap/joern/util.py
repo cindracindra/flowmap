@@ -59,9 +59,18 @@ def find_joern() -> str:
 
 
 def pid_on_port(port: int) -> int | None:
-    """Return the PID of whatever process is currently bound to a port."""
+    """Return the PID of the process listening on a TCP port.
+
+    Restricting ``lsof`` to listeners is important once a Joern client has
+    connected: a broad ``lsof -i :PORT`` also returns the Python client.  If
+    that client PID is mistaken for the server PID, ``JoernSession.stop()``
+    sends SIGTERM to its own Python process and leaves the JVM orphaned.
+    """
     try:
-        output = subprocess.check_output(["lsof", "-ti", f":{port}"], text=True).strip()
+        output = subprocess.check_output(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            text=True,
+        ).strip()
         if not output:
             return None
         return int(output.splitlines()[0])

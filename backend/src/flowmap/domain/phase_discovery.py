@@ -40,7 +40,7 @@ def compute_back_edges(
             if node == v:
                 return True
             if node in seen:
-                return False  # defensive -- shouldn't happen in a valid dominator tree
+                return False
             seen.add(node)
             parent = idom.get(node)
             if parent is None or parent == node:
@@ -173,8 +173,7 @@ def _return_edges_by_call_site(graph: Graph) -> dict[str, list[tuple[str, str]]]
     """
     Every synthesized "sequence" edge tagged with a returnFrom (a return or
     fallback edge from processor.flatten_intermethod_cfg), bucketed by the
-    call site it's attributed to -- a resolved callee has no other way to
-    tell its caller where to resume (PHASING_RULES.md R7).
+    call site it's attributed to.
     """
     buckets: dict[str, list[tuple[str, str]]] = {}
     for edge in graph.edges:
@@ -227,40 +226,16 @@ def _resolve_phases(
         call_site_id: str,
         callee_phases: list[Phase],
     ) -> int | None:
-        """R5/R6: call_site_id invokes further internal work and is never
-        itself a member -- its callee's resolved phases are spliced in
-        directly. The first is evaluated against whatever preceded the
-        call: Level 1 (gate) on the REAL nodes on each side -- real_predecessor,
-        and call_site_id itself, since that is the node the flattened
-        graph's return/fallback edge actually lands on (the callee's own
-        internal content is never directly reachable from outside it).
-        Level 2/3 on the two ORIGINAL call sites (subject, call_site_id) --
-        never on call_site_id's own callee, which is exactly the parent-
-        child mix-up R1 exists to rule out (PHASING_RULES.md R1/R7). The
-        rest, if the callee split further, are appended as-is. If the
-        callee resolved to nothing at all (a trivially empty method),
-        there's nothing to splice -- just continue past it.
+        """Insert a called method's phases at its call site.
 
-        real_predecessor can be an entry node with no phase of its own --
-        a fallback edge (PHASING_RULES.md R2 case 2) is sourced at the
-        callee's own entry, not a real content node, when that callee's
-        entire body dead-ends (e.g. Account.withdraw's two throw guards
-        with no live branch, DESIGN.md §4.1/§8.6). The cascade still runs
-        (its verdict is a meaningful `opened_by` reason), but there is
-        nothing real to merge into, so it always opens fresh in that case.
+        The first callee phase either joins the predecessor's phase or starts
+        a new one, using the normal gate/data/class checks. Any remaining
+        callee phases are added unchanged. An empty callee adds nothing.
 
-        Returns the phase id call_site_id's own content now lives in (its
-        first spliced phase), or None if it resolved to nothing -- needed
-        so a dead-end SIBLING reached via the same fork (R4) can still
-        find the right phase to merge into, even though call_site_id
-        itself is never a member of a phase it did NOT resolve to alone
-        (see visit()'s own use of this return value, and visit_children's
-        anchor lookup).
-
-        Whether call_site_id is a phase member is decided collectively by
-        visit(), after every invoke target has been resolved. Doing it here
-        target-by-target would put one polymorphic call site into several
-        phases (and make the result depend on invoke-edge order).
+        Returns the phase containing the first inserted callee phase, or None
+        when no phase was inserted. ``visit`` separately decides whether the
+        call-site node itself belongs to that phase, after resolving all
+        possible dispatch targets.
         """
         result_phase_id = None
         if callee_phases:
@@ -445,9 +420,7 @@ def _resolve_phases(
 
 def build_phase_tree(graph: Graph) -> dict:
     """
-    Segments a flattened interprocedural CFG into phases -- see
-    PHASING_RULES.md for the rules and DESIGN.md §8 for how the input
-    graph itself is built.
+    Segments a flattened interprocedural CFG into phases.
     """
     graphs = split_graph(graph)
     sequence_graph, invoke_graph, data_graph = (

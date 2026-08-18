@@ -149,11 +149,6 @@ export interface BranchGroup {
   // ending its method has no edge to where it continues). Absent when
   // they never rejoin, e.g. a guard whose only arm throws.
   convergesAt?: string;
-  // Flatten stage: where this instance of the enclosing method returns to.
-  // An arm whose terminus is "return" leaves the method, so its arrow
-  // points HERE, not at convergesAt -- with code after the branch the two
-  // differ, since the normal path runs it and the returning arm skips it.
-  returnsTo?: string[];
 }
 
 export type LoopKind = "FOR" | "FOR_EACH" | "WHILE" | "DO" | "DO_WHILE";

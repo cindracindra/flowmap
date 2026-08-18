@@ -57,7 +57,6 @@ import {
   visibleGraphSelection,
   type BranchPanel,
   type BranchSelection,
-  activeBranchPanels,
   panelRouteTargetIds,
 } from "../lib/branches";
 import { computePanelGeometry } from "../lib/panelGeometry";
@@ -777,8 +776,8 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   // they sit, and how big the canvas is. Rows are ranked over the VISIBLE
   // subgraph, so a collapsed arm leaves no gap behind.
   const visibleSelection = useMemo(
-    () => visibleGraphSelection(GRAPH, PANELS, armSelection),
-    [GRAPH, PANELS, armSelection],
+    () => visibleGraphSelection(GRAPH, armSelection),
+    [GRAPH, armSelection],
   );
   const visibleIds = visibleSelection.nodeIds;
   const visibleEdges = useMemo(
@@ -786,24 +785,22 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     [FLOW_EDGES, visibleSelection],
   );
   const activePanels = useMemo(() => {
-    const nestedActive = activeBranchPanels(PANELS, armSelection);
-    return nestedActive.filter((panel) => {
+    return PANELS.filter((panel) => {
       const selectedId = armSelection.get(panel.id) ?? panel.defaultArmId;
       const arm = panel.arms.find((candidate) => candidate.id === selectedId);
       if (!arm) return false;
-
-      // A selected non-empty arm proves the panel is reachable only when at
-      // least one of its members survived the reachability walk. For an
-      // empty arm, its visible exit plays the same role. This also hides a
-      // later guard that shares an anchor with an earlier selected throw.
-      if (!arm.empty) return arm.memberIds.some((id) => visibleIds.has(id));
-      const targets = arm.exitTargetIds.length > 0
-        ? arm.exitTargetIds
-        : (panel.convergesAt ? [panel.convergesAt] : []);
-      if (targets.some((id) => visibleIds.has(id))) return true;
-      return panel.branchPointIds.some((id) => visibleIds.has(id));
+      const targets = panelRouteTargetIds(panel, armSelection);
+      const routeType = panel.structure === "DISPATCH" ? "invoke" : "sequence";
+      return visibleEdges.some((edge) =>
+        edge.type === routeType
+        && targets.includes(edge.to)
+        && (
+          panel.branchPointIds.includes(edge.from)
+          || (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))
+        )
+      );
     });
-  }, [PANELS, armSelection, visibleIds]);
+  }, [PANELS, armSelection, visibleEdges]);
 
   // Each visible panel's selected arm becomes a row band, so two branches
   // that are not nested in each other never share a row -- otherwise their
@@ -872,7 +869,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
         if (!arm) continue;
 
         if (arm.empty) {
-          const targetIds = panelRouteTargetIds(panel, activePanels, armSelection);
+          const targetIds = panelRouteTargetIds(panel, armSelection);
           const routeEdge = visibleEdges.find((edge) =>
             targetIds.includes(edge.to)
             && edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence")
@@ -900,7 +897,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
         // reused as the arm's continuation: doing so creates backwards row-gap
         // constraints (especially for throw arms) and stretches every pass.
         if (arm.terminus === "throw") continue;
-        const toId = arm.exitTargetId ?? panel.convergesAt;
+        const toId = arm.exitTargetId;
         if (!toId || !visibleIds.has(toId)) continue;
 
         // A rectangle around an arm must end before its continuation starts.

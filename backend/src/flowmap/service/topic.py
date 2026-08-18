@@ -31,17 +31,91 @@ _ANON_PATTERN = _SYNTHETIC["anonymous_class_suffix_regex"]
 _DEFAULT_LABEL_MODEL = "openai/gpt-oss-20b"
 _DEFAULT_WHOLE_CORPUS_MODEL = "openai/gpt-oss-120b"
 
-_MAX_TERMS_PER_CLASS = 15
+_MAX_METHOD_PROMPT_TERMS = 20
+_MAX_METHOD_PROMPT_CHARS = 1200
+_MAX_PROMPT_VALUE_CHARS = 160
+
+# Separate category budgets prevent a long method list from crowding every
+# other kind of class evidence out of the prompt. Together these character
+# caps also put a real upper bound of 2,000 value characters on each
+# class's evidence block.
+_CLASS_PROMPT_CATEGORIES = (
+    ("Annotations", "annotations", 3, 240),
+    ("Inherits", "inherits", 3, 240),
+    ("Methods", "methodNames", 8, 400),
+    ("Members", "memberNames", 4, 240),
+    ("Identifiers", "identifiers", 8, 400),
+    ("Comments", "comments", 2, 240),
+    ("String literals", "literals", 3, 240),
+)
+_LEGACY_CLASS_TERMS_LIMIT = 20
+_LEGACY_CLASS_CHARS_LIMIT = 800
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+
+
+def _bounded_prompt_values(
+    values: list[str], *, item_limit: int, char_limit: int
+) -> str:
+    """Deduplicate values in source order and enforce prompt-size bounds."""
+    selected: list[str] = []
+    seen: set[str] = set()
+    used = 0
+    for raw_value in values:
+        value = " ".join(str(raw_value).split())
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        if len(value) > _MAX_PROMPT_VALUE_CHARS:
+            value = value[: _MAX_PROMPT_VALUE_CHARS - 1].rstrip() + "…"
+        separator_length = 2 if selected else 0
+        remaining = char_limit - used - separator_length
+        if remaining <= 0:
+            break
+        if len(value) > remaining:
+            if remaining < 2:
+                break
+            value = value[: remaining - 1].rstrip() + "…"
+        selected.append(value)
+        used += separator_length + len(value)
+        if len(selected) >= item_limit or used >= char_limit:
+            break
+    return ", ".join(selected)
+
+
+def _class_evidence_lines(doc: ClassDocument, *, indent: str = "") -> list[str]:
+    """Balanced, category-aware evidence for one class prompt block."""
+    has_structured_evidence = any(
+        getattr(doc, attribute)
+        for _, attribute, _, _ in _CLASS_PROMPT_CATEGORIES
+    )
+    lines: list[str] = []
+    if has_structured_evidence:
+        for label, attribute, item_limit, char_limit in _CLASS_PROMPT_CATEGORIES:
+            rendered = _bounded_prompt_values(
+                getattr(doc, attribute),
+                item_limit=item_limit,
+                char_limit=char_limit,
+            )
+            if rendered:
+                lines.append(f"{indent}{label}: {rendered}")
+        return lines
+
+    # Compatibility for callers constructing the old flat document shape.
+    rendered = _bounded_prompt_values(
+        doc.terms[1:],
+        item_limit=_LEGACY_CLASS_TERMS_LIMIT,
+        char_limit=_LEGACY_CLASS_CHARS_LIMIT,
+    )
+    return [f"{indent}Evidence: {rendered}"] if rendered else []
 
 
 def extract_class_and_method_documents(
     session: JoernSession,
 ) -> tuple[list[ClassDocument], list[MethodDocument]]:
     """
-    Runs class_document.sc and returns both its class-level term-bag
-    documents and its per-method term-bag documents.
+    Runs class_document.sc and returns structured class evidence alongside
+    the per-method term-bag documents.
     """
     angle_bracket_scala = ", ".join(f'"{marker}"' for marker in _ANGLE_BRACKET_MARKERS)
     jdk_scala = ", ".join(f'"{prefix}"' for prefix in _JDK_LEAF_OMIT_PREFIXES)
@@ -62,8 +136,7 @@ def extract_class_and_method_documents(
 
 def extract_class_documents(session: JoernSession) -> list[ClassDocument]:
     """
-    Build one term-bag ClassDocument per project class via
-    class_document.sc.
+    Build one structured ClassDocument per project class via class_document.sc.
     """
     return extract_class_and_method_documents(session)[0]
 
@@ -84,9 +157,10 @@ def _cluster_prompt(
             doc = class_by_full_name.get(full_name)
             if doc is None:
                 continue
-            preview = doc.terms[1 : 1 + _MAX_TERMS_PER_CLASS]
-            if preview:
-                lines.append(f"  {doc.className} terms: {', '.join(preview)}")
+            evidence = _class_evidence_lines(doc, indent="    ")
+            if evidence:
+                lines.append(f"  {doc.className}:")
+                lines.extend(evidence)
     return "\n".join(lines)
 
 
@@ -123,10 +197,10 @@ def label_cluster(
 def _whole_corpus_prompt(
     class_documents: list[ClassDocument], readme_documents: list[ReadmeDocument]
 ) -> str:
-    lines = [
-        f"{doc.fullName}: {', '.join(doc.terms[1 : 1 + _MAX_TERMS_PER_CLASS])}"
-        for doc in class_documents
-    ]
+    lines: list[str] = []
+    for doc in class_documents:
+        lines.append(f"Class: {doc.fullName}")
+        lines.extend(_class_evidence_lines(doc, indent="  "))
     if readme_documents:
         lines.append("")
         lines.append("Project documentation:")
@@ -215,13 +289,25 @@ def _clusters_prompt(clusters: list[TopicCluster]) -> str:
 def _operation_prompt(operation_cfg: Graph, method_documents: list[MethodDocument]) -> str:
     method_by_full_name = {m.fullName: m for m in method_documents}
     lines = []
+    seen_methods: set[str] = set()
     for node in operation_cfg.nodes:
         if node.type != "entry" or not node.calleeFullName:
             continue
+        if node.calleeFullName in seen_methods:
+            continue
+        seen_methods.add(node.calleeFullName)
         doc = method_by_full_name.get(node.calleeFullName)
-        preview = doc.terms[1 : 1 + _MAX_TERMS_PER_CLASS] if doc else []
+        preview = (
+            _bounded_prompt_values(
+                doc.terms[1:],
+                item_limit=_MAX_METHOD_PROMPT_TERMS,
+                char_limit=_MAX_METHOD_PROMPT_CHARS,
+            )
+            if doc
+            else ""
+        )
         lines.append(
-            f"{node.calleeFullName}: {', '.join(preview)}" if preview else node.calleeFullName
+            f"{node.calleeFullName}: {preview}" if preview else node.calleeFullName
         )
     return "\n".join(lines)
 

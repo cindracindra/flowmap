@@ -18,12 +18,7 @@ from domain.util import is_noise, is_jdk_call_site_strip
 
 
 def classify_roots_and_orphans(graph: Graph) -> Graph:
-    """Classify uncalled entries by their surviving executable flow.
-
-    An entry with no incoming internal invocation is a root when its method
-    owns at least one surviving sequence/invoke edge, otherwise an orphan.
-    Data edges deliberately do not make a method operational.
-    """
+    """Classify roots and orphans by their surviving executable flow."""
 
     nodes_by_id = {n.id: n for n in graph.nodes}
     entry_id_by_fullname = {
@@ -175,6 +170,110 @@ def _adjacency_out(edges: list[Edge]) -> dict[str, list[str]]:
     for edge in edges:
         adjacency.setdefault(edge.source, []).append(edge.target)
     return adjacency
+
+
+@dataclasses.dataclass(frozen=True, slots=True)
+class _BranchTopology:
+    """Branch relations retained by the call-only CFG projection.
+
+    Removing condition nodes can co-locate nested or sequential source
+    branches on one visible branch point. Group identity still comes from
+    Joern's control structures; source order determines which co-located
+    groups can be reached after which others. Convergence and route
+    annotation both consume this one representation.
+    """
+
+    groups: tuple[BranchGroup, ...]
+    members_by_arm: dict[tuple[str, str], frozenset[str]]
+    members_by_group: dict[str, frozenset[str]]
+    source_rank: dict[str, tuple[int, int]]
+
+    @classmethod
+    def build(
+        cls, nodes: list[Node], groups: list[BranchGroup]
+    ) -> "_BranchTopology":
+        mutable_by_arm: dict[tuple[str, str], set[str]] = {}
+        for node in nodes:
+            for tag in node.branchArms:
+                mutable_by_arm.setdefault(
+                    (tag.groupId, tag.armLabel), set()
+                ).add(node.id)
+
+        members_by_arm = {
+            key: frozenset(node_ids) for key, node_ids in mutable_by_arm.items()
+        }
+        mutable_by_group: dict[str, set[str]] = {}
+        for (group_id, _), node_ids in members_by_arm.items():
+            mutable_by_group.setdefault(group_id, set()).update(node_ids)
+
+        return cls(
+            groups=tuple(groups),
+            members_by_arm=members_by_arm,
+            members_by_group={
+                group_id: frozenset(node_ids)
+                for group_id, node_ids in mutable_by_group.items()
+            },
+            source_rank={
+                group.id: (group.line if group.line is not None else -1, index)
+                for index, group in enumerate(groups)
+            },
+        )
+
+    def arm_members(self, group_id: str, arm_label: str) -> frozenset[str]:
+        return self.members_by_arm.get((group_id, arm_label), frozenset())
+
+    def group_members(self, group_id: str) -> frozenset[str]:
+        return self.members_by_group.get(group_id, frozenset())
+
+    def co_located(self, group: BranchGroup) -> tuple[BranchGroup, ...]:
+        points = set(group.branchPointIds)
+        return tuple(
+            candidate
+            for candidate in self.groups
+            if candidate.id != group.id
+            and candidate.method == group.method
+            and bool(points & set(candidate.branchPointIds))
+        )
+
+    def before(self, group: BranchGroup) -> tuple[BranchGroup, ...]:
+        rank = self.source_rank[group.id]
+        return tuple(
+            candidate
+            for candidate in self.co_located(group)
+            if self.source_rank[candidate.id] < rank
+        )
+
+    def after(self, group: BranchGroup) -> tuple[BranchGroup, ...]:
+        rank = self.source_rank[group.id]
+        return tuple(
+            candidate
+            for candidate in self.co_located(group)
+            if self.source_rank[candidate.id] > rank
+        )
+
+    def members_before(self, group: BranchGroup) -> frozenset[str]:
+        return frozenset(
+            node_id
+            for earlier in self.before(group)
+            for node_id in self.group_members(earlier.id)
+        )
+
+    def continuation_heads_after(self, group: BranchGroup) -> frozenset[str]:
+        """Heads of later co-located groups outside this group's arms.
+
+        A later nested condition is also co-located after projection, but
+        its heads remain members of the enclosing arm. Only a head outside
+        the current group's member region is a sequential continuation that
+        an empty arm can enter.
+        """
+        group_members = self.group_members(group.id)
+        return frozenset(
+            arm.firstCallId
+            for later in self.after(group)
+            for arm in later.arms
+            if arm.firstCallId is not None
+            and arm.firstCallId not in group_members
+        )
 
 
 def _tag_loop_back_edges(
@@ -383,10 +482,7 @@ def _recompute_branch_geometry(
     for edge in sequence_edges:
         sequence_in.setdefault(edge.target, []).append(edge.source)
 
-    members: dict[tuple[str, str], set[str]] = {}
-    for node in nodes:
-        for tag in node.branchArms:
-            members.setdefault((tag.groupId, tag.armLabel), set()).add(node.id)
+    topology = _BranchTopology.build(nodes, groups)
 
     rank = lambda node_id: order.get(node_id, len(order))  # noqa: E731
 
@@ -394,7 +490,7 @@ def _recompute_branch_geometry(
     for group in groups:
         arms: list[BranchArm] = []
         for arm in group.arms:
-            surviving = members.get((group.id, arm.label), set())
+            surviving = topology.arm_members(group.id, arm.label)
             head = min(surviving, key=rank) if surviving else None
             arms.append(dataclasses.replace(
                 arm, empty=not surviving, firstCallId=head,
@@ -410,7 +506,7 @@ def _recompute_branch_geometry(
         for arm in arms:
             if arm.firstCallId is None:
                 continue
-            own_arm = members.get((group.id, arm.label), set())
+            own_arm = topology.arm_members(group.id, arm.label)
             candidates |= {
                 pred for pred in sequence_in.get(arm.firstCallId, ())
                 if pred not in own_arm
@@ -580,9 +676,9 @@ def _scope_group_to_instance(
             local_clone[p] for p in group.branchPointIds if p in local_clone
         ],
         # Where this instance returns to, for a "return" arm's arrow and
-        # for the zero-call-arm case in _resolve_convergence.
+        # for the zero-call-arm case in _analyze_branch_routes.
         returnsTo=list(continuations),
-        convergesAt=None,  # needs the whole trace -- see _resolve_convergence
+        convergesAt=None,  # needs the whole trace -- see _analyze_branch_routes
     )
 
 
@@ -591,12 +687,19 @@ def _scope_loop_to_instance(loop: LoopGroup, suffix: str) -> LoopGroup:
     return dataclasses.replace(loop, id=f"{loop.id}~{suffix}")
 
 
-def _resolve_convergence(
-    nodes: list[Node], edges: list[Edge], groups: list[BranchGroup], root_id: str
-) -> list[BranchGroup]:
+def _analyze_branch_routes(
+    nodes: list[Node],
+    edges: list[Edge],
+    groups: list[BranchGroup],
+    root_id: str,
+) -> tuple[list[BranchGroup], list[Edge]]:
     """
-    Fills in each group's `convergesAt` -- the earliest node that EVERY
-    live path out of the branch reaches.
+    Resolve every presentation and execution route fact in one analysis.
+
+    For each instance-scoped group this computes its convergence, each arm's
+    visible exit targets, and the requirements placed on route edges. These
+    facts used to be produced by separate convergence and annotation passes,
+    with the latter reverse-engineering routes from the former.
 
     Only answerable here, not at filter time: a branch that ends its
     method converges on the CALLER's next call, and nothing connects the
@@ -615,6 +718,7 @@ def _resolve_convergence(
     into its caller, which is exactly what this stage can see and the
     filter stage cannot.
     """
+    topology = _BranchTopology.build(nodes, groups)
     sequence_out = _adjacency_out([e for e in edges if e.type == "sequence"])
     entry_ids = {n.id for n in nodes if n.type == "entry"}
     flow_out = _adjacency_out([
@@ -638,17 +742,13 @@ def _resolve_convergence(
     rank = lambda node_id: order.get(node_id, len(order))  # noqa: E731
     nodes_by_id = {n.id: n for n in nodes}
 
-    members: dict[tuple[str, str], set[str]] = {}
-    for node in nodes:
-        for tag in node.branchArms:
-            members.setdefault((tag.groupId, tag.armLabel), set()).add(node.id)
-
     catch_head_ids = {
         arm.firstCallId
         for group in groups if group.kind == "TRY"
         for arm in group.arms
         if arm.label != "noCatch" and arm.firstCallId is not None
     }
+    requirements: list[list[BranchRequirement]] = [[] for _ in edges]
 
     def with_arm_targets(
         group: BranchGroup,
@@ -672,19 +772,66 @@ def _resolve_convergence(
             arms.append(dataclasses.replace(arm, targetIds=target_ids))
         return dataclasses.replace(group, arms=arms, convergesAt=convergence)
 
+    def record_routes(group: BranchGroup) -> None:
+        """Project one resolved group's mutually-exclusive routes onto edges."""
+        route_type = "invoke" if group.kind == "DISPATCH" else "sequence"
+        shared_later_heads = topology.continuation_heads_after(group)
+        explicit_by_target = {
+            arm.firstCallId: arm.label
+            for arm in group.arms
+            if arm.firstCallId is not None
+        }
+        empty_arms = [arm for arm in group.arms if arm.firstCallId is None]
+
+        for index, edge in enumerate(edges):
+            if edge.type != route_type:
+                continue
+            point = (
+                edge.source
+                if edge.source in group.branchPointIds
+                else edge.returnFrom
+                if edge.returnFrom in group.branchPointIds
+                else None
+            )
+            if point is None:
+                continue
+
+            arm_label = explicit_by_target.get(edge.target)
+            if arm_label is None:
+                matching_members = [
+                    arm for arm in group.arms
+                    if edge.target in topology.arm_members(group.id, arm.label)
+                ]
+                if len(matching_members) == 1:
+                    arm_label = matching_members[0].label
+                else:
+                    matching_empty = [
+                        arm for arm in empty_arms
+                        if edge.target in (arm.targetIds or [])
+                    ]
+                    if not matching_empty and edge.target in shared_later_heads:
+                        matching_empty = [
+                            arm for arm in empty_arms
+                            if arm.terminus == "continues"
+                        ]
+                    if len(matching_empty) != 1:
+                        continue
+                    arm_label = matching_empty[0].label
+
+            requirement = BranchRequirement(group.id, arm_label)
+            if requirement not in requirements[index]:
+                requirements[index].append(requirement)
+
     resolved: list[BranchGroup] = []
     for group in groups:
         if not group.branchPointIds:
             resolved.append(with_arm_targets(group, None))
             continue
 
-        group_members = {
-            node_id for arm in group.arms
-            for node_id in members.get((group.id, arm.label), ())
-        }
+        group_members = set(topology.group_members(group.id))
         paths = [
             _reachable_non_members(
-                arm.firstCallId, members.get((group.id, arm.label), set()),
+                arm.firstCallId, set(topology.arm_members(group.id, arm.label)),
                 group_members, flow_out,
             )
             for arm in group.arms
@@ -706,16 +853,8 @@ def _resolve_convergence(
         # converges reported None.
         implicit_continuations = 0
         implicit_targets: list[str] = []
-        later_sibling_heads = {
-            arm.firstCallId
-            for later in groups
-            if later.id != group.id
-            and later.method == group.method
-            and set(later.branchPointIds) & set(group.branchPointIds)
-            and (later.line or 0) > (group.line or 0)
-            for arm in later.arms
-            if arm.firstCallId is not None
-        }
+        later_sibling_heads = topology.continuation_heads_after(group)
+        earlier_sibling_members = topology.members_before(group)
         for branch_point in group.branchPointIds:
             successors = list(sequence_out.get(branch_point, ()))
             successors += continuation_out.get(branch_point, ())
@@ -728,6 +867,7 @@ def _resolve_convergence(
                     implicit_targets.append(successor)
                 if (
                     successor in group_members
+                    or successor in earlier_sibling_members
                     or nodes_by_id[successor].deadEnd
                     # A callee inside TRY is flattened with both its normal
                     # continuation and catch heads. A nested empty arm owns
@@ -792,91 +932,15 @@ def _resolve_convergence(
                 if count == len(paths) and rank(node_id) > last_fork
             ]
             converges_at = min(shared, key=rank) if shared else None
-        resolved.append(with_arm_targets(group, converges_at, implicit_targets))
-    return resolved
+        resolved_group = with_arm_targets(group, converges_at, implicit_targets)
+        resolved.append(resolved_group)
+        record_routes(resolved_group)
 
-
-def _annotate_branch_requirements(
-    edges: list[Edge], groups: list[BranchGroup]
-) -> list[Edge]:
-    """Stamp each fork/return edge with its backend-known arm selection.
-
-    Node arm membership cannot describe an empty arm: after noise filtering
-    there is no node to tag, and flattening represents normal completion by
-    a fallback return edge.  This pass runs after instance scoping and
-    convergence resolution, when both the real cloned branch points and all
-    synthesized return edges exist.
-
-    Explicit arm heads are matched by firstCallId. Empty/implicit routes are
-    matched only against that arm's resolved targetIds. This distinction is
-    essential for a call inside TRY: flattening gives its callee both the
-    normal continuation and the catch head, but only the former belongs to
-    the callee's empty normal arm; the latter belongs to the enclosing catch.
-    """
-    requirements: list[list[BranchRequirement]] = [
-        list(edge.branchRequirements) for edge in edges
-    ]
-
-    for group in groups:
-        route_type = "invoke" if group.kind == "DISPATCH" else "sequence"
-        selectable = list(group.arms)
-        shared_later_heads = {
-            arm.firstCallId
-            for later in groups
-            if later.id != group.id
-            and later.method == group.method
-            and set(later.branchPointIds) & set(group.branchPointIds)
-            and (later.line or 0) > (group.line or 0)
-            for arm in later.arms
-            if arm.firstCallId is not None
-        }
-
-        explicit_by_target = {
-            arm.firstCallId: arm.label
-            for arm in selectable
-            if arm.firstCallId is not None
-        }
-        empty_arms = [arm for arm in selectable if arm.firstCallId is None]
-        for index, edge in enumerate(edges):
-            if edge.type != route_type:
-                continue
-            point = (
-                edge.source
-                if edge.source in group.branchPointIds
-                else edge.returnFrom
-                if edge.returnFrom in group.branchPointIds
-                else None
-            )
-            if point is None:
-                continue
-
-            if edge.target in explicit_by_target:
-                arm_label = explicit_by_target[edge.target]
-            else:
-                matching_empty = [
-                    arm for arm in empty_arms
-                    if edge.target in (arm.targetIds or [])
-                ]
-                if not matching_empty and edge.target in shared_later_heads:
-                    # Stripped conditions can make sequential groups share
-                    # one anchor. Reaching a later group's head means every
-                    # earlier group took its empty continuing route.
-                    matching_empty = [
-                        arm for arm in empty_arms
-                        if arm.terminus == "continues"
-                    ]
-                if len(matching_empty) != 1:
-                    continue
-                arm_label = matching_empty[0].label
-
-            requirement = BranchRequirement(group.id, arm_label)
-            if requirement not in requirements[index]:
-                requirements[index].append(requirement)
-
-    return [
+    annotated_edges = [
         dataclasses.replace(edge, branchRequirements=edge_requirements)
         for edge, edge_requirements in zip(edges, requirements, strict=True)
     ]
+    return resolved, annotated_edges
 
 
 def flatten_cfg(cfg: Graph) -> Graph:
@@ -1266,7 +1330,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
 
                 if dispatch_id is not None:
                     # convergesAt is deliberately left for
-                    # _resolve_convergence, which treats this exactly like
+                    # _analyze_branch_routes, which treats this exactly like
                     # any other group: the implementations' return edges
                     # are what say where they rejoin, and those only exist
                     # once the whole trace is wired.
@@ -1349,9 +1413,12 @@ def flatten_cfg(cfg: Graph) -> Graph:
     # A group with no `method` can't be attributed to an instance, so it
     # rides through unscoped rather than being dropped (only reachable
     # with a graph extracted before groups carried `method`).
-    groups = _resolve_convergence(nodes, flat_edges, flat_groups, root_new_id)
-    groups += [g for g in cfg.branchGroups if g.method is None]
-    flat_edges = _annotate_branch_requirements(flat_edges, groups)
+    analysis_groups = flat_groups + [
+        group for group in cfg.branchGroups if group.method is None
+    ]
+    groups, flat_edges = _analyze_branch_routes(
+        nodes, flat_edges, analysis_groups, root_new_id
+    )
     flat_edges = _tag_loop_back_edges(nodes, flat_edges, root_new_id)
 
     return Graph(

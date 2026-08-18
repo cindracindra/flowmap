@@ -16,11 +16,18 @@ from backend.src.flowmap.domain.topic_modelling import (  # noqa: E402
     attach_readme_context,
     cluster_documents,
     discover_topics,
+    discover_topics_with_centroids,
     extract_readme_documents,
     is_degenerate,
     label_clusters_statistical,
 )
-from backend.src.flowmap.domain.util import preprocess_document, split_identifier  # noqa: E402
+from backend.src.flowmap.domain.util import (  # noqa: E402
+    embed_documents,
+    get_embedding_model,
+    is_noise,
+    preprocess_document,
+    split_identifier,
+)
 from backend.src.flowmap.model import ClassDocument, ReadmeDocument, TopicCluster  # noqa: E402
 
 
@@ -67,6 +74,28 @@ class PreprocessDocumentTests(unittest.TestCase):
 
     def test_empty_terms_yield_empty_document(self):
         self.assertEqual(preprocess_document(["a", "to", "<init>"]), "")
+
+    def test_joern_lambda_marker_is_removed(self):
+        self.assertEqual(
+            preprocess_document(["<lambda>0", "createAccount"]),
+            "create account",
+        )
+        self.assertTrue(
+            is_noise("org.example.AccountService.<lambda>0:void(java.lang.Object)")
+        )
+
+
+class EmbeddingModelCacheTests(unittest.TestCase):
+    @patch("backend.src.flowmap.domain.util.SentenceTransformer")
+    def test_reuses_one_model_instance_for_multiple_batches(self, model_class):
+        model_class.return_value.encode.return_value = np.array([[1.0, 0.0]])
+        get_embedding_model.cache_clear()
+        try:
+            embed_documents(["first"], model_name="test-model")
+            embed_documents(["second"], model_name="test-model")
+        finally:
+            get_embedding_model.cache_clear()
+        model_class.assert_called_once_with("test-model")
 
 
 class LabelClustersStatisticalTests(unittest.TestCase):
@@ -297,6 +326,23 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
         discover_topics(classes, whole_corpus_fn=whole_corpus_fn, label_fn=label_fn)
 
         label_fn.assert_not_called()
+
+    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
+    def test_centroids_reuse_the_discovery_embedding_batch(self, mock_embed, mock_cluster):
+        classes = self._class_documents(4)
+        mock_embed.return_value = np.array(
+            [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]]
+        )
+        mock_cluster.return_value = np.array([0, 0, 1, 1])
+
+        result = discover_topics_with_centroids(
+            classes, min_cluster_size=2, max_df=1.0
+        )
+
+        mock_embed.assert_called_once()
+        np.testing.assert_allclose(result.centroids[0], [1.0, 0.0])
+        np.testing.assert_allclose(result.centroids[1], [0.0, 1.0])
 
 
 if __name__ == "__main__":

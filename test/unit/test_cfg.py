@@ -1400,6 +1400,144 @@ class SiblingBranchConvergenceTests(unittest.TestCase):
         self.assertEqual(names[group.convergesAt], "pkg.AFTER.run")
 
 
+def _nested_return_before_later_branch_raw() -> dict:
+    """The reduced control-flow shape from OrderController.newOrder().
+
+    The stripped conditions all project onto ``c_session``.  The first
+    outer branch contains a nested if whose two arms return; only the outer
+    false route can ever reach the later branch.  A selection for that later
+    branch must therefore never become a requirement on either earlier
+    returning route.
+    """
+    method = "OrderController.newOrder"
+    return {
+        "entryPoint": method,
+        "nodes": [
+            node("e", "entry", method),
+            node("c_session", "call", "Session.getOrder", method),
+            node("c_submit", "call", "OrderService.insertOrder", method,
+                 arms=[("cs_confirmed", "if"), ("cs_present_confirm", "if")],
+                 terminus="return"),
+            node("c_error", "call", "Model.error", method,
+                 arms=[("cs_confirmed", "if"), ("cs_present_confirm", "else")],
+                 terminus="return"),
+            node("c_update", "call", "Order.updateFields", method,
+                 arms=[("cs_present_edit", "if")]),
+            node("c_confirm", "call", "Session.confirm", method),
+        ],
+        "edges": [
+            edge("e", "c_session"),
+            edge("c_session", "c_submit"),
+            edge("c_session", "c_error"),
+            edge("c_session", "c_update"),
+            edge("c_session", "c_confirm"),
+            edge("c_update", "c_confirm"),
+        ],
+        "branchGroups": [
+            {
+                "id": "cs_confirmed", "kind": "IF", "method": method, "line": 10,
+                "branchPointIds": ["c_session"],
+                "arms": [
+                    {"label": "if", "empty": False, "terminus": "return",
+                     "conditionCode": "confirmed", "firstCallId": "c_submit"},
+                    {"label": "else", "empty": True, "terminus": "continues"},
+                ],
+            },
+            {
+                "id": "cs_present_confirm", "kind": "IF", "method": method, "line": 11,
+                "branchPointIds": ["c_session"],
+                "arms": [
+                    {"label": "if", "empty": False, "terminus": "return",
+                     "conditionCode": "sessionOrder != null", "firstCallId": "c_submit"},
+                    {"label": "else", "empty": False, "terminus": "return",
+                     "firstCallId": "c_error"},
+                ],
+            },
+            {
+                "id": "cs_present_edit", "kind": "IF", "method": method, "line": 20,
+                "branchPointIds": ["c_session"],
+                "arms": [
+                    {"label": "if", "empty": False, "terminus": "continues",
+                     "conditionCode": "sessionOrder != null", "firstCallId": "c_update"},
+                    {"label": "else", "empty": True, "terminus": "continues"},
+                ],
+            },
+        ],
+    }
+
+
+class NestedReturningBranchRouteTests(unittest.TestCase):
+    def test_nested_and_sequential_groups_keep_distinct_route_requirements(self):
+        flattened = flatten_cfg(Graph.from_dict(_nested_return_before_later_branch_raw()))
+        nodes_by_orig = {node.origId: node for node in flattened.nodes}
+        groups = {group.id.split("~", 1)[0]: group for group in flattened.branchGroups}
+
+        def route_to(orig_id: str):
+            return next(
+                edge for edge in flattened.edges
+                if edge.source == nodes_by_orig["c_session"].id
+                and edge.target == nodes_by_orig[orig_id].id
+            )
+
+        def requirements(orig_id: str) -> set[tuple[str, str]]:
+            return {
+                (requirement.groupId, requirement.armLabel)
+                for requirement in route_to(orig_id).branchRequirements
+            }
+
+        submit_requirements = requirements("c_submit")
+        self.assertEqual(
+            submit_requirements,
+            {
+                (groups["cs_confirmed"].id, "if"),
+                (groups["cs_present_confirm"].id, "if"),
+            },
+        )
+
+        # This is the nested branch's other arm, still inside the outer IF.
+        self.assertEqual(
+            requirements("c_error"),
+            {
+                (groups["cs_confirmed"].id, "if"),
+                (groups["cs_present_confirm"].id, "else"),
+            },
+        )
+
+        # These are genuinely later routes, reached only through the outer
+        # empty ELSE. The earlier nested group has already ceased to matter.
+        self.assertEqual(
+            requirements("c_update"),
+            {
+                (groups["cs_confirmed"].id, "else"),
+                (groups["cs_present_edit"].id, "if"),
+            },
+        )
+        self.assertEqual(
+            requirements("c_confirm"),
+            {
+                (groups["cs_confirmed"].id, "else"),
+                (groups["cs_present_edit"].id, "else"),
+            },
+        )
+
+    def test_later_branch_never_controls_an_earlier_returning_route(self):
+        flattened = flatten_cfg(Graph.from_dict(_nested_return_before_later_branch_raw()))
+        nodes_by_orig = {node.origId: node for node in flattened.nodes}
+        groups = {group.id.split("~", 1)[0]: group for group in flattened.branchGroups}
+        into_submit = next(
+            edge for edge in flattened.edges
+            if edge.target == nodes_by_orig["c_submit"].id
+        )
+        requirements = {
+            (requirement.groupId, requirement.armLabel)
+            for requirement in into_submit.branchRequirements
+        }
+
+        self.assertIn((groups["cs_confirmed"].id, "if"), requirements)
+        self.assertIn((groups["cs_present_confirm"].id, "if"), requirements)
+        self.assertNotIn((groups["cs_present_edit"].id, "else"), requirements)
+
+
 class FlattenCfgTests(unittest.TestCase):
     def _by_orig_name(self, flattened: Graph) -> dict:
         """id -> calleeFullName for every flattened node, keyed by the

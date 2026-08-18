@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import numpy as np
+from dataclasses import dataclass, field
 from collections.abc import Callable
 from pathlib import Path
 
@@ -13,6 +14,42 @@ from domain.util import embed_documents, preprocess_document
 
 _MAX_NOISE_FRACTION = 0.7  # >70% of classes in noise cluster is degenerate
 _MIN_CLASSES_FOR_CLUSTERING = 20  # below this, HDBSCAN has too few points to be meaningful
+
+
+@dataclass(slots=True)
+class TopicDiscoveryResult:
+    """Topic metadata plus the centroids derived from discovery embeddings."""
+
+    clusters: list[TopicCluster]
+    centroids: dict[int, np.ndarray] = field(default_factory=dict)
+
+
+def _centroids_from_discovery_embeddings(
+    clusters: list[TopicCluster],
+    classes: list[ClassDocument],
+    embeddings: np.ndarray,
+) -> dict[int, np.ndarray]:
+    """Mean each final cluster's already-computed class embeddings."""
+    embedding_by_full_name = {
+        class_doc.fullName: embedding
+        for class_doc, embedding in zip(classes, embeddings)
+    }
+    centroids: dict[int, np.ndarray] = {}
+    for cluster in clusters:
+        if cluster.label == -1:
+            continue
+        members = [
+            embedding_by_full_name[full_name]
+            for full_name in cluster.member_full_names
+            if full_name in embedding_by_full_name
+        ]
+        if not members:
+            continue
+        centroid = np.mean(members, axis=0)
+        norm = np.linalg.norm(centroid)
+        if norm > 0:
+            centroids[cluster.label] = centroid / norm
+    return centroids
 
 
 def _is_within(candidate_dir: Path, base_dir: Path) -> bool:
@@ -171,6 +208,30 @@ def discover_topics(
     label_fn: ClusterLabelFn | None = None,
     whole_corpus_fn: WholeCorpusGroupingFn | None = None,
 ) -> list[TopicCluster]:
+    """Backward-compatible clusters-only topic-discovery API."""
+    return discover_topics_with_centroids(
+        class_documents,
+        readme_documents,
+        model_name=model_name,
+        min_cluster_size=min_cluster_size,
+        max_df=max_df,
+        top_n_terms=top_n_terms,
+        label_fn=label_fn,
+        whole_corpus_fn=whole_corpus_fn,
+    ).clusters
+
+
+def discover_topics_with_centroids(
+    class_documents: list[ClassDocument],
+    readme_documents: list[ReadmeDocument] | None = None,
+    *,
+    model_name: str = "all-MiniLM-L6-v2",
+    min_cluster_size: int = 3,
+    max_df: float = 0.85,
+    top_n_terms: int = 10,
+    label_fn: ClusterLabelFn | None = None,
+    whole_corpus_fn: WholeCorpusGroupingFn | None = None,
+) -> TopicDiscoveryResult:
     """
     Full Mode 1 pipeline: preprocess -> embed -> cluster -> statistically
     label -> attach README context -> (optionally) LLM-label. Returns one
@@ -201,7 +262,7 @@ def discover_topics(
     docs = [preprocess_document(c.terms) for c in class_documents]
     kept = [(c, d) for c, d in zip(class_documents, docs) if d.strip()]
     if not kept:
-        return []
+        return TopicDiscoveryResult(clusters=[])
     classes_kept, docs_kept = zip(*kept)
     docs_kept = list(docs_kept)
 
@@ -229,11 +290,22 @@ def discover_topics(
         and is_degenerate(clusters, len(class_documents))
     ):
         clusters = whole_corpus_fn(class_documents, readme_documents)
-        return attach_readme_context(clusters, class_documents, readme_documents)
+        clusters = attach_readme_context(clusters, class_documents, readme_documents)
+        return TopicDiscoveryResult(
+            clusters=clusters,
+            centroids=_centroids_from_discovery_embeddings(
+                clusters, list(classes_kept), embeddings
+            ),
+        )
 
     clusters = attach_readme_context(clusters, class_documents, readme_documents)
 
     if label_fn is not None:
         clusters = [dataclasses.replace(c, llm_label=label_fn(c)) for c in clusters]
 
-    return clusters
+    return TopicDiscoveryResult(
+        clusters=clusters,
+        centroids=_centroids_from_discovery_embeddings(
+            clusters, list(classes_kept), embeddings
+        ),
+    )

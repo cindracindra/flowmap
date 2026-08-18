@@ -115,7 +115,7 @@ export function computePanelGeometry(
     const selectedId = selection.get(panel.id) ?? panel.defaultArmId;
     const arm = panel.arms.find((candidate) => candidate.id === selectedId);
     if (!arm?.empty) continue;
-    const routeTargetIds = panelRouteTargetIds(panel, panels, selection);
+    const routeTargetIds = panelRouteTargetIds(panel, selection);
     const routeEdge = visibleEdges.find((edge) =>
       routeTargetIds.includes(edge.to)
       && edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence")
@@ -182,7 +182,7 @@ export function computePanelGeometry(
     // never a member and never inside the set the box is drawn around.
     const memberBox = computeBBox(memberIds, positions, REGION_PAD);
     const isFallbackBox = memberBox === null;
-    const routeTargetIds = panelRouteTargetIds(panel, panels, selection);
+    const routeTargetIds = panelRouteTargetIds(panel, selection);
     const routeEdge = visibleEdges.find((edge) =>
           routeTargetIds.includes(edge.to) &&
           edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence") &&

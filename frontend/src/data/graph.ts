@@ -66,47 +66,34 @@ export const ANCHORED_VISUALISATION = graphVisualisation(GRAPH, PHASE_TREE);
 // exact flattened graph and phase tree the shared graph view needs.
 export const OPSEQ_VISUALISATIONS = opseqVisualisationsRaw as Record<string, GraphVisualisation>;
 
-// Older exports omitted roots for which classification returned no topic.
-// Reconstruct that bucket from the complete opseq index so Topic Discovery
-// never silently loses an operation. New backend exports provide the same
-// entries directly under HDBSCAN's noise label (-1).
-const generatedUnclustered = GENERATED_OPERATIONS_BY_TOPIC["-1"] ?? [];
-const assignedOpseqIds = new Set(
-  Object.values(GENERATED_OPERATIONS_BY_TOPIC).flatMap((operations) =>
-    operations.map((operation) => operation.id)
-  ),
-);
-const reconstructedUnclustered: TopicOperation[] = Object.entries(OPSEQ_VISUALISATIONS)
-  .filter(([id]) => !assignedOpseqIds.has(id))
-  .map(([id, visualisation]) => {
-    const rootMethodFullName = visualisation.rootMethodFullName
-      ?? visualisation.graph.entryPoint
-      ?? id;
-    return {
-      id,
-      label: rootMethodFullName,
-      rootMethodFullName,
-      similarity: 0,
-    };
-  });
+// Class-clustering noise (-1) is not an operation topic. Also normalize
+// older top-k exports by retaining only each opseq's highest-similarity
+// assignment, so stale artifacts cannot show one operation under two topics.
+const highestAssignmentByOpseq = new Map<
+  string,
+  { topicLabel: string; operation: TopicOperation }
+>();
+for (const [topicLabel, operations] of Object.entries(GENERATED_OPERATIONS_BY_TOPIC)) {
+  if (topicLabel === "-1") continue;
+  for (const operation of operations) {
+    const current = highestAssignmentByOpseq.get(operation.id);
+    if (!current || operation.similarity > current.operation.similarity) {
+      highestAssignmentByOpseq.set(operation.id, { topicLabel, operation });
+    }
+  }
+}
 
-export const OPERATIONS_BY_TOPIC: Record<string, TopicOperation[]> = {
-  ...GENERATED_OPERATIONS_BY_TOPIC,
-  "-1": [...generatedUnclustered, ...reconstructedUnclustered]
-    .sort((a, b) => a.label.localeCompare(b.label)),
-};
+export const OPERATIONS_BY_TOPIC: Record<string, TopicOperation[]> = {};
+for (const { topicLabel, operation } of highestAssignmentByOpseq.values()) {
+  (OPERATIONS_BY_TOPIC[topicLabel] ??= []).push(operation);
+}
+for (const operations of Object.values(OPERATIONS_BY_TOPIC)) {
+  operations.sort((a, b) => a.label.localeCompare(b.label));
+}
+export const ALLOCATED_OPSEQ_COUNT = highestAssignmentByOpseq.size;
 
-// Unclustered is an opseq destination even when class clustering happened
-// to produce no noise cluster, so guarantee that it is always selectable.
 export const TOPICS = sortTopics(
-  GENERATED_TOPICS.some((topic) => topic.label === -1)
-    ? GENERATED_TOPICS
-    : [...GENERATED_TOPICS, {
-      label: -1,
-      member_full_names: [],
-      statistical_terms: [],
-      readme_paths: [],
-    }],
+  GENERATED_TOPICS.filter((topic) => topic.label !== -1),
 );
 
 export interface OpseqChoice {

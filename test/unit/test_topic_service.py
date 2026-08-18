@@ -64,6 +64,46 @@ class ClusterPromptTests(unittest.TestCase):
         prompt = topic._cluster_prompt(self.cluster, {})
         self.assertIn("Classes: com.bank.account.AccountService", prompt)
 
+    def test_structured_evidence_keeps_every_category(self):
+        doc = ClassDocument(
+            "AccountService",
+            "com.bank.account.AccountService",
+            "com.bank.account",
+            "x.java",
+            methodNames=[f"method{i}" for i in range(10)],
+            memberNames=["accountMapper"],
+            annotations=["Service"],
+            inherits=["AccountManager"],
+            identifiers=["accountId"],
+            comments=["Handles customer accounts"],
+            literals=["Account not found"],
+        )
+        prompt = topic._whole_corpus_prompt([doc], [])
+
+        self.assertIn("Annotations: Service", prompt)
+        self.assertIn("Inherits: AccountManager", prompt)
+        self.assertIn("Methods: method0", prompt)
+        self.assertIn("Members: accountMapper", prompt)
+        self.assertIn("Identifiers: accountId", prompt)
+        self.assertIn("Comments: Handles customer accounts", prompt)
+        self.assertIn("String literals: Account not found", prompt)
+        self.assertIn("method7", prompt)
+        self.assertNotIn("method8", prompt)
+
+    def test_structured_evidence_caps_individual_long_values(self):
+        doc = ClassDocument(
+            "AccountService",
+            "com.bank.account.AccountService",
+            "com.bank.account",
+            "x.java",
+            comments=["x" * 1000],
+        )
+
+        prompt = topic._whole_corpus_prompt([doc], [])
+
+        self.assertLess(len(prompt), 300)
+        self.assertIn("…", prompt)
+
 
 class LabelClusterTests(unittest.TestCase):
     def setUp(self):

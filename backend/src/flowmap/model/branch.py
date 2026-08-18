@@ -142,10 +142,13 @@ class BranchGroup:
     # two different places -- so it can't be one pre-clone value either.
     convergesAt: str | None = None
 
-    # flatten_cfg only: where the enclosing method instance returns to.
+    # flatten_cfg internal only: where the enclosing method instance returns to.
     # An arm whose terminus is "return" leaves the method entirely, so its
     # arrow points here, NOT at convergesAt -- with code after the branch
     # the two differ (the normal path runs it, the returning arm skips it).
+    # _analyze_branch_routes consumes this into each arm's targetIds; it is
+    # deliberately omitted from serialized output so the frontend receives
+    # only the resolved route contract.
     returnsTo: list[str] = field(default_factory=list)
 
     @classmethod
@@ -171,7 +174,5 @@ class BranchGroup:
             result["branchPointIds"] = self.branchPointIds
         if self.convergesAt is not None:
             result["convergesAt"] = self.convergesAt
-        if self.returnsTo:
-            result["returnsTo"] = self.returnsTo
         result["arms"] = [a.to_dict() for a in self.arms]
         return result

@@ -30,11 +30,11 @@ from domain.cfg_pipeline import (
     flatten_cfg,
 )
 from domain.topic_modelling import (
-    discover_topics, 
+    discover_topics_with_centroids,
     extract_readme_documents,
 )
 from domain.phase_discovery import build_phase_tree
-from domain.opseq_clustering import assign_operation_topics
+from domain.opseq_clustering import assign_operation_topics_batch
 from model import Graph
 
 
@@ -241,11 +241,12 @@ if __name__ == "__main__":
             )
             whole_corpus_fn = functools.partial(discover_topics_whole_corpus, client)
 
-            topic_clusters = discover_topics(
+            topic_discovery = discover_topics_with_centroids(
                 class_docs, readme_docs,
                 label_fn=label_fn,
                 whole_corpus_fn=whole_corpus_fn,
             )
+            topic_clusters = topic_discovery.clusters
 
         # OPSEQ TOPIC ASSIGNMENT & LABELING
         with timed("Opseq topic assignment & labeling"):
@@ -258,18 +259,21 @@ if __name__ == "__main__":
             full_cfg = filter_and_classify_roots_and_orphans(full_cfg)
             root_methods = root_method_full_names(full_cfg)
 
-            opseq_topic_assignment = {}
+            opseqs = {
+                root_id: filter_noise_cfg(slice_from_root(full_cfg, root_id))
+                for root_id in full_cfg.roots
+            }
+            opseq_topic_assignment = assign_operation_topics_batch(
+                opseqs,
+                topic_clusters,
+                method_docs,
+                topic_discovery.centroids,
+                formed_by_llm=formed_by_llm,
+                classify_fn=classify_fn,
+            )
             opseq_labels = {}
-            for root_id in full_cfg.roots:
-                opseq = filter_noise_cfg(slice_from_root(full_cfg, root_id))
-
-                topic_assignment = assign_operation_topics(
-                    opseq, topic_clusters, class_docs, method_docs,
-                    formed_by_llm=formed_by_llm,
-                    classify_fn=classify_fn,
-                )
-                opseq_topic_assignment[root_id] = topic_assignment
-
+            for root_id, opseq in opseqs.items():
+                topic_assignment = opseq_topic_assignment[root_id]
                 assigned_cluster = (
                     clusters_by_label.get(topic_assignment[0].label) if topic_assignment else None
                 )
