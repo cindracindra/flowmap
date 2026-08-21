@@ -202,3 +202,65 @@ def test_receiver_type_identifies_the_exception_when_the_callee_is_unresolved() 
     })
 
     assert find_excluded_operations(graph) == {"exception": "exception-mechanic"}
+
+
+def test_throwing_arm_is_derived_from_filtered_node_information() -> None:
+    """Stage 1 must not require BranchGroup metadata on the filtered graph."""
+    graph = Graph.from_dict({
+        "nodes": [
+            {
+                "id": "refund", "type": "call",
+                "calleeFullName": "Payment.refund",
+                "branchArms": [{"groupId": "guard", "armLabel": "if"}],
+            },
+            {
+                "id": "exception", "type": "call", "deadEnd": True,
+                "calleeFullName": "IllegalStateException.<init>:void()",
+                "branchArms": [{"groupId": "guard", "armLabel": "if"}],
+            },
+            {
+                "id": "continue", "type": "call",
+                "calleeFullName": "Order.continue",
+            },
+        ],
+        "edges": [],
+    })
+
+    assert find_excluded_operations(graph) == {
+        "refund": "in-throwing-arm",
+        "exception": "exception-mechanic",
+    }
+
+
+def test_node_derived_throw_excludes_only_the_innermost_arm() -> None:
+    graph = Graph.from_dict({
+        "nodes": [
+            {
+                "id": "outer_work", "type": "call",
+                "calleeFullName": "Order.prepare",
+                "branchArms": [{"groupId": "outer", "armLabel": "if"}],
+            },
+            {
+                "id": "inner_cleanup", "type": "call",
+                "calleeFullName": "Order.cleanup",
+                "branchArms": [
+                    {"groupId": "outer", "armLabel": "if"},
+                    {"groupId": "inner", "armLabel": "if"},
+                ],
+            },
+            {
+                "id": "exception", "type": "call", "deadEnd": True,
+                "calleeFullName": "IllegalStateException.<init>:void()",
+                "branchArms": [
+                    {"groupId": "outer", "armLabel": "if"},
+                    {"groupId": "inner", "armLabel": "if"},
+                ],
+            },
+        ],
+        "edges": [],
+    })
+
+    assert find_excluded_operations(graph) == {
+        "inner_cleanup": "in-throwing-arm",
+        "exception": "exception-mechanic",
+    }

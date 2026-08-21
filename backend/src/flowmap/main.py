@@ -29,8 +29,9 @@ from domain.topic_modelling import (
 from domain.cfg_slicing import filter_and_classify_roots_and_orphans, slice_from_root
 from domain.cfg_filtering import filter_noise_cfg
 from domain.opseq_orchestration import prepare_operation_cfg
-from domain.phase_orchestration import discover_phases
-from service.phase import label_phase, resolve_ambiguous_phase_gates
+from domain.phase_orchestration import analyse_codebase_phases, discover_phases
+from domain.phase_segmentation import Analysis
+from service.phase import label_phase, resolve_phase_gate_batch
 from domain.opseq_clustering import assign_operation_topics_batch
 from model import Graph
 
@@ -118,8 +119,8 @@ class OpseqVisualisation:
 def build_opseq_visualisation(
     full_cfg: Graph,
     root_id: str,
+    phase_analysis: Analysis,
     *,
-    phase_gate_resolver=None,
     phase_labeler=None,
 ) -> OpseqVisualisation:
     """Build the graph and phase data consumed by one operation visualisation.
@@ -135,12 +136,10 @@ def build_opseq_visualisation(
     filtered_cfg = cfg.filtered
     flattened_cfg = cfg.flattened
     phase_tree = discover_phases(
+        phase_analysis,
         flattened_cfg,
-        (node.id for node in flattened_cfg.nodes if node.type == "call"),
-        gate_resolver=phase_gate_resolver,
         labeler=phase_labeler,
-        timer=lambda label: timed(f"    {label}"),
-    ).to_dict()
+    )
     return OpseqVisualisation(
         operation_cfg=operation_cfg,
         filtered_cfg=filtered_cfg,
@@ -153,13 +152,17 @@ def build_all_opseq_visualisations(
     full_cfg: Graph, *, phase_gate_resolver=None, phase_labeler=None
 ) -> dict[str, dict]:
     """Precompute the frontend payload for every classified operation root."""
+    with timed("Whole-codebase phase analysis"):
+        phase_analysis = analyse_codebase_phases(
+            full_cfg, phase_gate_resolver
+        )
     payloads: dict[str, dict] = {}
     for root_id, method_full_name in root_method_full_names(full_cfg).items():
         with timed(f"Opseq visualisation: {method_full_name}"):
             visualisation = build_opseq_visualisation(
                 full_cfg,
                 root_id,
-                phase_gate_resolver=phase_gate_resolver,
+                phase_analysis,
                 phase_labeler=phase_labeler,
             )
         payloads[root_id] = {
@@ -331,7 +334,7 @@ if __name__ == "__main__":
         with timed("CFG visualisation export"):
             phase_client = client if args.mode == "all" else get_client(args.provider)
             phase_gate_resolver = functools.partial(
-                resolve_ambiguous_phase_gates, phase_client
+                resolve_phase_gate_batch, phase_client
             )
             phase_labeler = functools.partial(label_phase, phase_client)
             export_cfg_visualisations(

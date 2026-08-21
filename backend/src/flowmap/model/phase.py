@@ -17,7 +17,6 @@ BoundaryType = Literal[
     "branch-entry",
     "branch-convergence",
     "semantic-split",
-    "nested-region-retained",
     "uncertain-fallback",
 ]
 

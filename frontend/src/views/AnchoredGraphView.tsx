@@ -746,9 +746,6 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     return selection;
   });
   const [zoom, setZoom] = useState(1);
-  const [pan, setPan] = useState({ x: 120, y: 60 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(false);
   const [leftWidth, setLeftWidth] = useState(240);
@@ -764,7 +761,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   // screen space, so only one is shown at a time.
   const [overlay, setOverlay] = useState<"branches" | "phases" | "none">("branches");
   const [hoveredPanelId, setHoveredPanelId] = useState<string | null>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedNode = selectedId ? (NODES_BY_ID.get(selectedId) ?? null) : null;
   const filteredProjectTree = useMemo(
@@ -942,6 +939,43 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     [activePanels, armSelection, positions, panelLabelWidths, visibleEdges],
   );
 
+  // Give the SVG an intrinsic, finite size. The surrounding element then
+  // provides native scrollbars instead of allowing an unbounded transform.
+  // Labels and branch regions are included so neither can be clipped at an
+  // edge of the scrollable document.
+  const graphBounds = useMemo(() => {
+    const PAD = 48;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const [id, position] of positions) {
+      const node = NODES_BY_ID.get(id);
+      if (!node) continue;
+      const radius = NODE_RADIUS[node.type];
+      minX = Math.min(minX, position.x - radius - 24);
+      minY = Math.min(minY, position.y - radius - 24);
+      maxX = Math.max(maxX, position.x + (panelLabelWidths.get(id) ?? radius) + 24);
+      maxY = Math.max(maxY, position.y + radius + 24);
+    }
+    for (const geometry of panelGeometry) {
+      minX = Math.min(minX, geometry.x);
+      minY = Math.min(minY, geometry.y);
+      maxX = Math.max(maxX, geometry.x + geometry.width);
+      maxY = Math.max(maxY, geometry.y + geometry.height);
+    }
+    if (!Number.isFinite(minX)) return { offsetX: 0, offsetY: 0, width: 1, height: 1 };
+    return {
+      offsetX: PAD - minX,
+      offsetY: PAD - minY,
+      width: maxX - minX + PAD * 2,
+      height: maxY - minY + PAD * 2,
+    };
+  }, [NODES_BY_ID, panelGeometry, panelLabelWidths, positions]);
+
+  const canvasWidth = Math.ceil(graphBounds.width * zoom);
+  const canvasHeight = Math.ceil(graphBounds.height * zoom);
+
   const handleArmSelect = useCallback((panelId: string, armId: string) => {
     setArmSelection((prev) => {
       const next = new Map(prev);
@@ -975,25 +1009,6 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
       return nextId;
     });
   }, []);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      if ((e.target as SVGElement).closest(".graph-node")) return;
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-    },
-    [pan],
-  );
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<SVGSVGElement>) => {
-      if (!isPanning) return;
-      setPan({ x: e.clientX - panStart.x, y: e.clientY - panStart.y });
-    },
-    [isPanning, panStart],
-  );
-
-  const handleMouseUp = useCallback(() => setIsPanning(false), []);
 
   const beginPanelResize = useCallback((side: ResizeSide, event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1034,43 +1049,6 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
       document.body.style.cursor = previousCursor;
     };
   }, [resizingSide]);
-
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-
-    // Trackpad pinch is exposed as ctrl+wheel by browsers. Zoom around the
-    // pointer so the item under the fingers stays in place.
-    if (e.ctrlKey || e.metaKey) {
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const pointerX = e.clientX - rect.left;
-      const pointerY = e.clientY - rect.top;
-      const nextZoom = Math.min(3, Math.max(0.2, zoom * Math.exp(-e.deltaY * 0.01)));
-      const graphX = (pointerX - pan.x) / zoom;
-      const graphY = (pointerY - pan.y) / zoom;
-      setPan({
-        x: pointerX - graphX * nextZoom,
-        y: pointerY - graphY * nextZoom,
-      });
-      setZoom(nextZoom);
-      return;
-    }
-
-    // Ordinary wheel/two-finger scrolling pans the canvas. Shift+wheel is
-    // horizontal for mouse users; trackpads already provide deltaX.
-    const shiftHorizontal = e.shiftKey && e.deltaX === 0;
-    setPan((current) => ({
-      x: current.x - (shiftHorizontal ? e.deltaY : e.deltaX),
-      y: current.y - (shiftHorizontal ? 0 : e.deltaY),
-    }));
-  }, [pan, zoom]);
-
-  useEffect(() => {
-    const el = svgRef.current;
-    if (!el) return;
-    el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
-  }, [handleWheel]);
 
   const methodCount = GRAPH.nodes.filter(
     (n) => n.type !== "leaf" && visibleIds.has(n.id),
@@ -1182,30 +1160,22 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
           overflow="hidden"
           style={{ minWidth: 0, background: "var(--canvas-background)" }}
         >
-          <svg style={{ position: "absolute", inset: 0, pointerEvents: "none" }} width="100%" height="100%">
+          <div
+            ref={scrollRef}
+            role="region"
+            tabIndex={0}
+            aria-label="Scrollable graph canvas"
+            style={{ position: "absolute", inset: 0, overflow: "auto", overscrollBehavior: "contain" }}
+          >
+            <svg
+              width={canvasWidth}
+              height={canvasHeight}
+              style={{ display: "block", minWidth: "100%", minHeight: "100%" }}
+            >
             <defs>
               <pattern id="dotgrid" x="0" y="0" width="24" height="24" patternUnits="userSpaceOnUse">
                 <circle cx="1" cy="1" r="0.7" fill="var(--canvas-dot)" />
               </pattern>
-            </defs>
-            <rect width="100%" height="100%" fill="url(#dotgrid)" />
-          </svg>
-
-          <svg
-            ref={svgRef}
-            style={{
-              position: "absolute",
-              inset: 0,
-              width: "100%",
-              height: "100%",
-              cursor: isPanning ? "grabbing" : "grab",
-            }}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-          >
-            <defs>
               {(Object.keys(EDGE_STYLE) as EdgeClass[]).map((kind) => (
                 <marker
                   key={kind}
@@ -1220,8 +1190,9 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                 </marker>
               ))}
             </defs>
+            <rect width="100%" height="100%" fill="url(#dotgrid)" />
 
-            <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
+            <g transform={`scale(${zoom}) translate(${graphBounds.offsetX}, ${graphBounds.offsetY})`}>
               {/* Branch regions go behind everything: they are the ground
                   the nodes sit on, not an annotation over them. */}
               {overlay === "branches" && (
@@ -1396,7 +1367,8 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                 />
               )}
             </g>
-          </svg>
+            </svg>
+          </div>
 
           <Flex
             direction="column"
@@ -1457,7 +1429,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                 color="gray"
                 onClick={() => {
                   setZoom(1);
-                  setPan({ x: 120, y: 60 });
+                  scrollRef.current?.scrollTo({ left: 0, top: 0 });
                 }}
               >
                 <Maximize2 size={14} />

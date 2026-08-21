@@ -5,7 +5,7 @@ import re
 
 from llm.client import LLMClient, LLMError
 
-from domain.phase_resolution import CandidateGate, GateAnswer
+from domain.phase_resolution import GateAnswer, GateQuestion
 from llm.prompt import _LABEL_PHASE_SYSTEM_PROMPT, _PHASE_GATE_SYSTEM_PROMPT
 from model import Graph
 
@@ -31,51 +31,63 @@ def _node_evidence(graph: Graph, node_id: str) -> dict:
 
 def _batch_gate_prompt(
     graph: Graph,
-    gates: tuple[CandidateGate, ...],
-    current_phase_node_ids: tuple[str, ...],
-) -> tuple[str, dict[str, CandidateGate]]:
-    gates_by_id = {f"gate-{index + 1}": gate for index, gate in enumerate(gates)}
+    questions: tuple[GateQuestion, ...],
+) -> str:
+    operation_ids = tuple(dict.fromkeys(
+        node_id
+        for question in questions
+        for node_id in (
+            *question.currentPhaseNodeIds,
+            question.gate.frontierId,
+            question.gate.candidateId,
+        )
+    ))
     payload = {
-        "initialCurrentPhase": [
-            _node_evidence(graph, node_id) for node_id in current_phase_node_ids
-        ],
-        "gates": [
+        "operations": {
+            node_id: _node_evidence(graph, node_id)
+            for node_id in operation_ids
+        },
+        "questions": [
             {
-                "gate_id": gate_id,
-                "knownAction": None if gate.action == "UNCERTAIN" else gate.action,
-                "immediateFrontier": _node_evidence(graph, gate.frontierId),
-                "candidate": _node_evidence(graph, gate.candidateId),
-                "systematicEvidence": {
-                    "localVerdict": gate.systematic.local.verdict,
-                    "cohesionVerdict": gate.systematic.cohesion.verdict,
-                    "evidence": list(gate.systematic.evidence),
-                    "missingEvidence": list(gate.systematic.local.missingEvidence),
+                "id": question.id,
+                "methodEntryId": question.methodEntryId,
+                "currentPhase": list(question.currentPhaseNodeIds),
+                "frontier": question.gate.frontierId,
+                "candidate": question.gate.candidateId,
+                "systematic": {
+                    "localVerdict": question.gate.local.verdict,
+                    "cohesionVerdict": question.gate.cohesion.verdict,
+                    "evidence": list(dict.fromkeys((
+                        *question.gate.local.evidence,
+                        *question.gate.cohesion.evidence,
+                    ))),
+                    "missingEvidence": list(
+                        question.gate.local.missingEvidence
+                    ),
                 },
             }
-            for gate_id, gate in gates_by_id.items()
+            for question in questions
         ],
     }
-    return json.dumps(payload, ensure_ascii=False), gates_by_id
+    return json.dumps(payload, ensure_ascii=False)
 
 
-def resolve_ambiguous_phase_gates(
+def resolve_phase_gate_batch(
     client: LLMClient,
     graph: Graph,
-    gates: tuple[CandidateGate, ...],
-    current_phase_node_ids: tuple[str, ...],
-) -> dict[tuple[str, str], GateAnswer]:
-    """Resolve one ordered, single-opseq batch containing at most 20 unknowns."""
-    if sum(gate.action == "UNCERTAIN" for gate in gates) > 20:
-        raise ValueError("phase gate batch cannot contain more than 20 ambiguous gates")
-    prompt, gates_by_id = _batch_gate_prompt(
-        graph, gates, current_phase_node_ids
-    )
+    questions: tuple[GateQuestion, ...],
+) -> dict[str, GateAnswer]:
+    """Resolve one batch of independent questions from across the codebase."""
+    if not questions:
+        return {}
+    prompt = _batch_gate_prompt(graph, questions)
+    questions_by_id = {question.id: question for question in questions}
     try:
         content = client.complete(
             role="small",
             system=_PHASE_GATE_SYSTEM_PROMPT,
             user=prompt,
-            max_tokens=1280,
+            max_tokens=max(512, min(4096, 160 * len(questions))),
             json_object=True,
         ).strip()
     except LLMError:
@@ -87,13 +99,13 @@ def resolve_ambiguous_phase_gates(
         return {}
 
     decisions = parsed.get("decisions", []) if isinstance(parsed, dict) else []
-    answers: dict[tuple[str, str], GateAnswer] = {}
+    answers: dict[str, GateAnswer] = {}
     for decision in decisions if isinstance(decisions, list) else []:
         if not isinstance(decision, dict):
             continue
-        gate = gates_by_id.get(decision.get("gate_id"))
+        question_id = decision.get("id")
         action = decision.get("action")
-        if gate is None or gate.action != "UNCERTAIN" or action not in {"MERGE", "SPLIT"}:
+        if question_id not in questions_by_id or action not in {"MERGE", "SPLIT"}:
             continue
         confidence = decision.get("confidence", 0.5)
         if not isinstance(confidence, (int, float)) or isinstance(confidence, bool):
@@ -105,7 +117,7 @@ def resolve_ambiguous_phase_gates(
             if isinstance(reason, str) and reason.strip()
             else ("llm-semantic-decision",)
         )
-        answers[(gate.frontierId, gate.candidateId)] = (
+        answers[question_id] = (
             action,
             confidence,
             evidence,

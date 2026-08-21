@@ -7,144 +7,190 @@ FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap
 sys.path.insert(0, str(FLOWMAP_SRC))
 
 from domain.phase_resolution import (  # noqa: E402
-    construct_connected_candidates,
-    refine_ambiguous_gates,
+    collect_uncertain_gates,
+    resolve_uncertain_gates,
 )
+from domain.phase_segmentation import analyse  # noqa: E402
 from model import Graph  # noqa: E402
 
 
-OBSERVED = ["receiver", "arguments", "inputs", "callsiteFields", "output"]
-
-
-def _feature(*, receiver=None, inputs=(), role=None):
-    value = {
-        "inputIdentifiers": list(inputs),
-        "arguments": [],
-        "fieldsRead": [],
-        "fieldsWritten": [],
-        "domainTypes": [],
-        "methodTerms": [],
-        "observedFeatures": OBSERVED,
+def _uncertain_features(term: str) -> dict:
+    return {
+        "methodTerms": [term],
+        "observedFeatures": ["methodTerms"],
     }
-    if receiver is not None:
-        value["receiver"] = receiver
-    if role is not None:
-        value["role"] = role
-    return value
 
 
-def _graph(features, sequence):
+def _two_method_graph() -> Graph:
     return Graph.from_dict({
+        "roots": ["first_entry", "second_entry"],
         "nodes": [
-            {"id": node_id, "type": "call", "calleeFullName": f"Service.{node_id}"}
-            for node_id in features
+            {"id": "first_entry", "type": "entry", "calleeFullName": "first"},
+            {"id": "a", "type": "call", "callerMethod": "first"},
+            {"id": "b", "type": "call", "callerMethod": "first"},
+            {"id": "second_entry", "type": "entry", "calleeFullName": "second"},
+            {"id": "c", "type": "call", "callerMethod": "second"},
+            {"id": "d", "type": "call", "callerMethod": "second"},
         ],
         "edges": [
-            {"from": source, "to": target, "type": "sequence"}
-            for source, target in sequence
+            {"from": "first_entry", "to": "a", "type": "sequence"},
+            {"from": "a", "to": "b", "type": "sequence"},
+            {"from": "second_entry", "to": "c", "type": "sequence"},
+            {"from": "c", "to": "d", "type": "sequence"},
         ],
-        "semanticFeatures": features,
+        "semanticFeatures": {
+            node_id: _uncertain_features(node_id)
+            for node_id in ("a", "b", "c", "d")
+        },
     })
 
 
-def test_stage_8_constructs_local_first_candidates() -> None:
-    subject = _graph(
-        {
-            "a": _feature(receiver="account", inputs=("order",)),
-            "b": _feature(receiver="account", inputs=("order",)),
-            "c": _feature(receiver="mailer", inputs=("message",)),
-        },
-        (("a", "b"), ("b", "c")),
-    )
+def test_collects_uncertain_gates_across_all_methods() -> None:
+    analysis = analyse(_two_method_graph())
 
-    plan = construct_connected_candidates(subject, ("a", "b", "c"))
+    questions = collect_uncertain_gates(analysis)
 
-    assert [phase.nodeIds for phase in plan.phases] == [("a", "b"), ("c",)]
-    assert [gate.action for gate in plan.gates] == ["MERGE", "SPLIT"]
+    assert [question.id for question in questions] == ["q-1", "q-2"]
+    assert [question.methodEntryId for question in questions] == [
+        "first_entry", "second_entry"
+    ]
+    assert [question.currentPhaseNodeIds for question in questions] == [
+        ("a",), ("c",)
+    ]
 
 
-def test_stage_8_excludes_exception_mechanics() -> None:
-    subject = _graph(
-        {
-            "a": _feature(receiver="account", inputs=("order",)),
-            "throw": _feature(role="exception-mechanic"),
-        },
-        (("a", "throw"),),
-    )
+def test_one_codebase_batch_updates_gates_and_rematerialises_methods() -> None:
+    analysis = analyse(_two_method_graph())
+    batches = []
 
-    plan = construct_connected_candidates(subject, ("a", "throw"))
-
-    assert plan.orderedNodeIds == ("a",)
-    assert plan.phases[0].nodeIds == ("a",)
-
-
-def test_stage_9_calls_llm_only_for_uncertain_gates() -> None:
-    subject = _graph(
-        {
-            "a": _feature(receiver="account", inputs=("order",)),
-            "b": _feature(receiver="account", inputs=("order",)),
-            # Missing observations make b -> c uncertain.
-            "c": {
-                "methodTerms": ["validate", "order"],
-                "observedFeatures": ["methodTerms"],
-            },
-        },
-        (("a", "b"), ("b", "c")),
-    )
-    plan = construct_connected_candidates(subject, ("a", "b", "c"))
-    calls = []
-
-    def resolver(graph, gates, phase_nodes):
-        calls.append((tuple((g.frontierId, g.candidateId) for g in gates), phase_nodes))
+    def resolver(graph, questions):
+        batches.append(tuple(
+            (question.methodEntryId, question.gate.candidateId)
+            for question in questions
+        ))
         return {
-            (gate.frontierId, gate.candidateId): (
-                "MERGE", 0.8, ("llm:same validation subprocess",)
-            )
-            for gate in gates if gate.action == "UNCERTAIN"
+            questions[0].id: ("MERGE", 0.9, ("llm:first",)),
+            questions[1].id: ("SPLIT", 0.8, ("llm:second",)),
         }
 
-    refined = refine_ambiguous_gates(subject, plan, resolver)
+    resolved = resolve_uncertain_gates(analysis, resolver)
 
-    assert calls == [((("a", "b"), ("b", "c")), ("a",))]
-    assert refined.phases[0].nodeIds == ("a", "b", "c")
-    assert refined.gates[0].decidedBy == "systematic"
-    assert refined.gates[1].decidedBy == "llm"
-
-
-def test_invalid_llm_answer_leaves_uncertainty_visible() -> None:
-    subject = _graph(
-        {"a": _feature(receiver="this"), "b": _feature(receiver="this")},
-        (("a", "b"),),
-    )
-    plan = construct_connected_candidates(subject, ("a", "b"))
-
-    refined = refine_ambiguous_gates(subject, plan, lambda *_: {})
-
-    assert refined.gates[0].action == "UNCERTAIN"
-    assert refined.gates[0].decidedBy == "systematic"
-    assert [phase.nodeIds for phase in refined.phases] == [("a",), ("b",)]
+    assert resolved == 2
+    assert batches == [(('first_entry', 'b'), ('second_entry', 'd'))]
+    assert [phase.nodes for phase in analysis.methods["first_entry"].phases] == [
+        ["a", "b"]
+    ]
+    assert [phase.nodes for phase in analysis.methods["second_entry"].phases] == [
+        ["c"], ["d"]
+    ]
+    assert analysis.methods["first_entry"].gates[0].decidedBy == "llm"
+    assert analysis.methods["second_entry"].gates[0].decidedBy == "llm"
 
 
-def test_ambiguous_gates_are_batched_twenty_per_query() -> None:
-    node_ids = tuple(f"n{index}" for index in range(42))
-    subject = _graph(
-        {node_id: _feature(receiver="this") for node_id in node_ids},
-        tuple(zip(node_ids, node_ids[1:])),
-    )
-    plan = construct_connected_candidates(subject, node_ids)
+def test_global_work_list_is_split_into_batches() -> None:
+    node_ids = [f"n{index}" for index in range(6)]
+    graph = Graph.from_dict({
+        "roots": ["entry"],
+        "nodes": [
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
+            *[
+                {"id": node_id, "type": "call", "callerMethod": "run"}
+                for node_id in node_ids
+            ],
+        ],
+        "edges": [
+            {"from": "entry", "to": node_ids[0], "type": "sequence"},
+            *[
+                {"from": left, "to": right, "type": "sequence"}
+                for left, right in zip(node_ids, node_ids[1:])
+            ],
+        ],
+        "semanticFeatures": {
+            node_id: _uncertain_features(node_id) for node_id in node_ids
+        },
+    })
+    analysis = analyse(graph)
     batch_sizes = []
 
-    def resolver(graph, gates, phase_nodes):
-        unknown = [gate for gate in gates if gate.action == "UNCERTAIN"]
-        batch_sizes.append(len(unknown))
+    def resolver(subject, questions):
+        batch_sizes.append(len(questions))
         return {
-            (gate.frontierId, gate.candidateId): (
-                "MERGE", 0.9, ("llm:same subprocess",)
-            )
-            for gate in unknown
+            question.id: ("MERGE", 0.9, ("llm:same process",))
+            for question in questions
         }
 
-    refined = refine_ambiguous_gates(subject, plan, resolver)
+    assert resolve_uncertain_gates(analysis, resolver, batch_size=2) == 5
+    assert batch_sizes == [2, 2, 1]
+    assert [phase.nodes for phase in analysis.methods["entry"].phases] == [
+        node_ids
+    ]
 
-    assert batch_sizes == [20, 20, 1]
-    assert len(refined.phases) == 1
+
+def test_missing_or_invalid_answers_leave_fallback_boundaries() -> None:
+    analysis = analyse(_two_method_graph())
+
+    resolved = resolve_uncertain_gates(
+        analysis,
+        lambda graph, questions: {
+            questions[0].id: ("INVALID", 0.9, ()),
+        },
+    )
+
+    assert resolved == 0
+    assert all(
+        gate.action == "UNCERTAIN" and gate.decidedBy == "fallback"
+        for method in analysis.methods.values()
+        for gate in method.gates
+        if gate.kind == "adjacency"
+    )
+
+
+def test_non_positive_batch_size_is_rejected() -> None:
+    analysis = analyse(_two_method_graph())
+
+    try:
+        resolve_uncertain_gates(analysis, lambda *_: {}, batch_size=0)
+    except ValueError as error:
+        assert "positive" in str(error)
+    else:
+        raise AssertionError("expected invalid batch size to fail")
+
+
+def test_region_override_suppresses_uncertain_gate_inside_collapsed_region() -> None:
+    graph = Graph.from_dict({
+        "roots": ["entry"],
+        "nodes": [
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
+            {"id": "pre", "type": "call", "callerMethod": "run"},
+            {
+                "id": "a", "type": "call", "callerMethod": "run",
+                "branchArms": [{"groupId": "g", "armLabel": "if"}],
+            },
+            {
+                "id": "b", "type": "call", "callerMethod": "run",
+                "branchArms": [{"groupId": "g", "armLabel": "if"}],
+            },
+        ],
+        "edges": [
+            {"from": "entry", "to": "pre", "type": "sequence"},
+            {"from": "pre", "to": "a", "type": "sequence"},
+            {"from": "a", "to": "b", "type": "sequence"},
+        ],
+        "semanticFeatures": {
+            node_id: {
+                "methodTerms": ["order"],
+                "observedFeatures": ["methodTerms"],
+            }
+            for node_id in ("pre", "a", "b")
+        },
+    })
+    analysis = analyse(graph)
+
+    assert any(
+        gate.kind == "adjacency" and gate.action == "UNCERTAIN"
+        for gate in analysis.methods["entry"].gates
+    )
+    assert [phase.nodes for phase in analysis.methods["entry"].phases] == [
+        ["pre", "a", "b"]
+    ]
+    assert collect_uncertain_gates(analysis) == ()

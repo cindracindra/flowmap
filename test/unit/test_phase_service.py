@@ -8,74 +8,80 @@ from unittest.mock import MagicMock
 FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
 sys.path.insert(0, str(FLOWMAP_SRC))
 
-from domain.phase_resolution import construct_connected_candidates  # noqa: E402
+from domain.phase_resolution import collect_uncertain_gates  # noqa: E402
+from domain.phase_segmentation import analyse  # noqa: E402
 from model import Graph  # noqa: E402
 from service.phase import (  # noqa: E402
     label_phase,
-    resolve_ambiguous_phase_gates,
+    resolve_phase_gate_batch,
 )
 
 
 def _uncertain_subject():
     graph = Graph.from_dict({
         "nodes": [
-            {"id": "validate", "type": "call", "calleeFullName": "Order.validate"},
-            {"id": "reserve", "type": "call", "calleeFullName": "Stock.reserve"},
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
+            {
+                "id": "validate", "type": "call",
+                "callerMethod": "run", "calleeFullName": "Order.validate",
+            },
+            {
+                "id": "reserve", "type": "call",
+                "callerMethod": "run", "calleeFullName": "Stock.reserve",
+            },
         ],
-        "edges": [{"from": "validate", "to": "reserve", "type": "sequence"}],
+        "edges": [
+            {"from": "entry", "to": "validate", "type": "sequence"},
+            {"from": "validate", "to": "reserve", "type": "sequence"},
+        ],
         "semanticFeatures": {
             "validate": {"methodTerms": ["validate", "order"]},
             "reserve": {"methodTerms": ["reserve", "stock"]},
         },
     })
-    plan = construct_connected_candidates(graph, ("validate", "reserve"))
-    return graph, plan.ambiguousGates[0]
+    question = collect_uncertain_gates(analyse(graph))[0]
+    return graph, question
 
 
 def test_phase_gate_uses_topic_modelling_llm_configuration_and_json_mode() -> None:
-    graph, gate = _uncertain_subject()
+    graph, question = _uncertain_subject()
     client = MagicMock()
     client.complete.return_value = (
-        '{"decisions":[{"gate_id":"gate-1","action":"SPLIT",'
+        '{"decisions":[{"id":"q-1","action":"SPLIT",'
         '"confidence":0.91,"reason":"different subprocess"}]}'
     )
 
-    answers = resolve_ambiguous_phase_gates(
-        client, graph, (gate,), ("validate",)
-    )
-    result = answers[("validate", "reserve")]
+    answers = resolve_phase_gate_batch(client, graph, (question,))
+    result = answers["q-1"]
 
     assert result == ("SPLIT", 0.91, ("llm:different subprocess",))
     request = client.complete.call_args.kwargs
     assert request["role"] == "small"
     assert request["json_object"] is True
     payload = json.loads(request["user"])
-    assert payload["gates"][0]["immediateFrontier"]["callee"] == "Order.validate"
-    assert payload["gates"][0]["candidate"]["callee"] == "Stock.reserve"
+    assert payload["operations"]["validate"]["callee"] == "Order.validate"
+    assert payload["operations"]["reserve"]["callee"] == "Stock.reserve"
+    assert payload["questions"][0]["currentPhase"] == ["validate"]
+    assert payload["questions"][0]["frontier"] == "validate"
+    assert payload["questions"][0]["candidate"] == "reserve"
 
 
 def test_phase_gate_rejects_invalid_decision() -> None:
-    graph, gate = _uncertain_subject()
+    graph, question = _uncertain_subject()
     client = MagicMock()
     client.complete.return_value = (
-        '{"decisions":[{"gate_id":"gate-1","action":"MAYBE"}]}'
+        '{"decisions":[{"id":"q-1","action":"MAYBE"}]}'
     )
 
-    assert resolve_ambiguous_phase_gates(
-        client, graph, (gate,), ("validate",)
-    ) == {}
+    assert resolve_phase_gate_batch(client, graph, (question,)) == {}
 
 
-def test_phase_gate_batch_rejects_more_than_twenty_ambiguous_gates() -> None:
-    graph, gate = _uncertain_subject()
+def test_empty_phase_gate_batch_does_not_call_llm() -> None:
+    graph, _ = _uncertain_subject()
     client = MagicMock()
 
-    try:
-        resolve_ambiguous_phase_gates(client, graph, (gate,) * 21, ("validate",))
-    except ValueError as error:
-        assert "20" in str(error)
-    else:
-        raise AssertionError("expected the 20-gate batch limit to be enforced")
+    assert resolve_phase_gate_batch(client, graph, ()) == {}
+    client.complete.assert_not_called()
 
 
 def test_final_phase_label_uses_topic_llm_pattern_after_membership_is_fixed() -> None:
@@ -92,3 +98,25 @@ def test_final_phase_label_uses_topic_llm_pattern_after_membership_is_fixed() ->
     assert [item["id"] for item in payload["operations"]] == [
         "validate", "reserve"
     ]
+
+
+def test_final_phase_label_reads_evidence_from_flattened_clone_ids() -> None:
+    graph = Graph.from_dict({
+        "nodes": [{
+            "id": "reserve~7", "origId": "reserve", "type": "call",
+            "calleeFullName": "Stock.reserve", "code": "stock.reserve(order)",
+        }],
+        "edges": [],
+        "semanticFeatures": {
+            "reserve~7": {"methodTerms": ["reserve", "stock"]},
+        },
+    })
+    client = MagicMock()
+    client.complete.return_value = "Stock Reservation"
+
+    assert label_phase(client, graph, ("reserve~7",), 0) == "Stock Reservation"
+
+    payload = json.loads(client.complete.call_args.kwargs["user"])
+    assert payload["operations"][0]["id"] == "reserve~7"
+    assert payload["operations"][0]["callee"] == "Stock.reserve"
+    assert payload["operations"][0]["methodTerms"] == ["reserve", "stock"]

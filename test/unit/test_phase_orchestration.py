@@ -6,18 +6,32 @@ from pathlib import Path
 FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
 sys.path.insert(0, str(FLOWMAP_SRC))
 
-from domain.phase_orchestration import discover_phases  # noqa: E402
+from domain.cfg_flattening import flatten_cfg  # noqa: E402
+from domain.phase_orchestration import (  # noqa: E402
+    analyse_codebase_phases,
+    discover_phases,
+)
 from model import Graph  # noqa: E402
 
 
 def _graph() -> Graph:
     return Graph.from_dict({
         "entryPoint": "Checkout.run",
+        "roots": ["entry"],
         "nodes": [
             {"id": "entry", "type": "entry", "calleeFullName": "Checkout.run"},
-            {"id": "validate", "type": "call", "calleeFullName": "Order.validate"},
-            {"id": "reserve", "type": "call", "calleeFullName": "Stock.reserve"},
-            {"id": "notify", "type": "call", "calleeFullName": "Mail.send"},
+            {
+                "id": "validate", "type": "call", "callerMethod": "Checkout.run",
+                "calleeFullName": "Order.validate",
+            },
+            {
+                "id": "reserve", "type": "call", "callerMethod": "Checkout.run",
+                "calleeFullName": "Stock.reserve",
+            },
+            {
+                "id": "notify", "type": "call", "callerMethod": "Checkout.run",
+                "calleeFullName": "Mail.send",
+            },
         ],
         "edges": [
             {"from": "entry", "to": "validate", "type": "sequence"},
@@ -43,76 +57,93 @@ def _graph() -> Graph:
     })
 
 
-def test_stage_10_orders_membership_resolution_before_labelling() -> None:
+def _originals(flattened: Graph, node_ids: list[str]) -> list[str]:
+    nodes = {node.id: node for node in flattened.nodes}
+    return [nodes[node_id].origId or nodes[node_id].id for node_id in node_ids]
+
+
+def test_orchestration_resolves_before_overlay_and_labelling() -> None:
     events = []
 
-    def resolve(graph, gates, current_nodes):
-        events.append(("gate", tuple(g.candidateId for g in gates), current_nodes))
+    def resolve(_graph, questions):
+        events.append(("gate", tuple(question.gate.candidateId for question in questions)))
         return {
-            (gate.frontierId, gate.candidateId): (
+            question.id: (
                 ("MERGE", 0.9, ("llm:checkout preparation",))
-                if gate.candidateId == "reserve"
-                else ("SPLIT", 0.9, ("llm:notification is next subprocess",))
+                if question.gate.candidateId == "reserve"
+                else ("SPLIT", 0.9, ("llm:next subprocess",))
             )
-            for gate in gates if gate.action == "UNCERTAIN"
+            for question in questions
         }
 
-    def label(graph, node_ids, index):
+    def label(_graph, node_ids, index):
         events.append(("label", node_ids, index))
         return "Order Preparation" if index == 0 else "Customer Notification"
 
-    result = discover_phases(
-        _graph(),
-        ("validate", "reserve", "notify"),
-        gate_resolver=resolve,
-        labeler=label,
-        structural_anchors=("straight:Checkout.run:0",),
-    )
+    graph = _graph()
+    analysis = analyse_codebase_phases(graph, resolve)
+    flattened = flatten_cfg(graph)
+    result = discover_phases(analysis, flattened, label)
 
-    assert [phase.nodes for phase in result.phases] == [
-        ["validate", "reserve"], ["notify"]
-    ]
-    assert [phase.label for phase in result.phases] == [
+    assert [
+        _originals(flattened, phase["nodes"])
+        for phase in result["phases"]
+    ] == [["validate", "reserve"], ["notify"]]
+    assert [phase["label"] for phase in result["phases"]] == [
         "Order Preparation", "Customer Notification"
     ]
     assert [event[0] for event in events] == ["gate", "label", "label"]
-    assert result.phases[0].structuralAnchors == ["straight:Checkout.run:0"]
-    assert result.phases[0].transitions[0].decidedBy == "llm"
-    assert result.phases[1].opened_by.decidedBy == "llm"
 
 
-def test_unresolved_gate_makes_result_incomplete_without_fallback_phase() -> None:
-    result = discover_phases(
-        _graph(),
-        ("validate", "reserve"),
-        gate_resolver=lambda *_: {},
-    )
+def test_unanswered_llm_gate_remains_a_fallback_split_and_is_exported() -> None:
+    graph = _graph()
+    analysis = analyse_codebase_phases(graph, lambda _graph, _questions: {})
+    flattened = flatten_cfg(graph)
 
-    assert result.phases == ()
-    assert result.complete is False
-    exported = result.to_dict()
-    assert exported["complete"] is False
-    assert exported["unresolvedGates"][0]["candidateId"] == "reserve"
+    result = discover_phases(analysis, flattened)
+
+    assert [_originals(flattened, phase["nodes"]) for phase in result["phases"]] == [
+        ["validate"], ["reserve"], ["notify"]
+    ]
 
 
-def test_exception_classification_runs_before_candidate_construction() -> None:
+def test_stage_one_exclusion_is_applied_before_overlay() -> None:
     graph = Graph.from_dict({
+        "entryPoint": "run",
+        "roots": ["entry"],
         "nodes": [
-            {"id": "work", "type": "call", "calleeFullName": "Order.save"},
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
             {
-                "id": "error", "type": "call", "deadEnd": True,
+                "id": "work", "type": "call", "callerMethod": "run",
+                "calleeFullName": "Order.save",
+            },
+            {
+                "id": "error", "type": "call", "callerMethod": "run",
+                "deadEnd": True,
                 "calleeFullName": "IllegalStateException.<init>:void()",
                 "branchArms": [{"groupId": "guard", "armLabel": "if"}],
             },
         ],
-        "edges": [{"from": "work", "to": "error", "type": "sequence"}],
+        "edges": [
+            {"from": "entry", "to": "work", "type": "sequence"},
+            {"from": "work", "to": "error", "type": "sequence"},
+        ],
         "branchGroups": [{
-            "id": "guard", "kind": "IF", "branchPointIds": ["work"],
-            "arms": [{"label": "if", "empty": False, "terminus": "throw", "firstCallId": "error"}],
+            "id": "guard", "kind": "IF", "method": "run",
+            "branchPointIds": ["work"],
+            "arms": [{
+                "label": "if", "empty": False, "terminus": "throw",
+                "firstCallId": "error",
+            }],
         }],
+        "semanticFeatures": {"work": {"methodTerms": ["save", "order"]}},
     })
+    analysis = analyse_codebase_phases(graph)
+    flattened = flatten_cfg(graph)
 
-    result = discover_phases(graph, ("work", "error"))
+    result = discover_phases(analysis, flattened)
 
-    assert result.classification.operations["error"].role == "exception-mechanic"
-    assert result.phases[0].nodes == ["work"]
+    assert analysis.excluded == {"error": "exception-mechanic"}
+    assert [_originals(flattened, phase["nodes"]) for phase in result["phases"]] == [
+        ["work"]
+    ]
