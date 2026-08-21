@@ -494,7 +494,7 @@ function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void })
         {phase && (
           <Box p="3" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
             <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Phase {phaseIdx! + 1}
+              {phase.label ?? `Phase ${phaseIdx! + 1}`}
             </Text>
             <Flex direction="column" gap="2" mt="2">
               {phase.opened_by && <TransitionRow label="Opened by" transition={phase.opened_by} />}
@@ -785,22 +785,10 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     [FLOW_EDGES, visibleSelection],
   );
   const activePanels = useMemo(() => {
-    return PANELS.filter((panel) => {
-      const selectedId = armSelection.get(panel.id) ?? panel.defaultArmId;
-      const arm = panel.arms.find((candidate) => candidate.id === selectedId);
-      if (!arm) return false;
-      const targets = panelRouteTargetIds(panel, armSelection);
-      const routeType = panel.structure === "DISPATCH" ? "invoke" : "sequence";
-      return visibleEdges.some((edge) =>
-        edge.type === routeType
-        && targets.includes(edge.to)
-        && (
-          panel.branchPointIds.includes(edge.from)
-          || (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))
-        )
-      );
-    });
-  }, [PANELS, armSelection, visibleEdges]);
+    return PANELS.filter((panel) =>
+      panel.branchPointIds.some((id) => visibleIds.has(id))
+    );
+  }, [PANELS, visibleIds]);
 
   // Each visible panel's selected arm becomes a row band, so two branches
   // that are not nested in each other never share a row -- otherwise their
@@ -1267,7 +1255,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                       </title>
                     </rect>
                     <text x={bbox.x + 10} y={bbox.y + 16} fontSize="9" fontFamily={MONO} fill={color} opacity={0.85}>
-                      phase {i + 1}
+                      {phase.label ?? `phase ${i + 1}`}
                       {phase.opened_by ? ` · ${phase.opened_by.reason}` : ""}
                     </text>
                   </g>

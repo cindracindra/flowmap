@@ -7,6 +7,7 @@ from .branch import BranchGroup
 from .edge import Edge
 from .loop import LoopGroup
 from .node import Node
+from .semantic import NodeSemanticFeatures
 
 
 @dataclass(slots=True)
@@ -34,6 +35,11 @@ class Graph:
     branchGroups: list[BranchGroup] = field(default_factory=list)
     loopGroups: list[LoopGroup] = field(default_factory=list)
 
+    # Semantic-analysis side-car keyed by an existing node id. Keeping this
+    # separate from Node avoids duplicating graph topology and lets filtering,
+    # slicing, and flattening re-key the evidence explicitly.
+    semanticFeatures: dict[str, NodeSemanticFeatures] = field(default_factory=dict)
+
     @property
     def deadEndIds(self) -> list[str]:
         """Derived from each node's own `deadEnd` flag, not stored
@@ -42,15 +48,32 @@ class Graph:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Graph:
+        edges = [Edge.from_dict(e) for e in data.get("edges", [])]
+        semantic_features = {
+            node_id: NodeSemanticFeatures.from_dict(features)
+            for node_id, features in data.get("semanticFeatures", {}).items()
+        }
+        data_sources: dict[str, list[str]] = {}
+        data_consumers: dict[str, list[str]] = {}
+        for edge in edges:
+            if edge.type != "data":
+                continue
+            data_sources.setdefault(edge.target, []).append(edge.source)
+            data_consumers.setdefault(edge.source, []).append(edge.target)
+        for node_id, features in semantic_features.items():
+            features.dataSourceIds = list(dict.fromkeys(data_sources.get(node_id, ())))
+            features.dataConsumerIds = list(dict.fromkeys(data_consumers.get(node_id, ())))
+
         return cls(
             entryPoint=data.get("entryPoint"),
             nodes=[Node.from_dict(n) for n in data.get("nodes", [])],
-            edges=[Edge.from_dict(e) for e in data.get("edges", [])],
+            edges=edges,
             rootId=data.get("rootId"),
             roots=list(data.get("roots", [])),
             orphans=list(data.get("orphans", [])),
             branchGroups=[BranchGroup.from_dict(g) for g in data.get("branchGroups", [])],
             loopGroups=[LoopGroup.from_dict(g) for g in data.get("loopGroups", [])],
+            semanticFeatures=semantic_features,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,4 +93,9 @@ class Graph:
             result["branchGroups"] = [g.to_dict() for g in self.branchGroups]
         if self.loopGroups:
             result["loopGroups"] = [g.to_dict() for g in self.loopGroups]
+        if self.semanticFeatures:
+            result["semanticFeatures"] = {
+                node_id: features.to_dict()
+                for node_id, features in self.semanticFeatures.items()
+            }
         return result

@@ -29,22 +29,17 @@ class Node:
     # entry, call: source line number (-1 if Joern couldn't resolve one).
     line: int | None = None
 
-    # entry, call: source file containing the method/call. The extraction
-    # service normalizes Joern's filename relative to the configured source
-    # directory so consumers do not need a hand-maintained class/file map.
+    # entry, call: source file containing the method/call. 
     sourceFile: str | None = None
 
-    # entry only: Joern generated this default constructor because the
-    # class declares none. Explicit zero-argument constructors remain false.
+    # entry only: True for Joern auto-generated default constructor.
     implicitConstructor: bool | None = None
 
     # leaf only, when calleeFullName is absent: why no callee was
     # resolved (currently always "unresolved" -- see inter_cfg.sc).
     reason: str | None = None
 
-    # flatten_intermethod_cfg only: the pre-clone id this node was copied
-    # from (flattening clones a method's nodes fresh per call site, so the
-    # same original node can produce many flattened Nodes).
+    # flatten_intermethod_cfg only: pre-clone id this node was copied from.
     origId: str | None = None
 
     # filter_intermethod_cfg only: True iff `terminus == "throw"` for this
@@ -62,17 +57,10 @@ class Node:
     # call that isn't part of any branch arm.
     branchArms: list[BranchArmRef] = field(default_factory=list)
 
-    # Source loops whose body contains this node. Flattening scopes these
-    # ids per method instance and propagates them into inlined callees, so
-    # the UI can mark every operation executed by an iteration. A list is
-    # required for nested loops.
+    # Source loops whose body contains this node.
     loopIds: list[str] = field(default_factory=list)
 
-    # flatten_cfg only: the invoke-nesting level THIS CLONE was created
-    # at (0 at the root, +1 per invoke edge crossed), stamped as the
-    # flattener recurses -- not a property of the original node, which is
-    # cloned once per call site and so exists at several levels at once.
-    # Optional only for graphs that predate the field.
+    # TODO: to be removed
     depth: int | None = None
 
     @classmethod

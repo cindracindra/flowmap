@@ -2,7 +2,7 @@ import json
 import re
 from pathlib import Path
 
-from groq import Groq, GroqError
+from llm.client import LLMClient, LLMError
 
 from joern.joern_session import JoernSession
 from model import ClassDocument, Graph, MethodDocument, ReadmeDocument, TopicCluster
@@ -28,8 +28,6 @@ _ACCESSOR_PREFIX = _SYNTHETIC["accessor_prefix"]
 _LAMBDA_PATTERN = _SYNTHETIC["lambda_infix_regex"]
 _ANON_PATTERN = _SYNTHETIC["anonymous_class_suffix_regex"]
 
-_DEFAULT_LABEL_MODEL = "openai/gpt-oss-20b"
-_DEFAULT_WHOLE_CORPUS_MODEL = "openai/gpt-oss-120b"
 
 _MAX_METHOD_PROMPT_TERMS = 20
 _MAX_METHOD_PROMPT_CHARS = 1200
@@ -165,32 +163,24 @@ def _cluster_prompt(
 
 
 def label_cluster(
-    client: Groq,
+    client: LLMClient,
     cluster: TopicCluster,
     class_by_full_name: dict[str, ClassDocument] | None = None,
-    *,
-    model: str = _DEFAULT_LABEL_MODEL,
 ) -> str:
     """
-    Groq-backed cluster labeling: one call per cluster (from HDBSCAN) to 
+    LLM-backed cluster labeling: one call per cluster (from HDBSCAN) to 
     get a short, human-readable label for the cluster. Falls back to top
-    statistical-term label on any Groq API failure or an empty response.
+    statistical-term label on any provider failure or an empty response.
     """
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": _LABEL_SYSTEM_PROMPT},
-                {"role": "user", "content": _cluster_prompt(cluster, class_by_full_name)},
-            ],
-            temperature=0,
-            max_completion_tokens=128,
-            reasoning_effort="low",
-            include_reasoning=False,
-        )
-        label = (response.choices[0].message.content or "").strip()
+        label = client.complete(
+            role="small",
+            system=_LABEL_SYSTEM_PROMPT,
+            user=_cluster_prompt(cluster, class_by_full_name),
+            max_tokens=128,
+        ).strip()
         return label or _fallback_label(cluster)
-    except GroqError:
+    except LLMError:
         return _fallback_label(cluster)
 
 
@@ -210,43 +200,36 @@ def _whole_corpus_prompt(
 
 
 def discover_topics_whole_corpus(
-    client: Groq,
+    client: LLMClient,
     class_documents: list[ClassDocument],
     readme_documents: list[ReadmeDocument] | None = None,
-    *,
-    model: str = _DEFAULT_WHOLE_CORPUS_MODEL,
 ) -> list[TopicCluster]:
     """
-    Groq implementation of the whole-corpus topic discovery: one call to 
+    LLM implementation of the whole-corpus topic discovery: one call to 
     the LLM to group all classes into thematic clusters.
     """
     readme_documents = readme_documents or []
     all_full_names = {doc.fullName for doc in class_documents}
 
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": _WHOLE_CORPUS_SYSTEM_PROMPT},
-                {"role": "user", "content": _whole_corpus_prompt(class_documents, readme_documents)},
-            ],
-            temperature=0,
-            response_format={"type": "json_object"},
-            reasoning_effort="low",
-            include_reasoning=False,
+        content = client.complete(
+            role="large",
+            system=_WHOLE_CORPUS_SYSTEM_PROMPT,
+            user=_whole_corpus_prompt(class_documents, readme_documents),
+            json_object=True,
         )
-    except GroqError as e:
+    except LLMError as e:
         raise RuntimeError(
-            f"Groq API call failed during whole-corpus topic discovery: {e}. "
-            "Check that GROQ_API_KEY is set correctly and that Groq is reachable."
+            f"API call failed during whole-corpus topic discovery: {e}. "
+            f"Check that the {client.provider} API key is set correctly and "
+            "that the provider is reachable."
         ) from e
 
-    content = response.choices[0].message.content or ""
     try:
         parsed = json.loads(_JSON_FENCE_RE.sub("", content).strip())
     except json.JSONDecodeError as e:
         raise RuntimeError(
-            "Groq responded, but its output wasn't valid JSON during whole-corpus "
+            "The model responded, but its output wasn't valid JSON during whole-corpus "
             f"topic discovery: {e}. Raw response: {content[:500]!r}"
         ) from e
 
@@ -313,15 +296,13 @@ def _operation_prompt(operation_cfg: Graph, method_documents: list[MethodDocumen
 
 
 def classify_operation(
-    client: Groq,
+    client: LLMClient,
     operation_cfg: Graph,
     clusters: list[TopicCluster],
     method_documents: list[MethodDocument],
-    *,
-    model: str = _DEFAULT_LABEL_MODEL,
 ) -> int | None:
     """
-    Groq-backed topic assignment, for use when `clusters` came from LLM
+    LLM-backed topic assignment, for use when `clusters` came from LLM
     inference (discover_topics_whole_corpus), not local HDBSCAN.
 
     Uses response_format={"type": "json_object"} (same mechanism
@@ -350,29 +331,20 @@ def classify_operation(
         return None
     valid_labels = {cluster.label for cluster in candidates}
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": _CLASSIFY_OPERATION_SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": (
-                        f"Groups:\n{_clusters_prompt(candidates)}\n\n"
-                        f"Operation:\n{_operation_prompt(operation_cfg, method_documents)}"
-                    ),
-                },
-            ],
-            temperature=0,
-            max_completion_tokens=128,
-            response_format={"type": "json_object"},
-            reasoning_effort="low",
-            include_reasoning=False,
+        raw_text = client.complete(
+            role="small",
+            system=_CLASSIFY_OPERATION_SYSTEM_PROMPT,
+            user=(
+                f"Groups:\n{_clusters_prompt(candidates)}\n\n"
+                f"Operation:\n{_operation_prompt(operation_cfg, method_documents)}"
+            ),
+            max_tokens=128,
+            json_object=True,
         )
-    except GroqError as exc:
-        raise RuntimeError(f"classify_operation: Groq call failed: {exc}") from exc
+    except LLMError as exc:
+        raise RuntimeError(f"classify_operation: {exc}") from exc
 
-    raw_text = response.choices[0].message.content
-    text = (raw_text or "").strip()
+    text = raw_text.strip()
 
     if not text:
         print(f"classify_operation[{operation_id}]: empty response -> None")
@@ -399,15 +371,13 @@ def classify_operation(
 
 
 def label_opseq(
-    client: Groq,
+    client: LLMClient,
     operation_cfg: Graph,
     cluster: TopicCluster | None,
     method_documents: list[MethodDocument],
-    *,
-    model: str = _DEFAULT_LABEL_MODEL,
 ) -> str | None:
     """
-    Groq-backed label for one opseq -- a short, specific phrase for what
+    LLM-backed label for one opseq -- a short, specific phrase for what
     THIS operation does (e.g. "Fund Transfer").
     Returns None on an empty response -- not a failure, just nothing
     usable to report.
@@ -417,19 +387,13 @@ def label_opseq(
         content = f"Cluster:\n{_cluster_line(cluster)}\n\n{content}"
 
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": _LABEL_OPSEQ_SYSTEM_PROMPT},
-                {"role": "user", "content": content},
-            ],
-            temperature=0,
-            max_completion_tokens=128,
-            reasoning_effort="low",
-            include_reasoning=False,
-        )
-    except GroqError as exc:
-        raise RuntimeError(f"label_opseq: Groq call failed: {exc}") from exc
+        text = client.complete(
+            role="small",
+            system=_LABEL_OPSEQ_SYSTEM_PROMPT,
+            user=content,
+            max_tokens=128,
+        ).strip()
+    except LLMError as exc:
+        raise RuntimeError(f"label_opseq: {exc}") from exc
 
-    text = (response.choices[0].message.content or "").strip()
     return text or None

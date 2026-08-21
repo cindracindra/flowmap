@@ -170,6 +170,32 @@ export interface FlowGraph {
   orphans?: string[];
   branchGroups?: BranchGroup[];
   loopGroups?: LoopGroup[];
+  // Semantic-analysis side-car keyed by an existing FlowNode.id.
+  semanticFeatures?: Record<string, NodeSemanticFeatures>;
+}
+
+export type OperationRole =
+  | "purposeful"
+  | "atomic"
+  | "expanded-container"
+  | "exception-mechanic"
+  | "structural";
+
+export interface NodeSemanticFeatures {
+  receiver?: string;
+  receiverType?: string;
+  arguments?: string[];
+  argumentTypes?: string[];
+  inputIdentifiers?: string[];
+  fieldsRead?: string[];
+  fieldsWritten?: string[];
+  outputType?: string;
+  dataSourceIds?: string[];
+  dataConsumerIds?: string[];
+  domainTypes?: string[];
+  methodTerms?: string[];
+  observedFeatures?: string[];
+  role?: OperationRole;
 }
 
 export type TransitionReason =
@@ -185,10 +211,22 @@ export interface Transition {
   subject?: string;
   reason: TransitionReason;
   level: 0 | 1 | 2 | 3;
+  boundaryType?:
+    | "branch-entry"
+    | "branch-convergence"
+    | "semantic-split"
+    | "nested-region-retained"
+    | "uncertain-fallback";
+  decidedBy?: "systematic" | "llm" | "fallback";
+  confidence?: number;
+  evidence?: string[];
 }
 
 export interface Phase {
   nodes: string[];
+  id?: string;
+  label?: string;
+  structuralAnchors?: string[];
   opened_by: Transition | null;
   transitions: Transition[];
 }
@@ -196,4 +234,10 @@ export interface Phase {
 export interface PhaseTree {
   entryPoint: string;
   phases: Phase[];
+  complete?: boolean;
+  unresolvedGates?: Array<{
+    frontierId: string;
+    candidateId: string;
+    evidence: string[];
+  }>;
 }

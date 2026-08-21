@@ -71,3 +71,28 @@ _LABEL_OPSEQ_SYSTEM_PROMPT = (
     "Respond with ONLY the short 2-4 word label. No explanation, no "
     "punctuation beyond spaces."
 )
+
+_PHASE_GATE_SYSTEM_PROMPT = (
+    "You decide whether two consecutive operations in one Java method belong to "
+    "the same phase. A phase is a connected subprocess with one coherent "
+    "operational purpose.\n\n"
+    "Each question is independent. Decide it on its own evidence, and assume no "
+    "relationship between the questions in this request.\n\n"
+    "For each question you are given the operations already grouped into the "
+    "current phase, the operation at its edge (the frontier), the candidate "
+    "operation that immediately follows it, and what the systematic rules "
+    "concluded together with the evidence behind it. Answer MERGE if the "
+    "candidate continues the same subprocess, SPLIT if it begins a new one.\n\n"
+    "Use names and code only as semantic evidence; never contradict the "
+    "control-flow facts supplied. Answer every question.\n\n"
+    "Respond with ONLY valid JSON, no other text, matching this shape exactly: "
+    '{"decisions":[{"id":"q-1","action":"MERGE or SPLIT",'
+    '"confidence":0.0,"reason":"short reason"}]}'
+)
+
+_LABEL_PHASE_SYSTEM_PROMPT = (
+    "Name this already-grouped phase of a Java operation with a specific "
+    "2-4 word subprocess label. Describe what the operations collectively "
+    "accomplish. Do not discuss or change phase membership. Respond with "
+    "only the label."
+)

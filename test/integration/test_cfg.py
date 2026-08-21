@@ -46,8 +46,6 @@ from fixture import (
 )
 from backend.src.flowmap.domain.cfg_pipeline import (
     classify_roots_and_orphans,
-    find_roots_above,
-    slice_anchored_cfg,
     slice_from_root,
     filter_noise_cfg,
     flatten_cfg
@@ -140,6 +138,24 @@ class FullCfgPipelineTests(unittest.TestCase):
         self.assertFalse(helper_ids & set(self.graph.roots))
         self.assertFalse(helper_ids & set(self.graph.orphans))
 
+    def test_every_extracted_call_has_semantic_features(self):
+        call_ids = {node.id for node in self.graph.nodes if node.type == "call"}
+        self.assertEqual(set(self.graph.semanticFeatures), call_ids)
+
+    def test_semantic_features_capture_receiver_arguments_and_method_terms(self):
+        println = next(
+            node for node in self.graph.nodes
+            if node.type == "call"
+            and node.calleeFullName == "java.io.PrintStream.println:void(java.lang.String)"
+        )
+        features = self.graph.semanticFeatures[println.id]
+
+        self.assertEqual(features.receiver, "System.out")
+        self.assertEqual(features.receiverType, "java.io.PrintStream")
+        self.assertTrue(features.arguments)
+        self.assertEqual(features.methodTerms, ["println"])
+        self.assertIn("arguments", features.observedFeatures)
+
     def test_doHelper_is_invoked_from_both_doA_and_doProcessTwo(self):
         helper_id = next(
             n.id for n in self.graph.nodes
@@ -157,32 +173,6 @@ class FullCfgPipelineTests(unittest.TestCase):
             n.id for n in self.graph.nodes
             if n.type == "entry" and _simple_name(n.calleeFullName or "") == simple_name
         )
-
-    def _entry_full_name(self, simple_name: str) -> str:
-        return self.by_id[self._entry_id(simple_name)].calleeFullName
-
-    def test_anchored_slice_on_shared_helper_yields_two_chains(self):
-        # Cross-check against the real extraction, not the hand-built
-        # fixture -- see test/unit/test_cfg.py's
-        # SliceAnchoredCfgTests.test_shared_anchor_yields_two_independent_phaser_ready_chains
-        # for the same shape asserted without Joern.
-        chains = slice_anchored_cfg(self.graph, self._entry_full_name("doHelper"))
-        self.assertEqual({_simple_name(c.entryPoint) for c in chains}, {"doA", "doProcessTwo"})
-        for chain in chains:
-            names = {_simple_name(n.calleeFullName or "") for n in chain.nodes if n.calleeFullName}
-            self.assertIn("doHelper", names)
-
-    def test_anchored_slice_resolves_up_through_multiple_levels(self):
-        # doInner is one level below doHelper -- confirms the upward walk
-        # doesn't stop at the first hop.
-        roots = find_roots_above(self.graph, self._entry_id("doInner"))
-        root_names = {_simple_name(self.by_id[r].calleeFullName) for r in roots}
-        self.assertEqual(root_names, {"doA", "doProcessTwo"})
-
-    def test_anchored_slice_on_a_root_returns_itself(self):
-        main_id = self._entry_id("main")
-        self.assertEqual(find_roots_above(self.graph, main_id), [main_id])
-
 
 if __name__ == "__main__":
     unittest.main()

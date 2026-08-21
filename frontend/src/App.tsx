@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { Flex, Text, Badge, Button, IconButton } from "@radix-ui/themes";
+import { Flex, Text, Button, IconButton } from "@radix-ui/themes";
 import { GitBranch, Upload, Settings, Compass, Waypoints } from "lucide-react";
 
-import { GRAPH } from "./data/graph";
-import { shortLabel } from "./lib/graph";
-import { MONO } from "./lib/ui";
 import AnchoredGraphView from "./views/AnchoredGraphView";
 import TopicDiscoveryView from "./views/TopicDiscoveryView";
 
@@ -61,7 +58,6 @@ function ViewTab({
 
 export default function App() {
   const [view, setView] = useState<View>("anchored");
-  const [anchoredEntryPoint, setAnchoredEntryPoint] = useState(GRAPH.entryPoint);
 
   return (
     <Flex
@@ -99,14 +95,6 @@ export default function App() {
               FlowMap
             </Text>
           </Flex>
-          <Text color="gray">·</Text>
-          <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-            java_project
-          </Text>
-          <Text color="gray">·</Text>
-          <Badge color="grass" variant="soft" style={{ fontFamily: MONO }}>
-            {anchoredEntryPoint ? shortLabel(anchoredEntryPoint) : "no anchor"}
-          </Badge>
         </Flex>
         <Flex align="center" gap="2">
           <Button size="1" variant="soft" color="amber">
@@ -140,7 +128,7 @@ export default function App() {
           away and back deliberately. */}
       <Flex direction="column" flexGrow="1" style={{ minHeight: 0 }}>
         {view === "anchored" ? (
-          <AnchoredGraphView onEntryPointChange={setAnchoredEntryPoint} />
+          <AnchoredGraphView />
         ) : <TopicDiscoveryView />}
       </Flex>
     </Flex>

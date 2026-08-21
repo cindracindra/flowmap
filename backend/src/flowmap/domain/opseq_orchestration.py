@@ -1,0 +1,30 @@
+from dataclasses import dataclass
+
+from domain.cfg_filtering import filter_noise_cfg
+from domain.cfg_flattening import flatten_cfg
+from domain.cfg_slicing import slice_from_root
+from model import Graph
+
+
+@dataclass(frozen=True, slots=True)
+class CfgPipelineResult:
+    source: Graph
+    sliced: Graph
+    filtered: Graph
+    flattened: Graph
+
+
+def prepare_operation_cfg(
+    full_graph: Graph,
+    root_id: str,
+) -> CfgPipelineResult:
+    """Slice, filter, and flatten one operation with auditable outputs."""
+    sliced = slice_from_root(full_graph, root_id)
+    filtered = filter_noise_cfg(sliced)
+    flattened = flatten_cfg(filtered)
+    return CfgPipelineResult(
+        source=full_graph,
+        sliced=sliced,
+        filtered=filtered,
+        flattened=flattened,
+    )

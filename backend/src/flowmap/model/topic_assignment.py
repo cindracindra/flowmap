@@ -6,7 +6,7 @@ from typing import Any
 
 @dataclass(slots=True)
 class TopicAssignment:
-    # TopicCluster.label this opseq is being tied to
+    # TopicCluster.label this opseq is being tied to.
     label: int 
     
     # Cosine similarity to that cluster's centroid, in [-1, 1].

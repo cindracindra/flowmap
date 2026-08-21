@@ -241,7 +241,7 @@ def discover_topics_with_centroids(
     Example usage (in main.py):
         import functools
 
-        client = groq_client.get_client()
+        client = llm_client.get_client(provider)
         readme_docs = extract_readme_documents(SOURCE_DIR, class_docs)
         class_by_full_name = {c.fullName: c for c in class_docs}
 

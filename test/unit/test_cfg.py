@@ -15,9 +15,7 @@ from backend.src.flowmap.domain.cfg_pipeline import (  # noqa: E402
     classify_roots_and_orphans,
     filter_and_classify_roots_and_orphans,
     filter_noise_cfg,
-    find_roots_above,
     flatten_cfg,
-    slice_anchored_cfg,
     slice_from_root,
 )
 from backend.src.flowmap.model import Graph  # noqa: E402
@@ -236,52 +234,8 @@ class ClassifyRootsAndOrphansTests(unittest.TestCase):
 
 
 # --------------------------------------------------------------------------
-# find_roots_above / slice_from_root / slice_anchored_cfg: the "anchored
-# CFG" pair (upward discovery, then a normal forward-only slice) -- see
-# DESIGN discussion: these deliberately do NOT do a live Joern query, they
-# work entirely off an already-extracted full-codebase Graph.
+# Forward-only root slicing from the already-extracted full-codebase graph.
 # --------------------------------------------------------------------------
-
-class FindRootsAboveTests(unittest.TestCase):
-    def setUp(self):
-        self.graph = Graph.from_dict(_full_codebase_raw())
-
-    def test_anchor_with_two_independent_callers_finds_both_roots(self):
-        # doHelper is called from both doA and doProcessTwo -- two
-        # disjoint chains, not one "the" chain.
-        self.assertEqual(find_roots_above(self.graph, "m_doHelper"), ["m_doA", "m_doProcessTwo"])
-
-    def test_anchor_that_is_already_a_root_returns_itself(self):
-        self.assertEqual(find_roots_above(self.graph, "m_doA"), ["m_doA"])
-
-    def test_orphan_anchor_returns_itself(self):
-        # m_unused has no caller at all -- walk_up finds nothing above it
-        # immediately, same code path as a genuine root.
-        self.assertEqual(find_roots_above(self.graph, "m_unused"), ["m_unused"])
-
-    def test_rejects_non_entry_anchor(self):
-        with self.assertRaises(ValueError):
-            find_roots_above(self.graph, "c1")  # a "call" node, not "entry"
-
-    def test_closed_cycle_with_no_external_caller_returns_itself(self):
-        # A <-> B, mutual recursion, nothing outside ever calls either --
-        # no root exists upstream of either, so the anchor falls back to
-        # being its own root rather than the walk finding nothing at all.
-        cyclic = Graph.from_dict({
-            "nodes": [
-                node("m_A", "entry", "A"),
-                node("c_to_B", "call", "B", "A"),
-                node("m_B", "entry", "B"),
-                node("c_to_A", "call", "A", "B"),
-            ],
-            "edges": [
-                edge("m_A", "c_to_B"),
-                edge("c_to_B", "m_B", "invoke"),
-                edge("m_B", "c_to_A"),
-                edge("c_to_A", "m_A", "invoke"),
-            ],
-        })
-        self.assertEqual(find_roots_above(cyclic, "m_A"), ["m_A"])
 
 
 class SliceFromRootTests(unittest.TestCase):
@@ -339,25 +293,6 @@ class SliceFromRootTests(unittest.TestCase):
             del group["method"]
         sliced = slice_from_root(Graph.from_dict(raw), "m_doA")
         self.assertEqual({g.id for g in sliced.branchGroups}, {"cs_doA", "cs_helper"})
-
-
-class SliceAnchoredCfgTests(unittest.TestCase):
-    def setUp(self):
-        self.graph = Graph.from_dict(_full_codebase_raw())
-
-    def test_shared_anchor_yields_two_independent_phaser_ready_chains(self):
-        chains = slice_anchored_cfg(self.graph, "doHelper")
-        self.assertEqual({c.entryPoint for c in chains}, {"doA", "doProcessTwo"})
-        for chain in chains:
-            self.assertIn("m_doHelper", {n.id for n in chain.nodes})
-
-        doa_chain = next(c for c in chains if c.entryPoint == "doA")
-        self.assertNotIn("m_doProcessTwo", {n.id for n in doa_chain.nodes})
-
-    def test_unambiguous_anchor_yields_one_chain(self):
-        chains = slice_anchored_cfg(self.graph, "unusedMethod")
-        self.assertEqual(len(chains), 1)
-        self.assertEqual(chains[0].entryPoint, "unusedMethod")
 
 
 # --------------------------------------------------------------------------
@@ -907,6 +842,47 @@ class FlattenBranchGroupTests(unittest.TestCase):
         # empty else arm falling out of b entirely.
         self.assertIsNotNone(group.convergesAt)
         self.assertEqual(names[group.convergesAt], "pkg.C.run")
+
+    def test_empty_tail_arm_gets_an_executable_return_route(self):
+        flattened = flatten_cfg(Graph.from_dict(_caller_convergence_raw()))
+        group = flattened.branchGroups[0]
+        nodes = {node.id: node for node in flattened.nodes}
+
+        routes = [
+            edge for edge in flattened.edges
+            if edge.type == "sequence"
+            and edge.target == group.convergesAt
+            and (group.id, "else") in {
+                (requirement.groupId, requirement.armLabel)
+                for requirement in edge.branchRequirements
+            }
+        ]
+
+        self.assertEqual(len(routes), 1)
+        route = routes[0]
+        self.assertEqual(nodes[route.source].origId, "e_b")
+        self.assertIsNotNone(route.returnFrom)
+        self.assertEqual(nodes[route.returnFrom].origId, "c_b")
+
+    def test_empty_tail_route_only_executes_for_its_arm(self):
+        flattened = flatten_cfg(Graph.from_dict(_caller_convergence_raw()))
+        group = flattened.branchGroups[0]
+        route = next(
+            edge for edge in flattened.edges
+            if edge.type == "sequence"
+            and edge.target == group.convergesAt
+            and (group.id, "else") in {
+                (requirement.groupId, requirement.armLabel)
+                for requirement in edge.branchRequirements
+            }
+        )
+
+        requirements = {
+            (requirement.groupId, requirement.armLabel)
+            for requirement in route.branchRequirements
+        }
+        self.assertIn((group.id, "else"), requirements)
+        self.assertNotIn((group.id, "if"), requirements)
 
     def test_convergence_needs_every_arm_not_just_two(self):
         # if / else if / else where two arms continue past the branch and

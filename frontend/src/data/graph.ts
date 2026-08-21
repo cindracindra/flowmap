@@ -9,39 +9,16 @@
 // or the explorer tree per mount would give them different object identities.
 
 import {
-  flattenedRaw,
   fullGraphRaw,
-  phaseTreeRaw,
   topicClusterRaw,
   topicOperationsRaw,
   opseqVisualisationsRaw,
 } from "virtual:flowmap-data";
 import type { FlowGraph, PhaseTree } from "../types/flowmap";
 import type { TopicCluster, TopicOperation } from "../types/topics";
-import { indexNodesById, buildExplorerTree } from "../lib/graph";
-import { buildBranchPanels } from "../lib/branches";
 import { sortTopics } from "../lib/topics";
 
-export const GRAPH = flattenedRaw as unknown as FlowGraph;
 export const FULL_GRAPH = fullGraphRaw as unknown as FlowGraph;
-export const PHASE_TREE = phaseTreeRaw as unknown as PhaseTree;
-export const PHASES = PHASE_TREE.phases;
-export const ROOT_ID = GRAPH.rootId!;
-export const NODES_BY_ID = indexNodesById(GRAPH.nodes);
-export const EXPLORER_TREE = buildExplorerTree(GRAPH.nodes);
-
-// Every switchable fork in the trace. All of them come from the backend's
-// own branch groups -- IF/TRY for conditionals, DISPATCH for a call site
-// with more than one real implementation. Only one arm of each is on screen
-// at a time; see visibleGraphSelection.
-export const PANELS = buildBranchPanels(GRAPH, ROOT_ID);
-
-// "data" edges are a phase-discovery input, not control flow -- they answer
-// "these two calls touch the same value", which is not a step the reader
-// takes through the trace. A loop back-edge is likewise retained as CFG
-// metadata but is not a second forward process step. Both are excluded
-// from the linear view here; the pipeline still emits and uses them.
-export const FLOW_EDGES = GRAPH.edges.filter((e) => e.type !== "data" && !e.loopBack);
 
 const GENERATED_TOPICS = topicClusterRaw as unknown as TopicCluster[];
 
@@ -60,11 +37,16 @@ export function graphVisualisation(graph: FlowGraph, phaseTree: PhaseTree): Grap
   return { graph, phaseTree };
 }
 
-export const ANCHORED_VISUALISATION = graphVisualisation(GRAPH, PHASE_TREE);
-
 // Generated alongside topic_operations.json. Each root id resolves to the
 // exact flattened graph and phase tree the shared graph view needs.
 export const OPSEQ_VISUALISATIONS = opseqVisualisationsRaw as Record<string, GraphVisualisation>;
+const EMPTY_VISUALISATION = graphVisualisation(
+  { nodes: [], edges: [] },
+  { entryPoint: "", phases: [] },
+);
+export const ANCHORED_VISUALISATION =
+  Object.values(OPSEQ_VISUALISATIONS)[0] ?? EMPTY_VISUALISATION;
+export const GRAPH = ANCHORED_VISUALISATION.graph;
 
 // Class-clustering noise (-1) is not an operation topic. Also normalize
 // older top-k exports by retaining only each opseq's highest-similarity

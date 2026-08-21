@@ -18,16 +18,10 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from groq import GroqError  # noqa: E402
+from llm.client import LLMError  # noqa: E402
 
 from backend.src.flowmap.service import topic  # noqa: E402
 from backend.src.flowmap.model import ClassDocument, ReadmeDocument, TopicCluster  # noqa: E402
-
-
-def _mock_response(content: str) -> MagicMock:
-    response = MagicMock()
-    response.choices = [MagicMock(message=MagicMock(content=content))]
-    return response
 
 
 class ClusterPromptTests(unittest.TestCase):
@@ -113,27 +107,24 @@ class LabelClusterTests(unittest.TestCase):
 
     def test_returns_model_response(self):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_response("Account Management")
+        client.complete.return_value = "Account Management"
         self.assertEqual(topic.label_cluster(client, self.cluster), "Account Management")
 
-        request = client.chat.completions.create.call_args.kwargs
-        self.assertEqual(request["model"], "openai/gpt-oss-20b")
-        self.assertEqual(request["reasoning_effort"], "low")
-        self.assertFalse(request["include_reasoning"])
+        self.assertEqual(client.complete.call_args.kwargs["role"], "small")
 
     def test_falls_back_on_api_error(self):
         client = MagicMock()
-        client.chat.completions.create.side_effect = GroqError("boom")
+        client.complete.side_effect = LLMError("boom")
         self.assertEqual(topic.label_cluster(client, self.cluster), "account")
 
     def test_falls_back_on_empty_response(self):
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_response("   ")
+        client.complete.return_value = "   "
         self.assertEqual(topic.label_cluster(client, self.cluster), "account")
 
     def test_fallback_with_no_statistical_terms(self):
         client = MagicMock()
-        client.chat.completions.create.side_effect = GroqError("boom")
+        client.complete.side_effect = LLMError("boom")
         empty_cluster = TopicCluster(label=-1, member_full_names=["A"], statistical_terms=[])
         self.assertEqual(topic.label_cluster(client, empty_cluster), "unlabeled")
 
@@ -162,14 +153,13 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
             "]}"
         )
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_response(content)
+        client.complete.return_value = content
 
         result = topic.discover_topics_whole_corpus(client, self.docs)
 
-        request = client.chat.completions.create.call_args.kwargs
-        self.assertEqual(request["model"], "openai/gpt-oss-120b")
-        self.assertEqual(request["reasoning_effort"], "low")
-        self.assertFalse(request["include_reasoning"])
+        request = client.complete.call_args.kwargs
+        self.assertEqual(request["role"], "large")
+        self.assertTrue(request["json_object"])
 
         self.assertEqual(len(result), 3)
         self.assertEqual(result[0].label, 0)
@@ -188,7 +178,7 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
             "```"
         )
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_response(content)
+        client.complete.return_value = content
 
         result = topic.discover_topics_whole_corpus(client, self.docs)
         self.assertEqual(len(result), 1)
@@ -200,7 +190,7 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
             '["com.bank.account.AccountService", "com.bank.nonexistent.Fake"]}]}'
         )
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_response(content)
+        client.complete.return_value = content
 
         result = topic.discover_topics_whole_corpus(client, self.docs)
         members = [name for cluster in result for name in cluster.member_full_names]
@@ -209,11 +199,11 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
     def test_includes_readme_context_in_prompt(self):
         readmes = [ReadmeDocument(path="README.md", package="com.bank.account", text="Docs")]
         client = MagicMock()
-        client.chat.completions.create.return_value = _mock_response('{"groups": []}')
+        client.complete.return_value = '{"groups": []}' 
 
         topic.discover_topics_whole_corpus(client, self.docs, readmes)
 
-        sent_prompt = client.chat.completions.create.call_args.kwargs["messages"][1]["content"]
+        sent_prompt = client.complete.call_args.kwargs["user"]
         self.assertIn("Docs", sent_prompt)
 
 

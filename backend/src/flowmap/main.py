@@ -10,7 +10,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime
 
-from llm.groq_client import get_client
+from llm.client import PROVIDERS, get_client
 from joern.joern_session import JoernSession
 from service.cpg import parse_project
 from service.cfg import extract_full_cfg
@@ -22,18 +22,15 @@ from service.topic import (
     label_opseq,
 )
 
-from domain.cfg_pipeline import (
-    filter_and_classify_roots_and_orphans,
-    slice_from_root,
-    slice_anchored_cfg,
-    filter_noise_cfg,
-    flatten_cfg,
-)
 from domain.topic_modelling import (
     discover_topics_with_centroids,
     extract_readme_documents,
 )
-from domain.phase_discovery import build_phase_tree
+from domain.cfg_slicing import filter_and_classify_roots_and_orphans, slice_from_root
+from domain.cfg_filtering import filter_noise_cfg
+from domain.opseq_orchestration import prepare_operation_cfg
+from domain.phase_orchestration import discover_phases
+from service.phase import label_phase, resolve_ambiguous_phase_gates
 from domain.opseq_clustering import assign_operation_topics_batch
 from model import Graph
 
@@ -44,7 +41,6 @@ with (PROJECT_ROOT / "flowmap.config.json").open() as config_file:
 
 SOURCE_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["sourceDir"]).resolve()
 OUTPUT_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["outputDir"]).resolve()
-ANCHOR_NAME = FLOWMAP_CONFIG["anchorName"]
 
 
 def export_to_json(output_path: Path, content: Any) -> None:
@@ -113,47 +109,64 @@ def root_method_full_names(graph: Graph) -> dict[str, str]:
 class OpseqVisualisation:
     """All graph stages for one operation, ready for export or an API response."""
 
-    anchored_cfg: Graph
+    operation_cfg: Graph
     filtered_cfg: Graph
     flattened_cfg: Graph
     phase_tree: dict
 
 
-def build_opseq_visualisation(full_cfg: Graph, anchor_name: str) -> OpseqVisualisation:
+def build_opseq_visualisation(
+    full_cfg: Graph,
+    root_id: str,
+    *,
+    phase_gate_resolver=None,
+    phase_labeler=None,
+) -> OpseqVisualisation:
     """Build the graph and phase data consumed by one operation visualisation.
 
-    `anchor_name` is the full method name attached to an opseq root. Opseqs
-    are roots by definition, so exactly one anchored graph is expected. This
-    function is deliberately independent of Joern/session setup: a future API
-    can load the CPG once, retain ``full_cfg``, and call this per request.
+    ``root_id`` is one classified opseq root. The frontend chooses among the
+    complete result set, so no separate backend anchor is generated.
     """
-    anchored_cfgs = slice_anchored_cfg(full_cfg, anchor_name)
-    if len(anchored_cfgs) != 1:
-        raise ValueError(
-            f"Expected one operation graph for {anchor_name!r}, got {len(anchored_cfgs)}"
-        )
-
-    anchored_cfg = anchored_cfgs[0]
-    filtered_cfg = filter_noise_cfg(anchored_cfg)
-    flattened_cfg = flatten_cfg(filtered_cfg)
+    cfg = prepare_operation_cfg(
+        full_cfg,
+        root_id,
+    )
+    operation_cfg = cfg.sliced
+    filtered_cfg = cfg.filtered
+    flattened_cfg = cfg.flattened
+    phase_tree = discover_phases(
+        flattened_cfg,
+        (node.id for node in flattened_cfg.nodes if node.type == "call"),
+        gate_resolver=phase_gate_resolver,
+        labeler=phase_labeler,
+        timer=lambda label: timed(f"    {label}"),
+    ).to_dict()
     return OpseqVisualisation(
-        anchored_cfg=anchored_cfg,
+        operation_cfg=operation_cfg,
         filtered_cfg=filtered_cfg,
         flattened_cfg=flattened_cfg,
-        phase_tree=build_phase_tree(flattened_cfg),
+        phase_tree=phase_tree,
     )
 
 
-def build_all_opseq_visualisations(full_cfg: Graph) -> dict[str, dict]:
+def build_all_opseq_visualisations(
+    full_cfg: Graph, *, phase_gate_resolver=None, phase_labeler=None
+) -> dict[str, dict]:
     """Precompute the frontend payload for every classified operation root."""
     payloads: dict[str, dict] = {}
     for root_id, method_full_name in root_method_full_names(full_cfg).items():
-        visualisation = build_opseq_visualisation(full_cfg, method_full_name)
+        with timed(f"Opseq visualisation: {method_full_name}"):
+            visualisation = build_opseq_visualisation(
+                full_cfg,
+                root_id,
+                phase_gate_resolver=phase_gate_resolver,
+                phase_labeler=phase_labeler,
+            )
         payloads[root_id] = {
             "rootMethodFullName": method_full_name,
             "memberMethodFullNames": sorted({
                 node.calleeFullName
-                for node in visualisation.anchored_cfg.nodes
+                for node in visualisation.operation_cfg.nodes
                 if node.type == "entry" and node.calleeFullName is not None
             }),
             "graph": visualisation.flattened_cfg.to_dict(),
@@ -162,27 +175,24 @@ def build_all_opseq_visualisations(full_cfg: Graph) -> dict[str, dict]:
     return payloads
 
 
-def export_cfg_visualisations(full_cfg: Graph, output_dir: Path, anchor_name: str) -> None:
-    """Export all non-LLM graph artifacts, including every operation graph."""
+def export_cfg_visualisations(
+    full_cfg: Graph,
+    output_dir: Path,
+    *,
+    phase_gate_resolver=None,
+    phase_labeler=None,
+) -> None:
+    """Export the whole CFG and complete operation-visualisation collection."""
     full_cfg = filter_and_classify_roots_and_orphans(full_cfg)
     export_to_json(output_dir / "full_cfg.json", full_cfg.to_dict())
-    export_to_json(output_dir / "opseq_visualisations.json", build_all_opseq_visualisations(full_cfg))
-
-    if not anchor_name.strip():
-        # An empty anchor means the app has no global trace selected. Keep
-        # operation visualisations available, but make the top-level graph
-        # intentionally empty rather than choosing an arbitrary root.
-        export_to_json(output_dir / "anchored_cfg.json", [])
-        export_to_json(output_dir / "filtered_cfg.json", [])
-        export_to_json(output_dir / "flattened_cfg.json", Graph().to_dict())
-        export_to_json(output_dir / "phase_tree.json", {"entryPoint": "", "phases": []})
-        return
-
-    anchored_operation = build_opseq_visualisation(full_cfg, anchor_name)
-    export_to_json(output_dir / "anchored_cfg.json", [anchored_operation.anchored_cfg.to_dict()])
-    export_to_json(output_dir / "filtered_cfg.json", [anchored_operation.filtered_cfg.to_dict()])
-    export_to_json(output_dir / "flattened_cfg.json", anchored_operation.flattened_cfg.to_dict())
-    export_to_json(output_dir / "phase_tree.json", anchored_operation.phase_tree)
+    export_to_json(
+        output_dir / "opseq_visualisations.json",
+        build_all_opseq_visualisations(
+            full_cfg,
+            phase_gate_resolver=phase_gate_resolver,
+            phase_labeler=phase_labeler,
+        ),
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -191,7 +201,19 @@ def parse_args() -> argparse.Namespace:
         "--mode",
         choices=("cfg", "topics", "all"),
         default="all",
-        help="cfg avoids all LLM calls; topics generates topic/opseq labels; all runs both.",
+        help=(
+            "cfg generates CFGs and resolves/labels phases; topics generates "
+            "topic/opseq labels; all runs both."
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        choices=PROVIDERS,
+        default="groq",
+        help=(
+            "LLM provider for every model call in this run. groq reads "
+            "GROQ_API_KEY; together reads TOGETHERAI_API_KEY."
+        ),
     )
     return parser.parse_args()
 
@@ -213,9 +235,9 @@ if __name__ == "__main__":
     args = parse_args()
 
     cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
-    # if not cpg_output_path.exists():
-    #     parse_project(SOURCE_DIR, cpg_output_path)
-    parse_project(SOURCE_DIR, cpg_output_path)
+    if not cpg_output_path.exists():
+        parse_project(SOURCE_DIR, cpg_output_path)
+    # parse_project(SOURCE_DIR, cpg_output_path)
 
     session = JoernSession(port=8080)
     
@@ -232,7 +254,7 @@ if __name__ == "__main__":
     if args.mode in ("topics", "all"):
         # MODE 1 TOPIC CLUSTERING
         with timed("Topic clustering"):
-            client = get_client()
+            client = get_client(args.provider)
             readme_docs = extract_readme_documents(SOURCE_DIR, class_docs)
             class_by_full_name = {c.fullName: c for c in class_docs}
 
@@ -307,4 +329,14 @@ if __name__ == "__main__":
 
     if args.mode in ("cfg", "all"):
         with timed("CFG visualisation export"):
-            export_cfg_visualisations(full_cfg, OUTPUT_DIR, ANCHOR_NAME)
+            phase_client = client if args.mode == "all" else get_client(args.provider)
+            phase_gate_resolver = functools.partial(
+                resolve_ambiguous_phase_gates, phase_client
+            )
+            phase_labeler = functools.partial(label_phase, phase_client)
+            export_cfg_visualisations(
+                full_cfg,
+                OUTPUT_DIR,
+                phase_gate_resolver=phase_gate_resolver,
+                phase_labeler=phase_labeler,
+            )

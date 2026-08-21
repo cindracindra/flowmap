@@ -6,6 +6,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   val edges = mutable.ArrayBuffer[ujson.Obj]()
   val branchGroups = mutable.ArrayBuffer[ujson.Obj]()
   val loopGroups = mutable.ArrayBuffer[ujson.Obj]()
+  val semanticFeatures = ujson.Obj()
 
   // (groupId, armLabel) pairs per call id.
   type ArmTags = mutable.Map[Long, mutable.ArrayBuffer[(String, String)]]
@@ -13,6 +14,94 @@ def buildFullCodebaseCfg(): ujson.Obj = {
 
   def addNode(id: String, obj: ujson.Obj): Unit = {
     if (!nodes.contains(id)) nodes(id) = obj
+  }
+
+  def stringArray(values: Iterable[String]): ujson.Arr =
+    ujson.Arr(values.toList.distinct.map(ujson.Str(_))*)
+
+  def expressionTypes(expression: Expression): List[String] = (
+    expression.start.ast.isIdentifier.typeFullName.l ++
+      expression.start.ast.isLiteral.typeFullName.l ++
+      expression.start.ast.isCall.typeFullName.l
+  ).filter(_.nonEmpty).distinct
+
+  // Best-effort semantic evidence for one call site.
+  def semanticFeature(call: Call): ujson.Obj = {
+    def readable(code: String): Boolean = code != null && code.nonEmpty && code != "<empty>"
+    def meaningfulName(name: String): Boolean =
+      name.nonEmpty && !name.startsWith("$") && name != "this" && name != "super"
+    def usefulType(t: String): Boolean =
+      t.nonEmpty && t != "<empty>" && t != "ANY"
+
+    val orderedArguments = call.argument.l.sortBy(_.argumentIndex)
+    val receiver = orderedArguments.find(_.argumentIndex == 0)
+    val explicitArguments = orderedArguments.filter(_.argumentIndex > 0)
+    val argumentCodes = explicitArguments.map(_.code).filter(readable)
+    val argumentsObserved = explicitArguments.forall(argument => readable(argument.code))
+    val identifiers = explicitArguments.flatMap(
+      argument => argument.start.ast.isIdentifier.name.l
+    ).filter(meaningfulName).distinct
+    val argumentFields = explicitArguments.flatMap(
+      argument => argument.start.ast.isFieldIdentifier.canonicalName.l
+    ).distinct
+
+    val calleeEntries = call.callee.internal.l
+    val assignmentNames = Set(
+      "<operator>.assignment",
+      "<operator>.assignmentPlus",
+      "<operator>.assignmentMinus",
+      "<operator>.assignmentMultiplication",
+      "<operator>.assignmentDivision"
+    )
+    val writtenFields = calleeEntries.flatMap { callee =>
+      callee.ast.isCall.l
+        .filter(assignment => assignmentNames.contains(assignment.name))
+        .flatMap(_.argument.l.filter(_.argumentIndex == 1))
+        .flatMap(lhs => lhs.start.ast.isFieldIdentifier.canonicalName.l)
+    }.distinct
+    // Every field identifier in the callee body, minus the ones proven to be
+    // assignment targets.
+    val calleeFields = calleeEntries.flatMap(
+      callee => callee.ast.isFieldIdentifier.canonicalName.l
+    ).distinct.filterNot(writtenFields.contains)
+
+    val dataSources = call.start.repeat(_.ddgIn)(_.maxDepth(10).until(_.isCall))
+      .isCall.dedup.l.map(source => s"c${source.id}")
+    val receiverCode = receiver.map(_.code).filter(readable)
+    val receiverType = receiver.flatMap(expressionTypes(_).headOption).filter(usefulType)
+    val argumentTypes = explicitArguments.flatMap(expressionTypes).filter(usefulType)
+    val outputType = Option(call.typeFullName).filter(usefulType)
+    val domainTypes = (
+      receiverType.toList ++ argumentTypes ++ outputType.toList
+    ).filterNot(t => Set("void", "java.lang.Object").contains(t)).distinct
+    val methodTerms = call.name
+      .split("(?<=[a-z0-9])(?=[A-Z])|[^A-Za-z0-9]+")
+      .map(_.toLowerCase).filter(_.nonEmpty).toList
+
+    val observed =
+      // "No receiver at all" is an observation (a static or operator call);
+      // "a receiver we could not render" is not.
+      (if (receiver.isEmpty || receiverCode.isDefined) List("receiver") else Nil) ++
+      (if (argumentsObserved) List("arguments", "inputs") else Nil) ++
+      List("callsiteFields", "ddg") ++
+      (if (outputType.isDefined) List("output") else Nil) ++
+      (if (calleeEntries.nonEmpty) List("calleeFields") else Nil)
+
+    val result = ujson.Obj(
+      "arguments" -> stringArray(argumentCodes),
+      "argumentTypes" -> stringArray(argumentTypes),
+      "inputIdentifiers" -> stringArray(identifiers),
+      "fieldsRead" -> stringArray((argumentFields ++ calleeFields).distinct),
+      "fieldsWritten" -> stringArray(writtenFields),
+      "dataSourceIds" -> stringArray(dataSources),
+      "domainTypes" -> stringArray(domainTypes),
+      "methodTerms" -> stringArray(methodTerms),
+      "observedFeatures" -> stringArray(observed)
+    )
+    receiverCode.foreach(code => result("receiver") = ujson.Str(code))
+    receiverType.foreach(t => result("receiverType") = ujson.Str(t))
+    outputType.foreach(t => result("outputType") = ujson.Str(t))
+    result
   }
 
   // Static initializers can carry Joern's "<empty>" method filename even
@@ -135,8 +224,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
 
   // Emits ONE group for a try's mutually exclusive outcomes. The try body
   // itself is the common spine before the fork, and finally is common flow
-  // after it, so neither is an arm. Normal completion is an explicit empty
-  // arm alongside the catch bodies.
+  // after it, so neither is an arm. 
   def emitTryGroup(cs: ControlStructure, method: Method, armTags: ArmTags): Unit = {
     val groupId = s"cs${cs.id}"
     val armRoots = cs.astChildren.l
@@ -288,9 +376,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
         edges += ujson.Obj("from" -> callId, "to" -> s"c${nc.id}", "type" -> "sequence")
       }
 
-      // Same ujson.Obj-and-update pattern as addArm above -- see the note
-      // there on why a scala.collection.mutable.LinkedHashMap can't be
-      // handed to ujson.Obj(...).
       val callNode = ujson.Obj(
         "id" -> callId, "type" -> "call",
         "callerMethod" -> method.fullName, "calleeFullName" -> call.methodFullName,
@@ -311,6 +396,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       }
       terminusById.get(call.id).foreach { t => callNode("terminus") = ujson.Str(t) }
       addNode(callId, callNode)
+      semanticFeatures(callId) = semanticFeature(call)
 
       // data dependency chain -- same ddgIn walk as inter_cfg.sc, unfiltered
       call.start.repeat(_.ddgIn)(_.maxDepth(10).until(_.isCall)).isCall.dedup.l.foreach { src =>
@@ -318,10 +404,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       }
 
       // interprocedural traversal
-      // Keep "Joern resolved nothing" distinct from "Joern resolved a
-      // known method whose body is empty". The latter is common for an
-      // implicit default constructor: the call site is real, but there is
-      // no body to inline and therefore no entry/leaf target to emit.
       val resolvedCallees = call.callee.whereNot(_.isAbstract).l
       val traversableCallees = resolvedCallees.filter(
         m => m.isExternal || m.block.astChildren.nonEmpty
@@ -351,7 +433,8 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     "nodes" -> nodes.values.toList,
     "edges" -> edges.toList,
     "branchGroups" -> branchGroups.toList,
-    "loopGroups" -> loopGroups.toList
+    "loopGroups" -> loopGroups.toList,
+    "semanticFeatures" -> semanticFeatures
   )
 }
 

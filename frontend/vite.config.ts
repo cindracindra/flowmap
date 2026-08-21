@@ -24,8 +24,6 @@ function flowmapData(): Plugin {
       return [
         `export const classFilesRaw = ${JSON.stringify(config.classFiles ?? {})};`,
         `export { default as fullGraphRaw } from ${jsonImport('full_cfg')};`,
-        `export { default as flattenedRaw } from ${jsonImport('flattened_cfg')};`,
-        `export { default as phaseTreeRaw } from ${jsonImport('phase_tree')};`,
         `export { default as topicClusterRaw } from ${jsonImport('topic_cluster')};`,
         `export { default as topicOperationsRaw } from ${jsonImport('topic_operations')};`,
         `export { default as opseqVisualisationsRaw } from ${jsonImport('opseq_visualisations')};`,
