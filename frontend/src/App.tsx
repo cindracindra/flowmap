@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Flex, Text, Button, IconButton } from "@radix-ui/themes";
-import { GitBranch, Upload, Settings, Compass, Waypoints } from "lucide-react";
+import { Flex, Text, Button } from "@radix-ui/themes";
+import { GitBranch, Info, Compass, Waypoints } from "lucide-react";
 
-import AnchoredGraphView from "./views/AnchoredGraphView";
+import AnchoredGraphView, { GraphLegend } from "./views/AnchoredGraphView";
 import TopicDiscoveryView from "./views/TopicDiscoveryView";
 
 // ── App shell ────────────────────────────────────────────────────────────
@@ -58,6 +58,7 @@ function ViewTab({
 
 export default function App() {
   const [view, setView] = useState<View>("anchored");
+  const [legendOpen, setLegendOpen] = useState(false);
 
   return (
     <Flex
@@ -96,14 +97,23 @@ export default function App() {
             </Text>
           </Flex>
         </Flex>
-        <Flex align="center" gap="2">
-          <Button size="1" variant="soft" color="amber">
-            <Upload size={12} /> Upload
+        <div style={{ position: "relative" }}>
+          <Button
+            size="1"
+            variant={legendOpen ? "solid" : "soft"}
+            color="gray"
+            aria-label={legendOpen ? "Hide legend" : "Show legend"}
+            aria-expanded={legendOpen}
+            onClick={() => setLegendOpen((open) => !open)}
+          >
+            <Info size={13} /> Legend
           </Button>
-          <IconButton size="1" variant="ghost" color="gray">
-            <Settings size={14} />
-          </IconButton>
-        </Flex>
+          {legendOpen && (
+            <div style={{ position: "absolute", top: 32, right: 0, zIndex: 20 }}>
+              <GraphLegend />
+            </div>
+          )}
+        </div>
       </Flex>
 
       {/* Sub-header: view switcher */}

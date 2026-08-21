@@ -3,14 +3,11 @@ import {
   Box,
   Flex,
   Text,
-  Heading,
-  Badge,
   IconButton,
   TextField,
   ScrollArea,
   Separator,
   Tabs,
-  Tooltip,
   Card,
   Slider,
   Dialog,
@@ -22,7 +19,6 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
-  X,
   GitBranch,
   Minimize2,
   Search,
@@ -31,10 +27,8 @@ import {
   Package as PackageIcon,
   Hash,
   ArrowRight,
-  AlertTriangle,
   Repeat2,
   RotateCcw,
-  Info,
 } from "lucide-react";
 
 import { CLASS_FILES } from "../data/classFiles";
@@ -48,11 +42,12 @@ import {
   type GraphVisualisation,
   type OpseqChoice,
 } from "../data/graph";
-import type { FlowNode, FlowEdge, LoopGroup, NodeType, Transition } from "../types/flowmap";
+import type { FlowNode, FlowEdge, LoopGroup, NodeType } from "../types/flowmap";
 import { computeLayout, type NodePosition, type RowGap } from "../lib/layout";
 import {
   defaultSelection,
   buildBranchPanels,
+  branchSelectionForNode,
   flowEdgeKey,
   visibleGraphSelection,
   type BranchPanel,
@@ -60,14 +55,18 @@ import {
   panelRouteTargetIds,
 } from "../lib/branches";
 import { computePanelGeometry } from "../lib/panelGeometry";
+import {
+  deriveDisplayHierarchy,
+  hydrateDisplayHierarchy,
+  buildDisplayHeaderPaths,
+  type DisplayHierarchy,
+  type DisplayHeader,
+} from "../lib/displayHierarchy";
 import { BranchRegions, BranchSwitchers } from "../components/BranchOverlay";
 import { MONO } from "../lib/ui";
 import {
   shortLabel,
   ownerClassOf,
-  phaseIndexForNode,
-  incomingEdges,
-  outgoingEdges,
   computePhaseBBox,
   TRANSITION_REASON_LABELS,
   buildExplorerTree,
@@ -92,6 +91,7 @@ interface GraphViewData extends GraphVisualisation {
   explorerTree: ExplorerItem[];
   projectTree: ProjectExplorerItem[];
   panels: BranchPanel[];
+  displayHierarchy: DisplayHierarchy;
   flowEdges: FlowEdge[];
   loopsById: Map<string, LoopGroup>;
   focusMethodFullName?: string;
@@ -114,9 +114,12 @@ function makeGraphViewData(
   const explorerTree = buildExplorerTree(graph.nodes);
   const projectTree = buildProjectExplorerTree(FULL_GRAPH.nodes, CLASS_FILES);
   const panels = buildBranchPanels(graph, rootId);
+  const displayHierarchy = visualisation.displayHierarchy
+    ? hydrateDisplayHierarchy(visualisation.displayHierarchy, graph, panels)
+    : deriveDisplayHierarchy(graph, rootId, panels);
   const loopsById = new Map((graph.loopGroups ?? []).map((loop) => [loop.id, loop]));
   return {
-    graph, phaseTree, rootId, nodesById, explorerTree, projectTree, panels, loopsById,
+    graph, phaseTree, rootId, nodesById, explorerTree, projectTree, panels, displayHierarchy, loopsById,
     focusMethodFullName, onSelectProjectMethod, treeOpenOverrides, onToggleTreePath,
     flowEdges: graph.edges.filter((edge) => edge.type !== "data" && !edge.loopBack),
   };
@@ -377,51 +380,7 @@ function filterProjectTree(items: ProjectExplorerItem[], query: string): Project
   });
 }
 
-// ── Detail panel ─────────────────────────────────────────────────────────
-
-function TransitionRow({ label, transition }: { label: string; transition: Transition }) {
-  const color = transition.reason === "dead-end" ? "red" : transition.reason === "gate" ? "amber" : "teal";
-  return (
-    <Tooltip content={TRANSITION_REASON_LABELS[transition.reason]}>
-      <Flex align="center" gap="2" style={{ cursor: "default" }}>
-        <Badge size="1" variant="soft" color={color}>
-          {transition.reason}
-        </Badge>
-        <Text size="1" color="gray">
-          {label}
-          {transition.level ? ` · L${transition.level}` : ""}
-        </Text>
-      </Flex>
-    </Tooltip>
-  );
-}
-
-function EdgeRow({ edge, otherId }: { edge: FlowEdge; otherId: string }) {
-  const { nodesById } = useGraphViewData();
-  const node = nodesById.get(otherId);
-  if (!node) return null;
-  const colors = NODE_COLORS[node.type];
-  return (
-    <Flex align="center" gap="2">
-      <Box style={{ width: 6, height: 6, borderRadius: "50%", background: colors.stroke, flexShrink: "0" }} />
-      <Text size="1" truncate style={{ fontFamily: MONO, flex: 1 }}>
-        {nodeLabel(node)}
-      </Text>
-      <Badge size="1" variant="outline" color="gray">
-        {edge.type}
-      </Badge>
-    </Flex>
-  );
-}
-
-function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void }) {
-  const { flowEdges, phaseTree } = useGraphViewData();
-  const phases = phaseTree.phases;
-  const colors = NODE_COLORS[node.type];
-  const incoming = incomingEdges(node.id, flowEdges);
-  const outgoing = outgoingEdges(node.id, flowEdges);
-  const phaseIdx = phaseIndexForNode(node.id, phases);
-  const phase = phaseIdx !== null ? phases[phaseIdx] : null;
+function sourceLocation(node: FlowNode): string | undefined {
   const ownerClass = ownerClassOf(node);
   const parsedSourceFile = node.sourceFile && !node.sourceFile.startsWith("<")
     ? node.sourceFile
@@ -431,122 +390,7 @@ function DetailPanel({ node, onClose }: { node: FlowNode; onClose: () => void })
       ? sourcePathForClass(ownerClass, CLASS_FILES)
       : undefined
   );
-
-  return (
-    <ScrollArea style={{ height: "100%" }}>
-      <Flex direction="column">
-        <Flex
-          align="center"
-          justify="between"
-          p="3"
-          style={{
-            borderBottom: "1px solid var(--gray-a5)",
-            position: "sticky",
-            top: "0",
-            background: "var(--color-panel-solid)",
-          }}
-        >
-          <Flex align="center" gap="2">
-            <Box style={{ color: colors.stroke, display: "flex" }}>{getNodeIcon(node.type)}</Box>
-            <Text
-              size="1"
-              weight="bold"
-              style={{ color: colors.stroke, letterSpacing: "0.08em", textTransform: "uppercase" }}
-            >
-              {colors.label}
-            </Text>
-          </Flex>
-          <IconButton size="1" variant="ghost" color="gray" onClick={onClose}>
-            <X size={14} />
-          </IconButton>
-        </Flex>
-
-        <Box p="3" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
-          <Heading size="3" style={{ fontFamily: MONO }}>
-            {nodeLabel(node)}
-          </Heading>
-          {node.calleeFullName && (
-            <Text
-              as="p"
-              size="1"
-              color="gray"
-              mt="2"
-              style={{ fontFamily: MONO, wordBreak: "break-all" }}
-            >
-              {node.calleeFullName}
-            </Text>
-          )}
-          <Flex gap="2" mt="2" wrap="wrap">
-            {node.deadEnd && (
-              <Badge color="red" variant="soft">
-                <AlertTriangle size={11} /> dead end
-              </Badge>
-            )}
-            {file && (
-              <Badge color="gray" variant="soft" style={{ fontFamily: MONO }}>
-                {file}
-                {node.line ? `:${node.line}` : ""}
-              </Badge>
-            )}
-          </Flex>
-        </Box>
-
-        {phase && (
-          <Box p="3" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
-            <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              {phase.label ?? `Phase ${phaseIdx! + 1}`}
-            </Text>
-            <Flex direction="column" gap="2" mt="2">
-              {phase.opened_by && <TransitionRow label="Opened by" transition={phase.opened_by} />}
-              {phase.transitions.map((t, i) => (
-                <TransitionRow key={i} label="Joined by" transition={t} />
-              ))}
-              {!phase.opened_by && phase.transitions.length === 0 && (
-                <Text size="1" color="gray">
-                  First phase of the trace.
-                </Text>
-              )}
-            </Flex>
-          </Box>
-        )}
-
-        {!phase && node.type === "call" && outgoing.some((e) => e.type === "invoke") && (
-          <Box p="3" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
-            <Text size="1" color="gray">
-              Not part of a single phase — its callee resolved to more than one phase (see the phases
-              below).
-            </Text>
-          </Box>
-        )}
-
-        {incoming.length > 0 && (
-          <Box p="3" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
-            <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Called by ({incoming.length})
-            </Text>
-            <Flex direction="column" gap="1" mt="2">
-              {incoming.map((e, i) => (
-                <EdgeRow key={i} edge={e} otherId={e.from} />
-              ))}
-            </Flex>
-          </Box>
-        )}
-
-        {outgoing.length > 0 && (
-          <Box p="3">
-            <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
-              Calls ({outgoing.length})
-            </Text>
-            <Flex direction="column" gap="1" mt="2">
-              {outgoing.map((e, i) => (
-                <EdgeRow key={i} edge={e} otherId={e.to} />
-              ))}
-            </Flex>
-          </Box>
-        )}
-      </Flex>
-    </ScrollArea>
-  );
+  return file ? `${file}${node.line ? `:${node.line}` : ""}` : undefined;
 }
 
 const NODE_EXPLANATIONS: Record<NodeType, string> = {
@@ -590,7 +434,7 @@ function LegendNodeShape({ type }: { type: NodeType }) {
   );
 }
 
-function GraphLegend() {
+export function GraphLegend() {
   return (
     <Card size="2" style={{ width: 330, maxHeight: "calc(100vh - 150px)", overflowY: "auto" }}>
       <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
@@ -667,27 +511,22 @@ function GraphLegend() {
 // exists in this view.
 
 type PanelTab = "explore" | "operation";
-type ResizeSide = "left" | "right";
 
 const LEFT_PANEL_MIN = 180;
 const LEFT_PANEL_MAX = 560;
-const RIGHT_PANEL_MIN = 240;
-const RIGHT_PANEL_MAX = 600;
 
-function clampPanelWidth(width: number, side: ResizeSide): number {
-  const min = side === "left" ? LEFT_PANEL_MIN : RIGHT_PANEL_MIN;
-  const absoluteMax = side === "left" ? LEFT_PANEL_MAX : RIGHT_PANEL_MAX;
+function clampPanelWidth(width: number): number {
+  const min = LEFT_PANEL_MIN;
+  const absoluteMax = LEFT_PANEL_MAX;
   const responsiveMax = typeof window === "undefined" ? absoluteMax : window.innerWidth * 0.45;
   return Math.round(Math.min(Math.max(width, min), Math.max(min, Math.min(absoluteMax, responsiveMax))));
 }
 
 function PanelResizeHandle({
-  side,
   active,
   onMouseDown,
   onKeyboardResize,
 }: {
-  side: ResizeSide;
   active: boolean;
   onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => void;
   onKeyboardResize: (delta: number) => void;
@@ -695,7 +534,7 @@ function PanelResizeHandle({
   return (
     <Box
       role="separator"
-      aria-label={`Resize ${side} panel`}
+      aria-label="Resize left panel"
       aria-orientation="vertical"
       tabIndex={0}
       onMouseDown={onMouseDown}
@@ -703,7 +542,7 @@ function PanelResizeHandle({
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
         const screenDelta = event.key === "ArrowRight" ? 16 : -16;
-        onKeyboardResize(side === "left" ? screenDelta : -screenDelta);
+        onKeyboardResize(screenDelta);
       }}
       style={{
         width: 6,
@@ -718,6 +557,53 @@ function PanelResizeHandle({
   );
 }
 
+function StickyHierarchyHeader({ path }: { path: DisplayHeader[] }) {
+  if (path.length === 0) return null;
+  return (
+    <Card
+      size="1"
+      aria-label="Current graph hierarchy"
+      style={{
+        position: "absolute",
+        top: 12,
+        left: 12,
+        zIndex: 4,
+        padding: 0,
+        minWidth: 220,
+        maxWidth: "min(520px, calc(100% - 40px))",
+        overflow: "hidden",
+        pointerEvents: "none",
+        boxShadow: "0 5px 18px var(--gray-a5)",
+      }}
+    >
+      {path.map((header, index) => (
+        <Flex
+          key={`${header.kind}:${header.id}`}
+          align="center"
+          gap="2"
+          px="3"
+          height="28px"
+          style={{
+            paddingLeft: 10 + index * 14,
+            borderBottom: index < path.length - 1 ? "1px solid var(--gray-a4)" : undefined,
+            background: "var(--color-panel-solid)",
+          }}
+        >
+          <Hash size={12} />
+          <Text
+            size="1"
+            weight="medium"
+            truncate
+            style={{ fontFamily: MONO }}
+          >
+            {shortLabel(header.label)}
+          </Text>
+        </Flex>
+      ))}
+    </Card>
+  );
+}
+
 function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) {
   const {
     graph: GRAPH,
@@ -727,6 +613,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     explorerTree: EXPLORER_TREE,
     projectTree: PROJECT_TREE,
     panels: PANELS,
+    displayHierarchy,
     flowEdges: FLOW_EDGES,
     loopsById: LOOPS_BY_ID,
     focusMethodFullName,
@@ -736,6 +623,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     ? GRAPH.nodes.find((node) => node.type === "entry" && node.calleeFullName === focusMethodFullName)?.id ?? null
     : null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [pendingRevealId, setPendingRevealId] = useState<string | null>(null);
   const [armSelection, setArmSelection] = useState<BranchSelection>(() => {
     const selection = defaultSelection(PANELS);
     if (!focusNodeId) return selection;
@@ -746,24 +634,23 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     return selection;
   });
   const [zoom, setZoom] = useState(1);
+  const [graphScrollTop, setGraphScrollTop] = useState(0);
   const [leftOpen, setLeftOpen] = useState(true);
-  const [rightOpen, setRightOpen] = useState(false);
   const [leftWidth, setLeftWidth] = useState(240);
-  const [rightWidth, setRightWidth] = useState(288);
-  const [resizingSide, setResizingSide] = useState<ResizeSide | null>(null);
-  const resizeStartRef = useRef<{ side: ResizeSide; x: number; width: number } | null>(null);
+  const [resizingPanel, setResizingPanel] = useState(false);
+  const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
   const [activeTab, setActiveTab] = useState<PanelTab>(initialTab);
   const [exploreQuery, setExploreQuery] = useState("");
-  const [legendOpen, setLegendOpen] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   // Branch panels are the default overlay: they are what the graph is for.
   // Phases answer a different question and would fight them for the same
   // screen space, so only one is shown at a time.
-  const [overlay, setOverlay] = useState<"branches" | "phases" | "none">("branches");
+  const [overlay, setOverlay] = useState<"branches" | "phases">("branches");
   const [hoveredPanelId, setHoveredPanelId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const selectedNode = selectedId ? (NODES_BY_ID.get(selectedId) ?? null) : null;
+  const selectedLocation = selectedNode ? sourceLocation(selectedNode) : undefined;
   const filteredProjectTree = useMemo(
     () => filterProjectTree(PROJECT_TREE, exploreQuery),
     [PROJECT_TREE, exploreQuery],
@@ -976,6 +863,39 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   const canvasWidth = Math.ceil(graphBounds.width * zoom);
   const canvasHeight = Math.ceil(graphBounds.height * zoom);
 
+  useEffect(() => {
+    if (!pendingRevealId) return;
+    const position = positions.get(pendingRevealId);
+    const viewport = scrollRef.current;
+    if (!position || !viewport || !visibleIds.has(pendingRevealId)) return;
+    viewport.scrollTo({
+      left: Math.max(
+        0,
+        (position.x + graphBounds.offsetX) * zoom - viewport.clientWidth / 2,
+      ),
+      top: Math.max(
+        0,
+        (position.y + graphBounds.offsetY) * zoom - viewport.clientHeight / 2,
+      ),
+      behavior: "smooth",
+    });
+    setPendingRevealId(null);
+  }, [graphBounds.offsetX, graphBounds.offsetY, pendingRevealId, positions, visibleIds, zoom]);
+  const headerPaths = useMemo(
+    () => buildDisplayHeaderPaths(displayHierarchy),
+    [displayHierarchy],
+  );
+  const stickyHeaderPath = useMemo(() => {
+    const visible = [...positions.entries()]
+      .filter(([id]) => visibleIds.has(id) && headerPaths.has(id))
+      .map(([id, position]) => ({ id, x: position.x, y: (position.y + graphBounds.offsetY) * zoom }))
+      .sort((a, b) => a.y - b.y || a.x - b.x);
+    if (visible.length === 0) return [];
+    return headerPaths.get(
+      visible.find((item) => item.y >= graphScrollTop + 1)?.id ?? visible[visible.length - 1].id,
+    ) ?? [];
+  }, [graphBounds.offsetY, graphScrollTop, headerPaths, positions, visibleIds, zoom]);
+
   const handleArmSelect = useCallback((panelId: string, armId: string) => {
     setArmSelection((prev) => {
       const next = new Map(prev);
@@ -995,33 +915,33 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   }, [selectedId, visibleEdges]);
 
   const handleNodeClick = useCallback((id: string) => {
-    setSelectedId((prev) => {
-      const next = prev === id ? null : id;
-      setRightOpen(next !== null);
-      return next;
-    });
+    setSelectedId((prev) => prev === id ? null : id);
   }, []);
 
   const handleSelectFromPanel = useCallback((id: string) => {
-    setSelectedId((previousId) => {
-      const nextId = previousId === id ? null : id;
-      setRightOpen(nextId !== null);
-      return nextId;
-    });
-  }, []);
+    if (selectedId === id) {
+      setSelectedId(null);
+      setPendingRevealId(null);
+      return;
+    }
+    setArmSelection((previous) =>
+      branchSelectionForNode(GRAPH, id, previous, PANELS) ?? previous
+    );
+    setSelectedId(id);
+    setPendingRevealId(id);
+  }, [GRAPH, PANELS, selectedId]);
 
-  const beginPanelResize = useCallback((side: ResizeSide, event: React.MouseEvent<HTMLDivElement>) => {
+  const beginPanelResize = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     resizeStartRef.current = {
-      side,
       x: event.clientX,
-      width: side === "left" ? leftWidth : rightWidth,
+      width: leftWidth,
     };
-    setResizingSide(side);
-  }, [leftWidth, rightWidth]);
+    setResizingPanel(true);
+  }, [leftWidth]);
 
   useEffect(() => {
-    if (!resizingSide) return;
+    if (!resizingPanel) return;
     const previousUserSelect = document.body.style.userSelect;
     const previousCursor = document.body.style.cursor;
     document.body.style.userSelect = "none";
@@ -1031,13 +951,11 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
       const start = resizeStartRef.current;
       if (!start) return;
       const pointerDelta = event.clientX - start.x;
-      const nextWidth = start.width + (start.side === "left" ? pointerDelta : -pointerDelta);
-      if (start.side === "left") setLeftWidth(clampPanelWidth(nextWidth, "left"));
-      else setRightWidth(clampPanelWidth(nextWidth, "right"));
+      setLeftWidth(clampPanelWidth(start.width + pointerDelta));
     };
     const finishResize = () => {
       resizeStartRef.current = null;
-      setResizingSide(null);
+      setResizingPanel(false);
     };
 
     window.addEventListener("mousemove", handleResize);
@@ -1048,7 +966,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
       document.body.style.userSelect = previousUserSelect;
       document.body.style.cursor = previousCursor;
     };
-  }, [resizingSide]);
+  }, [resizingPanel]);
 
   const methodCount = GRAPH.nodes.filter(
     (n) => n.type !== "leaf" && visibleIds.has(n.id),
@@ -1145,10 +1063,9 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
               </Flex>
             </Box>
             <PanelResizeHandle
-              side="left"
-              active={resizingSide === "left"}
-              onMouseDown={(event) => beginPanelResize("left", event)}
-              onKeyboardResize={(delta) => setLeftWidth((width) => clampPanelWidth(width + delta, "left"))}
+              active={resizingPanel}
+              onMouseDown={beginPanelResize}
+              onKeyboardResize={(delta) => setLeftWidth((width) => clampPanelWidth(width + delta))}
             />
           </>
         )}
@@ -1165,6 +1082,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
             role="region"
             tabIndex={0}
             aria-label="Scrollable graph canvas"
+            onScroll={(event) => setGraphScrollTop(event.currentTarget.scrollTop)}
             style={{ position: "absolute", inset: 0, overflow: "auto", overscrollBehavior: "contain" }}
           >
             <svg
@@ -1186,7 +1104,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                   refY="3.5"
                   orient="auto"
                 >
-                  <path d="M0,0 L0,7 L7,3.5 z" fill={EDGE_STYLE[kind].color} opacity="0.85" />
+                  <path d="M0,0 L0,7 L7,3.5 z" fill={EDGE_STYLE[kind].color} />
                 </marker>
               ))}
             </defs>
@@ -1370,26 +1288,35 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
             </svg>
           </div>
 
-          <Flex
-            direction="column"
-            align="end"
-            gap="2"
-            style={{ position: "absolute", bottom: 64, right: 16 }}
+          <StickyHierarchyHeader path={stickyHeaderPath} />
+
+          <Card
+            size="1"
+            style={{ position: "absolute", top: 12, right: 12, zIndex: 4, padding: 5 }}
           >
-            {legendOpen && <GraphLegend />}
-            <Tooltip content={legendOpen ? "Hide legend" : "Show legend"}>
-              <IconButton
-                aria-label={legendOpen ? "Hide graph legend" : "Show graph legend"}
-                aria-expanded={legendOpen}
-                size="2"
-                variant="surface"
-                color="gray"
-                onClick={() => setLegendOpen((open) => !open)}
-              >
-                <Info size={15} />
-              </IconButton>
-            </Tooltip>
-          </Flex>
+            <Flex align="center" gap="3">
+              <Text size="1" weight="medium" color="gray" mx="1">Overlay</Text>
+              {(["branches", "phases"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setOverlay(mode)}
+                  style={{
+                    all: "unset",
+                    cursor: "pointer",
+                    padding: "4px 11px",
+                    borderRadius: 5,
+                    fontFamily: MONO,
+                    fontSize: 11,
+                    color: overlay === mode ? "var(--amber-11)" : "var(--gray-10)",
+                    background: overlay === mode ? "var(--amber-a4)" : "transparent",
+                    border: `1px solid ${overlay === mode ? "var(--amber-a7)" : "transparent"}`,
+                  }}
+                >
+                  {mode}
+                </button>
+              ))}
+            </Flex>
+          </Card>
 
           {/* Zoom controls */}
           <Card
@@ -1450,31 +1377,36 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
           )}
         </Box>
 
-        {/* Right detail panel */}
-        {rightOpen && selectedNode && (
-          <>
-            <PanelResizeHandle
-              side="right"
-              active={resizingSide === "right"}
-              onMouseDown={(event) => beginPanelResize("right", event)}
-              onKeyboardResize={(delta) => setRightWidth((width) => clampPanelWidth(width + delta, "right"))}
-            />
-            <Box
-              flexShrink="0"
-              width={`${rightWidth}px`}
-              style={{ background: "var(--color-panel-solid)" }}
-            >
-              <DetailPanel
-                node={selectedNode}
-                onClose={() => {
-                  setRightOpen(false);
-                  setSelectedId(null);
-                }}
-              />
-            </Box>
-          </>
-        )}
       </Flex>
+      {selectedNode && (
+        <Flex
+          align="center"
+          gap="3"
+          px="4"
+          py="2"
+          flexShrink="0"
+          wrap="wrap"
+          style={{
+            borderTop: "1px solid var(--gray-a6)",
+            background: "var(--gray-a2)",
+          }}
+        >
+          <Text size="1" weight="bold" style={{ fontFamily: MONO }}>
+            {selectedNode.calleeFullName ? shortLabel(selectedNode.calleeFullName) : nodeLabel(selectedNode)}
+          </Text>
+          <Separator orientation="vertical" size="1" />
+          <Text
+            size="1"
+            style={{ fontFamily: MONO, overflowWrap: "anywhere", flex: "1 1 480px" }}
+          >
+            {selectedNode.calleeFullName ?? "—"}
+          </Text>
+          <Separator orientation="vertical" size="1" />
+          <Text size="1" color="gray" style={{ fontFamily: MONO }}>
+            {selectedLocation ?? "—"}
+          </Text>
+        </Flex>
+      )}
       {/* Status bar */}
       <Flex
         align="center"
@@ -1519,43 +1451,6 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
         <Text size="1" color="gray" style={{ fontFamily: MONO }}>
           {PHASES.length} phases
         </Text>
-        <Flex align="center" gap="1" ml="auto">
-          <Text size="1" color="gray">
-            overlay
-          </Text>
-          {(["branches", "phases", "none"] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => setOverlay(mode)}
-              style={{
-                all: "unset",
-                cursor: "pointer",
-                padding: "0 6px",
-                borderRadius: 3,
-                fontFamily: MONO,
-                fontSize: 11,
-                color: overlay === mode ? "var(--accent-11)" : "var(--gray-10)",
-                background: overlay === mode ? "var(--accent-a3)" : "transparent",
-              }}
-            >
-              {mode}
-            </button>
-          ))}
-          <Separator orientation="vertical" size="1" mx="2" />
-          {selectedNode && (
-            <>
-              <Text size="1" color="amber" style={{ fontFamily: MONO }}>
-                {nodeLabel(selectedNode)}
-              </Text>
-              <Text size="1" color="gray">
-                ·
-              </Text>
-            </>
-          )}
-          <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-            zoom {Math.round(zoom * 100)}%
-          </Text>
-        </Flex>
       </Flex>
     </Flex>
   );
@@ -1610,7 +1505,7 @@ function EmptyAnchoredSelection({
     const handleResize = (event: MouseEvent) => {
       const start = resizeStartRef.current;
       if (!start) return;
-      setLeftWidth(clampPanelWidth(start.width + event.clientX - start.x, "left"));
+      setLeftWidth(clampPanelWidth(start.width + event.clientX - start.x));
     };
     const finishResize = () => {
       resizeStartRef.current = null;
@@ -1683,11 +1578,10 @@ function EmptyAnchoredSelection({
         </Flex>
       </Box>
       <PanelResizeHandle
-        side="left"
         active={resizing}
         onMouseDown={beginResize}
         onKeyboardResize={(delta) => (
-          setLeftWidth((width) => clampPanelWidth(width + delta, "left"))
+          setLeftWidth((width) => clampPanelWidth(width + delta))
         )}
       />
 
@@ -1725,9 +1619,17 @@ export default function AnchoredGraphView(props: AnchoredGraphViewProps = {}) {
       props.graph ?? ANCHORED_VISUALISATION.graph,
       props.phaseTree ?? ANCHORED_VISUALISATION.phaseTree,
     ),
+    displayHierarchy: props.displayHierarchy
+      ?? (props.graph ? undefined : ANCHORED_VISUALISATION.displayHierarchy),
     rootMethodFullName: props.rootMethodFullName,
     memberMethodFullNames: props.memberMethodFullNames,
-  }), [props.graph, props.phaseTree, props.rootMethodFullName, props.memberMethodFullNames]);
+  }), [
+    props.displayHierarchy,
+    props.graph,
+    props.phaseTree,
+    props.rootMethodFullName,
+    props.memberMethodFullNames,
+  ]);
   const [override, setOverride] = useState<{
     baseGraph: GraphVisualisation["graph"];
     opseqId: string;

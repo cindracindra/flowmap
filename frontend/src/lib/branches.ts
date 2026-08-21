@@ -345,6 +345,68 @@ export function visibleGraphSelection(
 }
 
 /**
+ * Find a root-to-node route and return the branch choices required to make
+ * that route visible. Edge requirements are authoritative; node arm tags
+ * describe containment and are not sufficient for common flow after a
+ * branch or for nodes reached through synthesized return edges.
+ */
+export function branchSelectionForNode(
+  graph: FlowGraph,
+  nodeId: string,
+  current: BranchSelection,
+  panels: BranchPanel[],
+): BranchSelection | null {
+  if (!graph.rootId) return null;
+  const controlledGroups = new Set(panels.map((panel) => panel.id));
+  const outgoing = new Map<string, FlowEdge[]>();
+  for (const edge of graph.edges) {
+    if (edge.type === "data" || edge.loopBack) continue;
+    const edges = outgoing.get(edge.from);
+    if (edges) edges.push(edge);
+    else outgoing.set(edge.from, [edge]);
+  }
+
+  interface SearchState {
+    id: string;
+    required: Map<string, string>;
+  }
+  const keyOf = (state: SearchState) => `${state.id}|${[...state.required]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([group, arm]) => `${group}=${arm}`)
+    .join(";")}`;
+  const queue: SearchState[] = [{ id: graph.rootId, required: new Map() }];
+  const visited = new Set<string>();
+
+  for (let head = 0; head < queue.length; head++) {
+    const state = queue[head];
+    const stateKey = keyOf(state);
+    if (visited.has(stateKey)) continue;
+    visited.add(stateKey);
+    if (state.id === nodeId) {
+      const selection = new Map(current);
+      for (const [group, arm] of state.required) selection.set(group, arm);
+      return selection;
+    }
+
+    for (const edge of outgoing.get(state.id) ?? []) {
+      const required = new Map(state.required);
+      let conflict = false;
+      for (const requirement of edge.branchRequirements ?? []) {
+        if (!controlledGroups.has(requirement.groupId)) continue;
+        const existing = required.get(requirement.groupId);
+        if (existing !== undefined && existing !== requirement.armLabel) {
+          conflict = true;
+          break;
+        }
+        required.set(requirement.groupId, requirement.armLabel);
+      }
+      if (!conflict) queue.push({ id: edge.to, required });
+    }
+  }
+  return null;
+}
+
+/**
  * The panels a node belongs to, for the detail panel ("this call only runs
  * when amount > 1000" / "this is one of two implementations").
  */

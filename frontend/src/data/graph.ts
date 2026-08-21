@@ -15,6 +15,7 @@ import {
   opseqVisualisationsRaw,
 } from "virtual:flowmap-data";
 import type { FlowGraph, PhaseTree } from "../types/flowmap";
+import type { SerializedDisplayHierarchy } from "../lib/displayHierarchy";
 import type { TopicCluster, TopicOperation } from "../types/topics";
 import { sortTopics } from "../lib/topics";
 
@@ -29,6 +30,7 @@ const GENERATED_OPERATIONS_BY_TOPIC = topicOperationsRaw as Record<string, Topic
 export interface GraphVisualisation {
   graph: FlowGraph;
   phaseTree: PhaseTree;
+  displayHierarchy?: SerializedDisplayHierarchy;
   rootMethodFullName?: string;
   memberMethodFullNames?: string[];
 }

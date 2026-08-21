@@ -33,6 +33,7 @@ from domain.phase_orchestration import analyse_codebase_phases, discover_phases
 from domain.phase_segmentation import Analysis
 from service.phase import label_phase, resolve_phase_gate_batch
 from domain.opseq_clustering import assign_operation_topics_batch
+from domain.display_hierarchy import build_display_hierarchy
 from model import Graph
 
 
@@ -173,6 +174,7 @@ def build_all_opseq_visualisations(
                 if node.type == "entry" and node.calleeFullName is not None
             }),
             "graph": visualisation.flattened_cfg.to_dict(),
+            "displayHierarchy": build_display_hierarchy(visualisation.flattened_cfg),
             "phaseTree": visualisation.phase_tree,
         }
     return payloads
