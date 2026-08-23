@@ -193,7 +193,14 @@ def _recompute_branch_geometry(
         if forking:
             branch_points = sorted(forking, key=rank)
         else:
-            branch_points = [max(candidates, key=rank)] if candidates else []
+            branch_points = (
+                [max(candidates, key=rank)]
+                if candidates
+                # Extraction supplies this fallback for a branch whose arms
+                # contain no calls (notably `if (...) return;`).  There is no
+                # tagged arm head from which this stage could rediscover it.
+                else [point for point in group.branchPointIds if point in order]
+            )
 
         # The try body and finally are ordinary flow outside this group.
         # With no surviving catch work, only the empty noCatch arm remains,

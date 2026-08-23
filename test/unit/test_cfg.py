@@ -232,6 +232,35 @@ class ClassifyRootsAndOrphansTests(unittest.TestCase):
             {"m_a", "m_b", "m_empty"},
         )
 
+    def test_filter_retains_noisy_call_that_invokes_internal_lambda(self):
+        graph = Graph.from_dict({
+            "nodes": [
+                node("m_process", "entry", "Example.process:void()"),
+                node(
+                    "c_foreach", "call",
+                    "java.util.List.forEach:void(java.util.function.Consumer)",
+                    "Example.process:void()",
+                ),
+                node("m_lambda", "entry", "Example.<lambda>0:void(java.lang.Object)"),
+                node("c_work", "call", "Example.work:void()", "Example.<lambda>0:void(java.lang.Object)"),
+            ],
+            "edges": [
+                edge("m_process", "c_foreach"),
+                edge("c_foreach", "m_lambda", "invoke"),
+                edge("m_lambda", "c_work"),
+            ],
+        })
+
+        classified = filter_and_classify_roots_and_orphans(graph)
+
+        self.assertEqual(classified.roots, ["m_process"])
+        self.assertNotIn("m_lambda", classified.roots)
+        self.assertIn("c_foreach", {n.id for n in classified.nodes})
+        self.assertIn(
+            ("c_foreach", "m_lambda", "invoke"),
+            {(e.source, e.target, e.type) for e in classified.edges},
+        )
+
 
 # --------------------------------------------------------------------------
 # Forward-only root slicing from the already-extracted full-codebase graph.
@@ -671,6 +700,35 @@ class RecomputeBranchGeometryTests(unittest.TestCase):
         # terminus is what still marks this as a skip rather than a stop --
         # the "skip to X" target itself waits for the flatten stage.
         self.assertEqual(else_arm.terminus, "continues")
+
+    def test_zero_call_return_guard_keeps_its_extracted_branch_point(self):
+        """`before(); if (bad) return; after();` has no tagged arm call."""
+        raw = {
+            "nodes": [
+                node("e", "entry", "run"),
+                node("c_before", "call", "Session.get", "run"),
+                node("c_after", "call", "Orders.get", "run"),
+            ],
+            "edges": [
+                edge("e", "c_before"),
+                edge("c_before", "c_after"),
+            ],
+            "branchGroups": [{
+                "id": "guard", "kind": "IF", "method": "run", "line": 2,
+                "branchPointIds": ["c_before"],
+                "arms": [
+                    {"label": "if", "empty": True, "terminus": "return",
+                     "conditionCode": "bad"},
+                    {"label": "else", "empty": True, "terminus": "continues"},
+                ],
+            }],
+        }
+
+        group = self._group(raw)
+
+        self.assertEqual(group.branchPointIds, ["c_before"])
+        self.assertTrue(all(arm.empty for arm in group.arms))
+        self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
 
     def test_branch_point_of_a_single_armed_guard(self):
         raw = _if_else_raw()

@@ -66,6 +66,13 @@ def is_noise(method_name: str) -> bool:
     return False
 
 
+def is_lambda_method(method_name: str) -> bool:
+    """Whether a method full name denotes a compiler-generated lambda body."""
+    signature_free = method_name.split(":", 1)[0]
+    method_part = signature_free.rsplit(".", 1)[-1]
+    return _LAMBDA_RE.match(method_part) is not None
+
+
 def is_jdk_call_site_strip(method_name: str) -> bool:
     """
     Returns True if the method belongs to the JDK standard library and is

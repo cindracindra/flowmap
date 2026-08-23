@@ -156,6 +156,18 @@ class FullCfgPipelineTests(unittest.TestCase):
         self.assertEqual(features.methodTerms, ["println"])
         self.assertIn("arguments", features.observedFeatures)
 
+    def test_zero_call_early_return_branch_keeps_terminus_and_anchor(self):
+        group = next(
+            group for group in self.graph.branchGroups
+            if _simple_name(group.method or "") == "earlyReturn"
+        )
+
+        self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
+        self.assertTrue(all(arm.empty for arm in group.arms))
+        self.assertEqual(len(group.branchPointIds), 1)
+        anchor = self.by_id[group.branchPointIds[0]]
+        self.assertEqual(_simple_name(anchor.calleeFullName or ""), "doInner")
+
     def test_doHelper_is_invoked_from_both_doA_and_doProcessTwo(self):
         helper_id = next(
             n.id for n in self.graph.nodes
@@ -167,6 +179,27 @@ class FullCfgPipelineTests(unittest.TestCase):
             if e.type == "invoke" and e.target == helper_id
         }
         self.assertEqual(callers, {"doA", "doProcessTwo"})
+
+    def test_lambda_is_linked_to_its_enclosing_flow(self):
+        lambda_entry = next(
+            node for node in self.graph.nodes
+            if node.type == "entry" and _simple_name(node.calleeFullName or "").startswith("<lambda>")
+        )
+        incoming = [
+            edge for edge in self.graph.edges
+            if edge.type == "invoke" and edge.target == lambda_entry.id
+        ]
+
+        self.assertTrue(incoming, "lambda entry has no incoming invoke edge")
+        self.assertNotIn(lambda_entry.id, self.graph.roots)
+        self.assertNotIn(lambda_entry.id, self.graph.orphans)
+        self.assertEqual(
+            {_simple_name(self.by_id[edge.source].callerMethod or "") for edge in incoming},
+            {"doA"},
+        )
+
+        do_a_slice = slice_from_root(self.graph, self._entry_id("doA"))
+        self.assertIn(lambda_entry.id, {node.id for node in do_a_slice.nodes})
 
     def _entry_id(self, simple_name: str) -> str:
         return next(

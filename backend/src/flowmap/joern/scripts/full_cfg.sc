@@ -20,7 +20,11 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     ujson.Arr(values.toList.distinct.map(ujson.Str(_))*)
 
   def expressionTypes(expression: Expression): List[String] = (
-    expression.start.ast.isIdentifier.typeFullName.l ++
+    // Prefer the type of the expression itself. For `System.out`, walking
+    // identifiers first yields java.lang.System rather than the field-access
+    // expression's actual java.io.PrintStream type.
+    expression.start.isCall.typeFullName.l ++
+      expression.start.ast.isIdentifier.typeFullName.l ++
       expression.start.ast.isLiteral.typeFullName.l ++
       expression.start.ast.isCall.typeFullName.l
   ).filter(_.nonEmpty).distinct
@@ -112,6 +116,23 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     else method.typeDecl.filename.headOption.getOrElse(direct)
   }
 
+  // Java lambdas are emitted as synthetic internal METHOD nodes, but the
+  // functional-interface call that executes one does not expose that method
+  // through call.callee.  The implementation is instead named by a METHOD_REF
+  // argument (for example, values.forEach(<lambda>)).  Resolve those references
+  // here so the synthetic method participates in the enclosing operation's
+  // inter-method flow rather than being misclassified as a codebase root.
+  val internalMethodsByFullName: Map[String, List[Method]] =
+    cpg.method.isExternal(false).whereNot(_.isAbstract).l.groupBy(_.fullName)
+
+  def isLambdaImplementation(method: Method): Boolean =
+    method.name.matches("(?:lambda\\$.*\\$\\d+|<lambda>\\d+)")
+
+  def referencedInternalMethods(call: Call): List[Method] =
+    call.argument.isMethodRef.l.flatMap { ref =>
+      internalMethodsByFullName.getOrElse(ref.methodFullName, Nil)
+    }.filter(isLambdaImplementation).distinctBy(_.id)
+
   // Distinguishes an explicit `return` from an implicit end-of-method,
   // for a call that has NO further call ahead of it. 
   def classifyTerminus(startPoints: List[CfgNode]): String = {
@@ -187,7 +208,9 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   }
 
   // Emits ONE group for a whole if / else-if / else chain.
-  def emitIfChain(head: ControlStructure, methodFullName: String, armTags: ArmTags): Unit = {
+  def emitIfChain(
+    head: ControlStructure, methodFullName: String, entryId: String, armTags: ArmTags
+  ): Unit = {
     val groupId = s"cs${head.id}"
     val arms = ujson.Arr()
     var current = head
@@ -214,10 +237,23 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           walking = false
       }
     }
+    // Usually filter_noise_cfg can recover the visible fork from the first
+    // calls in the arms.  A guard containing only `return`, however, has no
+    // call in either arm.  Preserve the call immediately before its condition
+    // (or the method entry) so that zero-call early-return branches still have
+    // an anchor after condition/operator noise is stripped.
+    val precedingCalls = head.condition.headOption.toList.flatMap(
+      condition => condition.start.repeat(_.cfgPrev)(_.until(_.isCall)).isCall.l
+    ).distinctBy(_.id)
+    val branchPointIds =
+      if (precedingCalls.nonEmpty) precedingCalls.map(c => s"c${c.id}")
+      else List(entryId)
+
     branchGroups += ujson.Obj(
       "id" -> groupId, "kind" -> "IF",
       "method" -> methodFullName,
       "line" -> head.lineNumber.getOrElse(-1),
+      "branchPointIds" -> stringArray(branchPointIds),
       "arms" -> arms
     )
   }
@@ -352,7 +388,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     // it lives once the graph is sliced (a group whose every arm is empty
     // has no tagged node to recover it from either).
     ifs.filterNot(cs => chainedIfIds.contains(cs.id)).foreach { head =>
-      emitIfChain(head, method.fullName, armTags)
+      emitIfChain(head, method.fullName, entryId, armTags)
     }
     controlStructures.filter(_.controlStructureType == "TRY").foreach { cs =>
       emitTryGroup(cs, method, armTags)
@@ -425,6 +461,17 @@ def buildFullCodebaseCfg(): ujson.Obj = {
             edges += ujson.Obj("from" -> callId, "to" -> calleeEntryId, "type" -> "invoke")
           }
         }
+      }
+
+      // METHOD_REF targets are additional callees, not alternatives to the
+      // ordinary resolved target above: forEach itself may resolve to an
+      // external method while its lambda implementation is internal.
+      referencedInternalMethods(call).foreach { implementation =>
+        edges += ujson.Obj(
+          "from" -> callId,
+          "to" -> s"m${implementation.id}",
+          "type" -> "invoke"
+        )
       }
     }
   }

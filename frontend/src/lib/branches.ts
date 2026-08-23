@@ -209,7 +209,13 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
   const panels: BranchPanel[] = [];
   for (const group of graph.branchGroups ?? []) {
     if (!group.branchPointIds?.length) continue;
-    if (group.arms.every((arm) => arm.empty)) continue;
+    // A zero-call arm can still change control flow.  In particular,
+    // `if (...) return;` has two visually empty arms but selecting one must
+    // leave the method while the other continues to the next call.
+    if (
+      group.arms.every((arm) => arm.empty) &&
+      group.arms.every((arm) => (arm.terminus ?? "continues") === "continues")
+    ) continue;
 
     const structure = structureOf(group);
     if (

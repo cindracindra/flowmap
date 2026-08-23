@@ -43,7 +43,7 @@ import {
   type OpseqChoice,
 } from "../data/graph";
 import type { FlowNode, FlowEdge, LoopGroup, NodeType } from "../types/flowmap";
-import { computeLayout, type NodePosition, type RowGap } from "../lib/layout";
+import { computeLayout, ROW_HEIGHT, type NodePosition, type RowGap } from "../lib/layout";
 import {
   defaultSelection,
   buildBranchPanels,
@@ -67,8 +67,6 @@ import { MONO } from "../lib/ui";
 import {
   shortLabel,
   ownerClassOf,
-  computePhaseBBox,
-  TRANSITION_REASON_LABELS,
   buildExplorerTree,
   buildProjectExplorerTree,
   parsedSourceFileForClass,
@@ -642,10 +640,6 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   const [activeTab, setActiveTab] = useState<PanelTab>(initialTab);
   const [exploreQuery, setExploreQuery] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  // Branch panels are the default overlay: they are what the graph is for.
-  // Phases answer a different question and would fight them for the same
-  // screen space, so only one is shown at a time.
-  const [overlay, setOverlay] = useState<"branches" | "phases">("branches");
   const [hoveredPanelId, setHoveredPanelId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -862,6 +856,43 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
 
   const canvasWidth = Math.ceil(graphBounds.width * zoom);
   const canvasHeight = Math.ceil(graphBounds.height * zoom);
+  const phaseRuns = useMemo(() => {
+    const phaseRows = PHASES.map((phase) => [...new Set(
+      phase.nodes
+        .filter((id) => visibleIds.has(id))
+        .flatMap((id) => {
+          const position = positions.get(id);
+          return position ? [position.y] : [];
+        }),
+    )].sort((a, b) => a - b));
+    const rowsByPhase = phaseRows.flatMap((rows, phaseIndex) =>
+      rows.map((row) => ({ row, phaseIndex }))
+    );
+
+    return PHASES.flatMap((phase, phaseIndex) => {
+      const rows = phaseRows[phaseIndex];
+      if (rows.length === 0) return [];
+      const groups: number[][] = [];
+      for (const row of rows) {
+        const current = groups[groups.length - 1];
+        const previous = current?.[current.length - 1];
+        const anotherPhaseBetween = previous !== undefined && rowsByPhase.some((candidate) =>
+          candidate.phaseIndex !== phaseIndex && candidate.row > previous && candidate.row < row
+        );
+        if (!current || anotherPhaseBetween) groups.push([row]);
+        else current.push(row);
+      }
+      return groups.map((group, runIndex) => ({
+        id: `${phase.id ?? phaseIndex}:${runIndex}`,
+        phaseIndex,
+        label: phase.label ?? `Phase ${phaseIndex + 1}`,
+        reason: phase.opened_by?.reason,
+        color: PHASE_COLORS[phaseIndex % PHASE_COLORS.length],
+        top: group[0] - ROW_HEIGHT * 0.46,
+        bottom: group[group.length - 1] + ROW_HEIGHT * 0.46,
+      }));
+    });
+  }, [PHASES, positions, visibleIds]);
 
   useEffect(() => {
     if (!pendingRevealId) return;
@@ -1083,7 +1114,15 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
             tabIndex={0}
             aria-label="Scrollable graph canvas"
             onScroll={(event) => setGraphScrollTop(event.currentTarget.scrollTop)}
-            style={{ position: "absolute", inset: 0, overflow: "auto", overscrollBehavior: "contain" }}
+            style={{
+              position: "absolute",
+              top: 0,
+              right: phaseRuns.length > 0 ? 176 : 0,
+              bottom: 0,
+              left: 0,
+              overflow: "auto",
+              overscrollBehavior: "contain",
+            }}
           >
             <svg
               width={canvasWidth}
@@ -1113,43 +1152,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
             <g transform={`scale(${zoom}) translate(${graphBounds.offsetX}, ${graphBounds.offsetY})`}>
               {/* Branch regions go behind everything: they are the ground
                   the nodes sit on, not an annotation over them. */}
-              {overlay === "branches" && (
-                <BranchRegions geometries={panelGeometry} activeId={hoveredPanelId} />
-              )}
-
-              {/* Phase scope boxes */}
-              {overlay === "phases" && PHASES.map((phase, i) => {
-                const bbox = computePhaseBBox(phase, positions);
-                if (!bbox) return null;
-                const color = PHASE_COLORS[i % PHASE_COLORS.length];
-                return (
-                  <g key={i}>
-                    <rect
-                      x={bbox.x}
-                      y={bbox.y}
-                      width={bbox.width}
-                      height={bbox.height}
-                      rx={14}
-                      fill={color}
-                      fillOpacity={0.04}
-                      stroke={color}
-                      strokeOpacity={0.45}
-                      strokeWidth={1}
-                      strokeDasharray="4 3"
-                    >
-                      <title>
-                        {phase.opened_by
-                          ? `Opened by: ${TRANSITION_REASON_LABELS[phase.opened_by.reason]}`
-                          : "First phase of the trace"}
-                      </title>
-                    </rect>
-                    <text x={bbox.x + 10} y={bbox.y + 16} fontSize="9" fontFamily={MONO} fill={color} opacity={0.85}>
-                      {phase.label ?? `phase ${i + 1}`}
-                      {phase.opened_by ? ` · ${phase.opened_by.reason}` : ""}
-                    </text>
-                  </g>
-                );
-              })}
+              <BranchRegions geometries={panelGeometry} activeId={hoveredPanelId} />
 
               {/* Edges */}
               {visibleEdges.map((edge, i) => {
@@ -1275,48 +1278,73 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
 
               {/* Switcher pills last, so they stay clickable above the
                   nodes and edges the region contains. */}
-              {overlay === "branches" && (
-                <BranchSwitchers
-                  geometries={panelGeometry}
-                  selection={armSelection}
-                  activeId={hoveredPanelId}
-                  onSelect={handleArmSelect}
-                  onHover={setHoveredPanelId}
-                />
-              )}
+              <BranchSwitchers
+                geometries={panelGeometry}
+                selection={armSelection}
+                activeId={hoveredPanelId}
+                onSelect={handleArmSelect}
+                onHover={setHoveredPanelId}
+              />
             </g>
             </svg>
           </div>
 
           <StickyHierarchyHeader path={stickyHeaderPath} />
 
-          <Card
-            size="1"
-            style={{ position: "absolute", top: 12, right: 12, zIndex: 4, padding: 5 }}
-          >
-            <Flex align="center" gap="3">
-              <Text size="1" weight="medium" color="gray" mx="1">Overlay</Text>
-              {(["branches", "phases"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setOverlay(mode)}
-                  style={{
-                    all: "unset",
-                    cursor: "pointer",
-                    padding: "4px 11px",
-                    borderRadius: 5,
-                    fontFamily: MONO,
-                    fontSize: 11,
-                    color: overlay === mode ? "var(--amber-11)" : "var(--gray-10)",
-                    background: overlay === mode ? "var(--amber-a4)" : "transparent",
-                    border: `1px solid ${overlay === mode ? "var(--amber-a7)" : "transparent"}`,
-                  }}
-                >
-                  {mode}
-                </button>
-              ))}
-            </Flex>
-          </Card>
+          {phaseRuns.length > 0 && (
+            <Box
+              aria-label="Phase lane"
+              style={{
+                position: "absolute",
+                inset: "0 0 0 auto",
+                width: 176,
+                zIndex: 3,
+                overflow: "hidden",
+                pointerEvents: "none",
+                borderLeft: "1px solid var(--gray-a5)",
+                background: "linear-gradient(90deg, transparent, var(--color-panel-solid) 24%)",
+              }}
+            >
+              {phaseRuns.map((run) => {
+                const top = (run.top + graphBounds.offsetY) * zoom - graphScrollTop;
+                const height = Math.max(28, (run.bottom - run.top) * zoom);
+                return (
+                  <button
+                    key={run.id}
+                    title={`Scroll to ${run.label}`}
+                    onClick={() => scrollRef.current?.scrollTo({
+                      top: Math.max(0, (run.top + graphBounds.offsetY) * zoom - 16),
+                      behavior: "smooth",
+                    })}
+                    style={{
+                      all: "unset",
+                      boxSizing: "border-box",
+                      position: "absolute",
+                      top,
+                      right: 0,
+                      width: 164,
+                      height,
+                      minHeight: 28,
+                      padding: "7px 10px 6px 12px",
+                      borderLeft: `4px solid ${run.color}`,
+                      background: `color-mix(in srgb, ${run.color} 16%, transparent)`,
+                      pointerEvents: "auto",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <Text size="1" weight="bold" as="div" style={{ fontFamily: MONO }}>
+                      {run.label}
+                    </Text>
+                    {run.reason && (
+                      <Text size="1" color="gray" as="div" mt="1">
+                        {run.reason}
+                      </Text>
+                    )}
+                  </button>
+                );
+              })}
+            </Box>
+          )}
 
           {/* Zoom controls */}
           <Card
@@ -1324,7 +1352,8 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
             style={{
               position: "absolute",
               bottom: "16px",
-              right: "16px",
+              right: phaseRuns.length > 0 ? "192px" : "16px",
+              zIndex: 4,
               padding: 6,
             }}
           >

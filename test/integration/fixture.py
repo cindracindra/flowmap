@@ -45,7 +45,8 @@ def ensure_cpg_built() -> Path:
     session -- delete test/integration/test_output/ to force a re-parse
     after changing the fixture's .java source.
     """
-    if not CPG_PATH.exists():
+    source_mtime = max(path.stat().st_mtime for path in SOURCE_DIR.rglob("*.java"))
+    if not CPG_PATH.exists() or CPG_PATH.stat().st_mtime < source_mtime:
         OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
         parse_project(str(SOURCE_DIR), str(CPG_PATH))
     return CPG_PATH

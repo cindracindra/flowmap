@@ -3,7 +3,7 @@ import dataclasses
 from domain.cfg_branching import _recompute_branch_geometry
 from domain.cfg_semantics import scoped_semantic_features
 from domain.cfg_traversal import _adjacency_out
-from domain.util import is_jdk_call_site_strip, is_noise
+from domain.util import is_jdk_call_site_strip, is_lambda_method, is_noise
 from model import Edge, Graph, Node
 
 
@@ -87,10 +87,25 @@ def filter_noise_cfg(cfg: Graph, *, preserve_all_entries: bool = False) -> Graph
     call in an arm, so anything genuinely inside one is already tagged,
     and the only place a migrated tag could land is outside the arm.
     """
+    nodes_by_id = {node.id: node for node in cfg.nodes}
+    internal_invoke_sources = {
+        edge.source
+        for edge in cfg.edges
+        if edge.type == "invoke"
+        and (target := nodes_by_id.get(edge.target)) is not None
+        and target.type == "entry"
+        and target.calleeFullName is not None
+        and is_lambda_method(target.calleeFullName)
+    }
     excluded_ids = {
         n.id
         for n in cfg.nodes
         if n.type == "call"
+        # A normally-noisy API call can be the only execution bridge to an
+        # internal lambda implementation. Removing that call
+        # also removes its invoke edge and exposes the implementation as a
+        # false root, so retain such bridge calls.
+        and n.id not in internal_invoke_sources
         and n.calleeFullName is not None
         and (is_noise(n.calleeFullName) or is_jdk_call_site_strip(n.calleeFullName))
     }

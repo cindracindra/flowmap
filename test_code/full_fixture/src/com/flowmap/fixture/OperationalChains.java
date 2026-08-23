@@ -1,5 +1,7 @@
 package com.flowmap.fixture;
 
+import java.util.List;
+
 /**
  * Fixture project for processor/inter_cfg_full.sc -- method names mirror
  * test/test_full_cfg.py's hand-built raw-dump fixture 1:1 (doA,
@@ -22,6 +24,16 @@ public class OperationalChains {
 
     public void doA() {
         doHelper();
+        doX();
+        earlyReturn(true);
+        List.of("lambda").forEach(value -> doInner());
+    }
+
+    private void earlyReturn(boolean authenticated) {
+        doInner();
+        if (!authenticated) {
+            return;
+        }
         doX();
     }
 
