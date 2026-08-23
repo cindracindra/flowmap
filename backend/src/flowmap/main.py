@@ -159,13 +159,12 @@ def build_all_opseq_visualisations(
         )
     payloads: dict[str, dict] = {}
     for root_id, method_full_name in root_method_full_names(full_cfg).items():
-        with timed(f"Opseq visualisation: {method_full_name}"):
-            visualisation = build_opseq_visualisation(
-                full_cfg,
-                root_id,
-                phase_analysis,
-                phase_labeler=phase_labeler,
-            )
+        visualisation = build_opseq_visualisation(
+            full_cfg,
+            root_id,
+            phase_analysis,
+            phase_labeler=phase_labeler,
+        )
         payloads[root_id] = {
             "rootMethodFullName": method_full_name,
             "memberMethodFullNames": sorted({
@@ -239,10 +238,10 @@ if __name__ == "__main__":
     load_dotenv()
     args = parse_args()
 
-    cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
-    if not cpg_output_path.exists():
-        parse_project(SOURCE_DIR, cpg_output_path)
-    # parse_project(SOURCE_DIR, cpg_output_path)
+    with timed("CPG parsing"):
+        cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
+        if not cpg_output_path.exists():
+            parse_project(SOURCE_DIR, cpg_output_path)
 
     session = JoernSession(port=8080)
     

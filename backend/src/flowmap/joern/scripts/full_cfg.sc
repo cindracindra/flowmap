@@ -238,15 +238,23 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       }
     }
     // Usually filter_noise_cfg can recover the visible fork from the first
-    // calls in the arms.  A guard containing only `return`, however, has no
-    // call in either arm.  Preserve the call immediately before its condition
-    // (or the method entry) so that zero-call early-return branches still have
-    // an anchor after condition/operator noise is stripped.
+    // calls in the arms. A guard containing only `return`, however, has no
+    // call in either arm. Prefer the last non-operator call evaluated by the
+    // condition itself: `if (user.hasRole(...)) return` must fork at hasRole,
+    // not at an unrelated call before the IF. For an operator-only condition
+    // such as `if (!authenticated) return`, retain the existing predecessor
+    // fallback; the operator node is filtered later and offers no visible
+    // anchor of its own.
+    val visibleConditionCalls = head.condition.headOption.toList.flatMap(
+      condition => condition.start.ast.isCall.l
+        .filterNot(_.methodFullName.startsWith("<operator>."))
+    )
     val precedingCalls = head.condition.headOption.toList.flatMap(
       condition => condition.start.repeat(_.cfgPrev)(_.until(_.isCall)).isCall.l
     ).distinctBy(_.id)
     val branchPointIds =
-      if (precedingCalls.nonEmpty) precedingCalls.map(c => s"c${c.id}")
+      if (visibleConditionCalls.nonEmpty) List(s"c${visibleConditionCalls.last.id}")
+      else if (precedingCalls.nonEmpty) precedingCalls.map(c => s"c${c.id}")
       else List(entryId)
 
     branchGroups += ujson.Obj(

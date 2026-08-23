@@ -198,17 +198,19 @@ function ExplorerRow({
   path,
   selectedNodeId,
   onSelect,
+  forceOpen = false,
 }: {
   item: ExplorerItem;
   depth: number;
   path: string;
   selectedNodeId: string | null;
   onSelect: (id: string) => void;
+  forceOpen?: boolean;
 }) {
   const { nodesById, treeOpenOverrides, onToggleTreePath } = useGraphViewData();
   const isBranch = item.kind !== "node";
   const defaultOpen = depth < 2;
-  const open = treeOpenOverrides.get(`operation:${path}`) ?? defaultOpen;
+  const open = forceOpen || (treeOpenOverrides.get(`operation:${path}`) ?? defaultOpen);
   const isSelected = item.nodeId === selectedNodeId;
   const node = item.nodeId ? nodesById.get(item.nodeId) : undefined;
 
@@ -261,10 +263,23 @@ function ExplorerRow({
             path={`${path}/${child.kind}:${child.name}`}
             selectedNodeId={selectedNodeId}
             onSelect={onSelect}
+            forceOpen={forceOpen}
           />
         ))}
     </Box>
   );
+}
+
+function filterOperationTree(items: ExplorerItem[], query: string): ExplorerItem[] {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return items;
+
+  return items.flatMap((item) => {
+    if (item.name.toLowerCase().includes(normalizedQuery)) return [item];
+
+    const children = filterOperationTree(item.children ?? [], normalizedQuery);
+    return children.length > 0 ? [{ ...item, children }] : [];
+  });
 }
 
 function ProjectExplorerRow({
@@ -639,6 +654,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
   const [activeTab, setActiveTab] = useState<PanelTab>(initialTab);
   const [exploreQuery, setExploreQuery] = useState("");
+  const [operationQuery, setOperationQuery] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [hoveredPanelId, setHoveredPanelId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -648,6 +664,10 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   const filteredProjectTree = useMemo(
     () => filterProjectTree(PROJECT_TREE, exploreQuery),
     [PROJECT_TREE, exploreQuery],
+  );
+  const filteredOperationTree = useMemo(
+    () => filterOperationTree(EXPLORER_TREE, operationQuery),
+    [EXPLORER_TREE, operationQuery],
   );
 
   // Everything downstream of the arm selection: which nodes exist, where
@@ -663,10 +683,18 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     [FLOW_EDGES, visibleSelection],
   );
   const activePanels = useMemo(() => {
-    return PANELS.filter((panel) =>
-      panel.branchPointIds.some((id) => visibleIds.has(id))
+    // A stripped condition can make several later branches share the same
+    // visible branch point. The point being visible does not mean every one
+    // of those branches executes: an earlier selected arm may already have
+    // returned. Visible route requirements are the authoritative signal
+    // that execution actually reaches a panel under the current selection.
+    const reachedPanelIds = new Set(
+      visibleEdges.flatMap((edge) =>
+        (edge.branchRequirements ?? []).map((requirement) => requirement.groupId)
+      ),
     );
-  }, [PANELS, visibleIds]);
+    return PANELS.filter((panel) => reachedPanelIds.has(panel.id));
+  }, [PANELS, visibleEdges]);
 
   // Each visible panel's selected arm becomes a row band, so two branches
   // that are not nested in each other never share a row -- otherwise their
@@ -1075,20 +1103,41 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                   </Flex>
                 </Tabs.Content>
                 <Tabs.Content value="operation" style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-                  <ScrollArea style={{ height: "100%" }}>
-                    <Box py="1">
-                      {EXPLORER_TREE.map((item, i) => (
-                        <ExplorerRow
-                          key={item.name + i}
-                          item={item}
-                          depth={0}
-                          path={`${item.kind}:${item.name}`}
-                          selectedNodeId={selectedId}
-                          onSelect={handleSelectFromPanel}
-                        />
-                      ))}
+                  <Flex direction="column" style={{ height: "100%" }}>
+                    <Box p="2" style={{ borderBottom: "1px solid var(--gray-a5)" }}>
+                      <TextField.Root
+                        size="1"
+                        placeholder="Search operation…"
+                        value={operationQuery}
+                        onChange={(event) => setOperationQuery(event.target.value)}
+                        aria-label="Search operation methods and calls"
+                      >
+                        <TextField.Slot>
+                          <Search size={13} />
+                        </TextField.Slot>
+                      </TextField.Root>
                     </Box>
-                  </ScrollArea>
+                    <ScrollArea style={{ flex: 1 }}>
+                      <Box py="1">
+                        {filteredOperationTree.length === 0 && (
+                          <Text size="1" color="gray" align="center" as="p" mt="4">
+                            No operation items found
+                          </Text>
+                        )}
+                        {filteredOperationTree.map((item, i) => (
+                          <ExplorerRow
+                            key={item.name + i}
+                            item={item}
+                            depth={0}
+                            path={`${item.kind}:${item.name}`}
+                            selectedNodeId={selectedId}
+                            onSelect={handleSelectFromPanel}
+                            forceOpen={operationQuery.trim().length > 0}
+                          />
+                        ))}
+                      </Box>
+                    </ScrollArea>
+                  </Flex>
                 </Tabs.Content>
               </Tabs.Root>
               </Flex>

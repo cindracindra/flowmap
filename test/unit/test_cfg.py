@@ -730,6 +730,42 @@ class RecomputeBranchGeometryTests(unittest.TestCase):
         self.assertTrue(all(arm.empty for arm in group.arms))
         self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
 
+    def test_all_empty_continuing_if_is_removed(self):
+        """Noise-only arms do not leave a transparent branch behind."""
+        raw = {
+            "nodes": [
+                node("e", "entry", "run"),
+                node("c_before", "call", "Cart.update", "run"),
+                node(
+                    "c_remove",
+                    "call",
+                    "java.util.Iterator.remove:void()",
+                    "run",
+                    arms=[("redundant", "if")],
+                ),
+                node("c_after", "call", "Model.addAttribute", "run"),
+            ],
+            "edges": [
+                edge("e", "c_before"),
+                edge("c_before", "c_remove"),
+                edge("c_remove", "c_after"),
+                edge("c_before", "c_after"),
+            ],
+            "branchGroups": [{
+                "id": "redundant", "kind": "IF", "method": "run", "line": 2,
+                "branchPointIds": ["c_before"],
+                "arms": [
+                    {"label": "if", "empty": False, "terminus": "continues",
+                     "conditionCode": "quantity < 1", "firstCallId": "c_remove"},
+                    {"label": "else", "empty": True, "terminus": "continues"},
+                ],
+            }],
+        }
+
+        filtered = filter_noise_cfg(Graph.from_dict(raw))
+
+        self.assertEqual(filtered.branchGroups, [])
+
     def test_branch_point_of_a_single_armed_guard(self):
         raw = _if_else_raw()
         raw["nodes"] = [
@@ -1578,6 +1614,36 @@ class FlattenCfgTests(unittest.TestCase):
         cloned id (not origId) -- lets tests assert on structure without
         hardcoding the "~N" suffixes clone() mints."""
         return {n.id: n.calleeFullName for n in flattened.nodes}
+
+    def test_external_leaf_is_cloned_per_invoking_call_site(self):
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e_run", "entry", "run"),
+                node("c_first", "call", "Session.getAttribute", "run"),
+                node("c_second", "call", "Session.getAttribute", "run"),
+                node("leaf_get", "leaf", "Session.getAttribute"),
+            ],
+            "edges": [
+                edge("e_run", "c_first"),
+                edge("c_first", "c_second"),
+                edge("c_first", "leaf_get", "invoke"),
+                edge("c_second", "leaf_get", "invoke"),
+            ],
+        })
+
+        flattened = flatten_cfg(graph)
+        leaves = [n for n in flattened.nodes if n.origId == "leaf_get"]
+        self.assertEqual(len(leaves), 2)
+
+        leaf_ids = {n.id for n in leaves}
+        invoke_edges = [
+            e for e in flattened.edges
+            if e.type == "invoke" and e.target in leaf_ids
+        ]
+        self.assertEqual(len(invoke_edges), 2)
+        self.assertEqual({e.target for e in invoke_edges}, leaf_ids)
+        self.assertEqual(len({e.source for e in invoke_edges}), 2)
 
     def test_non_tail_call_gets_return_edge_tagged_with_call_site(self):
         # transfer(): balanceUpdate(); recordTransfer();

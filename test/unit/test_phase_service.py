@@ -10,6 +10,7 @@ sys.path.insert(0, str(FLOWMAP_SRC))
 
 from domain.phase_resolution import collect_uncertain_gates  # noqa: E402
 from domain.phase_segmentation import analyse  # noqa: E402
+from llm.client import LLMError  # noqa: E402
 from model import Graph  # noqa: E402
 from service.phase import (  # noqa: E402
     label_phase,
@@ -120,3 +121,38 @@ def test_final_phase_label_reads_evidence_from_flattened_clone_ids() -> None:
     assert payload["operations"][0]["id"] == "reserve~7"
     assert payload["operations"][0]["callee"] == "Stock.reserve"
     assert payload["operations"][0]["methodTerms"] == ["reserve", "stock"]
+
+
+def test_final_phase_label_accepts_up_to_eight_words() -> None:
+    graph, _ = _uncertain_subject()
+    client = MagicMock()
+    client.complete.return_value = "Update Cart Item Quantity And Recalculate Total Value"
+
+    assert label_phase(client, graph, ("reserve",), 0) == (
+        "Update Cart Item Quantity And Recalculate Total Value"
+    )
+
+
+def test_final_phase_label_rejects_and_reports_wrong_format(capsys) -> None:
+    graph, _ = _uncertain_subject()
+    graph.entryPoint = "Cart.updateQuantities"
+    client = MagicMock()
+    client.complete.return_value = "The phase updates stock.\nExtra explanation."
+
+    assert label_phase(client, graph, ("reserve",), 2) is None
+
+    error = capsys.readouterr().err
+    assert "[phase-label] Cart.updateQuantities phase-3" in error
+    assert "invalid format" in error
+    assert "Extra explanation" in error
+
+
+def test_final_phase_label_reports_provider_error(capsys) -> None:
+    graph, _ = _uncertain_subject()
+    client = MagicMock()
+    client.complete.side_effect = LLMError("rate limited")
+
+    assert label_phase(client, graph, ("reserve",), 0) is None
+
+    error = capsys.readouterr().err
+    assert "phase-1: provider error: rate limited" in error

@@ -280,13 +280,6 @@ def flatten_cfg(cfg: Graph) -> Graph:
                 )
             return entry_new_id, bool(continuations)
 
-        # Leaves are keyed by CLONE id, not original: a leaf takes the arms
-        # of the call site that invoked it, and two call sites in this same
-        # method share one leaf clone (`local_clone` dedups by original id),
-        # so their arms are unioned rather than one overwriting the other.
-        leaf_tags: dict[str, list[BranchArmRef]] = {}
-        leaf_loop_ids: dict[str, list[str]] = {}
-
         continuation_consumed = False
         deeper_visited = visited_methods | {method_name}
         walked: set[str] = set()
@@ -307,23 +300,21 @@ def flatten_cfg(cfg: Graph) -> Graph:
 
             for leaf_target in leaf_targets:
                 # An external callee has no body to inline, but the call
-                # still nests -- so it deepens exactly like an internal
-                # one, just without recursing. Safe to keep in
-                # `local_clone` at a different depth than its neighbours:
-                # a leaf is only ever an "invoke" target, never reached by
-                # a "sequence" edge, so no id is requested at two depths.
-                leaf_new_id = get_or_clone(leaf_target, depth + 1)
+                # still nests -- so it deepens exactly like an internal one,
+                # just without recursing. Clone it per invoking call site:
+                # two source calls to the same external method are two
+                # operation occurrences and must not visually converge on a
+                # shared leaf merely because extraction reused its target.
+                leaf_new_id = clone(leaf_target, depth + 1)
+                leaf_tags = tags_for(original_id)
+                leaf_loops = loops_for(original_id)
+                if leaf_tags or leaf_loops:
+                    flat_nodes[leaf_new_id] = dataclasses.replace(
+                        flat_nodes[leaf_new_id],
+                        branchArms=leaf_tags,
+                        loopIds=leaf_loops,
+                    )
                 emit_edge(this_new_id, leaf_new_id, "invoke")
-                bucket = leaf_tags.setdefault(leaf_new_id, [])
-                present = {(t.groupId, t.armLabel) for t in bucket}
-                for tag in tags_for(original_id):
-                    if (tag.groupId, tag.armLabel) not in present:
-                        present.add((tag.groupId, tag.armLabel))
-                        bucket.append(tag)
-                loop_bucket = leaf_loop_ids.setdefault(leaf_new_id, [])
-                for loop_id in loops_for(original_id):
-                    if loop_id not in loop_bucket:
-                        loop_bucket.append(loop_id)
 
             if internal_targets:
                 is_new_continuation = False
@@ -509,10 +500,8 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # A fresh list per node -- `clone` copies the field by reference, so
         # rewriting one in place would corrupt every sibling instance.
         for original_id, new_id in local_clone.items():
-            tags = leaf_tags[new_id] if new_id in leaf_tags else tags_for(original_id)
-            loop_ids = (
-                leaf_loop_ids[new_id] if new_id in leaf_loop_ids else loops_for(original_id)
-            )
+            tags = tags_for(original_id)
+            loop_ids = loops_for(original_id)
             if tags or loop_ids:
                 flat_nodes[new_id] = dataclasses.replace(
                     flat_nodes[new_id], branchArms=tags, loopIds=loop_ids

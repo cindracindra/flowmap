@@ -26,6 +26,8 @@ public class OperationalChains {
         doHelper();
         doX();
         earlyReturn(true);
+        callConditionReturn();
+        shortCircuitCallConditionReturn();
         List.of("lambda").forEach(value -> doInner());
     }
 
@@ -35,6 +37,30 @@ public class OperationalChains {
             return;
         }
         doX();
+    }
+
+    private void callConditionReturn() {
+        doInner();
+        if (hasRole()) {
+            return;
+        }
+        doX();
+    }
+
+    private void shortCircuitCallConditionReturn() {
+        doInner();
+        if (hasRole() || isOwner()) {
+            return;
+        }
+        doX();
+    }
+
+    private boolean hasRole() {
+        return true;
+    }
+
+    private boolean isOwner() {
+        return true;
     }
 
     public void doProcessTwo() {

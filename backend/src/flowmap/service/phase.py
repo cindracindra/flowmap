@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 
 from llm.client import LLMClient, LLMError
 
@@ -11,6 +12,23 @@ from model import Graph
 
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+_LABEL_WORD = r"[^\W_]+(?:['’\-\u2010-\u2015][^\W_]+)*"
+_PHASE_LABEL_RE = re.compile(rf"^{_LABEL_WORD}(?: {_LABEL_WORD}){{1,7}}$")
+
+
+def _phase_label_issue(
+    graph: Graph,
+    phase_index: int,
+    issue: str,
+    *,
+    response: str | None = None,
+) -> None:
+    operation = graph.entryPoint or "<unknown operation>"
+    detail = f"; response={response!r}" if response is not None else ""
+    print(
+        f"[phase-label] {operation} phase-{phase_index + 1}: {issue}{detail}",
+        file=sys.stderr,
+    )
 
 def _node_evidence(graph: Graph, node_id: str) -> dict:
     node = next((candidate for candidate in graph.nodes if candidate.id == node_id), None)
@@ -137,12 +155,24 @@ def label_phase(
         "operations": [_node_evidence(graph, node_id) for node_id in node_ids],
     }
     try:
-        label = client.complete(
+        response = client.complete(
             role="small",
             system=_LABEL_PHASE_SYSTEM_PROMPT,
             user=json.dumps(payload, ensure_ascii=False),
             max_tokens=64,
         ).strip()
-    except LLMError:
+    except LLMError as exc:
+        _phase_label_issue(graph, phase_index, f"provider error: {exc}")
         return None
-    return label or None
+    if not response:
+        _phase_label_issue(graph, phase_index, "blank response", response=response)
+        return None
+    if not _PHASE_LABEL_RE.fullmatch(response):
+        _phase_label_issue(
+            graph,
+            phase_index,
+            "invalid format (expected a single 2-8 word label)",
+            response=response,
+        )
+        return None
+    return response

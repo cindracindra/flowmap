@@ -168,6 +168,30 @@ class FullCfgPipelineTests(unittest.TestCase):
         anchor = self.by_id[group.branchPointIds[0]]
         self.assertEqual(_simple_name(anchor.calleeFullName or ""), "doInner")
 
+    def test_zero_call_return_branch_anchors_on_its_condition_call(self):
+        group = next(
+            group for group in self.graph.branchGroups
+            if _simple_name(group.method or "") == "callConditionReturn"
+        )
+
+        self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
+        self.assertTrue(all(arm.empty for arm in group.arms))
+        self.assertEqual(len(group.branchPointIds), 1)
+        anchor = self.by_id[group.branchPointIds[0]]
+        self.assertEqual(_simple_name(anchor.calleeFullName or ""), "hasRole")
+
+    def test_short_circuit_zero_call_return_uses_last_visible_condition_call(self):
+        group = next(
+            group for group in self.graph.branchGroups
+            if _simple_name(group.method or "") == "shortCircuitCallConditionReturn"
+        )
+
+        self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
+        self.assertTrue(all(arm.empty for arm in group.arms))
+        self.assertEqual(len(group.branchPointIds), 1)
+        anchor = self.by_id[group.branchPointIds[0]]
+        self.assertEqual(_simple_name(anchor.calleeFullName or ""), "isOwner")
+
     def test_doHelper_is_invoked_from_both_doA_and_doProcessTwo(self):
         helper_id = next(
             n.id for n in self.graph.nodes

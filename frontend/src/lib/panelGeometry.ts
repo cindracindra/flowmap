@@ -283,15 +283,36 @@ export function computePanelGeometry(
       const containsMembers = childMembers.size > 0
         && parentMembers.size > childMembers.size
         && [...childMembers].every((id) => parentMembers.has(id));
+      // Selecting one path through nested branches can make the outer and
+      // inner panels contain exactly the same visible nodes. Source order
+      // and their shared projected fork then disambiguate the nesting: the
+      // earlier condition is the enclosing panel. Without this case both
+      // boxes use the same member bounding box and their borders coincide.
+      const containsEqualMembers = childMembers.size > 0
+        && parentMembers.size === childMembers.size
+        && [...childMembers].every((id) => parentMembers.has(id))
+        && candidate.panel.method === child.panel.method
+        && (candidate.panel.line ?? Number.MAX_SAFE_INTEGER)
+          < (child.panel.line ?? Number.MIN_SAFE_INTEGER)
+        && candidate.panel.branchPointIds.some((id) =>
+          child.panel.branchPointIds.includes(id)
+        );
       // Empty arms have no members to compare, but their fork still lives
       // inside the enclosing arm. This keeps their compact route panel
       // nested instead of letting it sit on the parent's border.
       const containsFork = childMembers.size === 0
         && child.panel.branchPointIds.some((id) => parentMembers.has(id));
-      return containsMembers || containsFork;
+      return containsMembers || containsEqualMembers || containsFork;
     });
     const parent = candidates.sort(
-      (a, b) => memberSets.get(a.panel.id)!.size - memberSets.get(b.panel.id)!.size,
+      (a, b) => {
+        const sizeDifference = memberSets.get(a.panel.id)!.size
+          - memberSets.get(b.panel.id)!.size;
+        if (sizeDifference !== 0) return sizeDifference;
+        // For equal-member nesting, choose the closest preceding source
+        // condition as the immediate parent.
+        return (b.panel.line ?? -1) - (a.panel.line ?? -1);
+      },
     )[0];
     if (parent) parentOf.set(child.panel.id, parent);
   }

@@ -38,28 +38,46 @@
       "id": "c30064771075",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
-      "calleeFullName": "java.util.List.forEach:void(java.util.function.Consumer)",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "List.of(\"lambda\").forEach(<lambda>)",
-      "line": 29,
-      "terminus": "fallthrough"
-    },
-    {
-      "id": "m107374182415",
-      "type": "leaf",
-      "calleeFullName": "java.util.List.forEach:void(java.util.function.Consumer)"
+      "code": "this.callConditionReturn()",
+      "line": 29
     },
     {
       "id": "c30064771076",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
-      "calleeFullName": "java.util.List.of:java.util.List(java.lang.Object)",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "List.of(\"lambda\")",
-      "line": 29
+      "code": "this.shortCircuitCallConditionReturn()",
+      "line": 30
+    },
+    {
+      "id": "c30064771077",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
+      "calleeFullName": "java.util.List.forEach:void(java.util.function.Consumer)",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "List.of(\"lambda\").forEach(<lambda>)",
+      "line": 31,
+      "terminus": "fallthrough"
     },
     {
       "id": "m107374182420",
+      "type": "leaf",
+      "calleeFullName": "java.util.List.forEach:void(java.util.function.Consumer)"
+    },
+    {
+      "id": "c30064771078",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
+      "calleeFullName": "java.util.List.of:java.util.List(java.lang.Object)",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "List.of(\"lambda\")",
+      "line": 31
+    },
+    {
+      "id": "m107374182425",
       "type": "leaf",
       "calleeFullName": "java.util.List.of:java.util.List(java.lang.Object)"
     },
@@ -68,260 +86,367 @@
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 32
-    },
-    {
-      "id": "c30064771077",
-      "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
-      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "this.doInner()",
-      "line": 33
+      "line": 34
     },
     {
       "id": "c30064771079",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "this.doInner()",
+      "line": 35
+    },
+    {
+      "id": "c30064771081",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "this.doX()",
-      "line": 37,
+      "line": 39,
       "terminus": "fallthrough"
     },
     {
-      "id": "c30064771078",
+      "id": "c30064771080",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
       "calleeFullName": "<operator>.logicalNot",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "!authenticated",
-      "line": 34
+      "line": 36
     },
     {
-      "id": "m107374182413",
+      "id": "m107374182418",
       "type": "leaf",
       "calleeFullName": "<operator>.logicalNot"
     },
     {
       "id": "m107374182402",
       "type": "entry",
-      "calleeFullName": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 40
-    },
-    {
-      "id": "c30064771080",
-      "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
-      "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "this.doHelper()",
-      "line": 41
-    },
-    {
-      "id": "c30064771081",
-      "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
-      "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "this.doY()",
-      "line": 42,
-      "terminus": "fallthrough"
-    },
-    {
-      "id": "m107374182403",
-      "type": "entry",
-      "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 45
+      "line": 42
     },
     {
       "id": "c30064771082",
       "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "this.doInner()",
-      "line": 46,
-      "terminus": "fallthrough"
-    },
-    {
-      "id": "m107374182404",
-      "type": "entry",
-      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 49
-    },
-    {
-      "id": "c30064771083",
-      "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doInner:void()",
-      "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "System.out.println(\"doInner\")",
-      "line": 50,
-      "terminus": "fallthrough"
-    },
-    {
-      "id": "m107374182412",
-      "type": "leaf",
-      "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)"
+      "line": 43
     },
     {
       "id": "c30064771084",
       "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doInner:void()",
-      "calleeFullName": "<operator>.fieldAccess",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "System.out",
-      "line": 50
-    },
-    {
-      "id": "m107374182417",
-      "type": "leaf",
-      "calleeFullName": "<operator>.fieldAccess"
-    },
-    {
-      "id": "m107374182405",
-      "type": "entry",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 53
+      "code": "this.doX()",
+      "line": 47,
+      "terminus": "fallthrough"
+    },
+    {
+      "id": "c30064771083",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "this.hasRole()",
+      "line": 44
+    },
+    {
+      "id": "m107374182403",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 50
     },
     {
       "id": "c30064771085",
       "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doX:void()",
-      "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "System.out.println(\"doX\")",
-      "line": 54,
+      "code": "this.doInner()",
+      "line": 51
+    },
+    {
+      "id": "c30064771089",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "this.doX()",
+      "line": 55,
       "terminus": "fallthrough"
     },
     {
       "id": "c30064771086",
       "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doX:void()",
-      "calleeFullName": "<operator>.fieldAccess",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "calleeFullName": "<operator>.logicalOr",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "System.out",
-      "line": 54
+      "code": "hasRole() || isOwner()",
+      "line": 52
     },
     {
-      "id": "m107374182406",
-      "type": "entry",
-      "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
-      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 57
+      "id": "m107374182417",
+      "type": "leaf",
+      "calleeFullName": "<operator>.logicalOr"
     },
     {
       "id": "c30064771087",
       "type": "call",
-      "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
-      "calleeFullName": "<operator>.throw",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "code": "throw new IllegalArgumentException(\"doY\");",
-      "line": 58,
+      "code": "this.hasRole()",
+      "line": 52
+    },
+    {
+      "id": "c30064771088",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "this.isOwner()",
+      "line": 52
+    },
+    {
+      "id": "m107374182404",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 58
+    },
+    {
+      "id": "m107374182405",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 62
+    },
+    {
+      "id": "m107374182406",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 66
+    },
+    {
+      "id": "c30064771090",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "this.doHelper()",
+      "line": 67
+    },
+    {
+      "id": "c30064771091",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "this.doY()",
+      "line": 68,
+      "terminus": "fallthrough"
+    },
+    {
+      "id": "m107374182407",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 71
+    },
+    {
+      "id": "c30064771092",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "this.doInner()",
+      "line": 72,
+      "terminus": "fallthrough"
+    },
+    {
+      "id": "m107374182408",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 75
+    },
+    {
+      "id": "c30064771093",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "System.out.println(\"doInner\")",
+      "line": 76,
       "terminus": "fallthrough"
     },
     {
       "id": "m107374182416",
       "type": "leaf",
+      "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)"
+    },
+    {
+      "id": "c30064771094",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "calleeFullName": "<operator>.fieldAccess",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "System.out",
+      "line": 76
+    },
+    {
+      "id": "m107374182422",
+      "type": "leaf",
+      "calleeFullName": "<operator>.fieldAccess"
+    },
+    {
+      "id": "m107374182409",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 79
+    },
+    {
+      "id": "c30064771095",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doX:void()",
+      "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "System.out.println(\"doX\")",
+      "line": 80,
+      "terminus": "fallthrough"
+    },
+    {
+      "id": "c30064771096",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doX:void()",
+      "calleeFullName": "<operator>.fieldAccess",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "System.out",
+      "line": 80
+    },
+    {
+      "id": "m107374182410",
+      "type": "entry",
+      "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 83
+    },
+    {
+      "id": "c30064771097",
+      "type": "call",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "calleeFullName": "<operator>.throw",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "throw new IllegalArgumentException(\"doY\");",
+      "line": 84,
+      "terminus": "fallthrough"
+    },
+    {
+      "id": "m107374182421",
+      "type": "leaf",
       "calleeFullName": "<operator>.throw"
     },
     {
-      "id": "c30064771088",
+      "id": "c30064771098",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
       "calleeFullName": "<operator>.assignment",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "$obj0 = new IllegalArgumentException(\"doY\")",
-      "line": 58
+      "line": 84
     },
     {
-      "id": "m107374182418",
+      "id": "m107374182423",
       "type": "leaf",
       "calleeFullName": "<operator>.assignment"
     },
     {
-      "id": "c30064771090",
+      "id": "c30064771100",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "new IllegalArgumentException(\"doY\")",
-      "line": 58,
+      "line": 84,
       "terminus": "throw"
     },
     {
-      "id": "m107374182414",
+      "id": "m107374182419",
       "type": "leaf",
       "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)"
     },
     {
-      "id": "c30064771089",
+      "id": "c30064771099",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
       "calleeFullName": "<operator>.alloc",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "new IllegalArgumentException(\"doY\")",
-      "line": 58
+      "line": 84
     },
     {
-      "id": "m107374182411",
+      "id": "m107374182415",
       "type": "leaf",
       "calleeFullName": "<operator>.alloc"
     },
     {
-      "id": "m107374182407",
+      "id": "m107374182411",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.unusedMethod:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 61
+      "line": 87
     },
     {
-      "id": "m107374182408",
+      "id": "m107374182412",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 66
+      "line": 92
     },
     {
-      "id": "c30064771091",
+      "id": "c30064771101",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
       "calleeFullName": "java.io.PrintStream.println:void(java.lang.String)",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "System.out.println(\"Analyze this with joern-parse, not `java`. \" + \"See test/test_full_cfg.py for the expected roots/orphans shape.\")",
-      "line": 69,
+      "line": 95,
       "terminus": "fallthrough"
     },
     {
-      "id": "c30064771092",
+      "id": "c30064771102",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
       "calleeFullName": "<operator>.fieldAccess",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "System.out",
-      "line": 69
+      "line": 95
     },
     {
-      "id": "c30064771093",
+      "id": "c30064771103",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
       "calleeFullName": "<operator>.addition",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "\"Analyze this with joern-parse, not `java`. \" + \"See test/test_full_cfg.py for the expected roots/orphans shape.\"",
-      "line": 69
+      "line": 95
     },
     {
-      "id": "m107374182419",
+      "id": "m107374182424",
       "type": "leaf",
       "calleeFullName": "<operator>.addition"
     },
     {
-      "id": "m107374182409",
+      "id": "m107374182413",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.<init>:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
@@ -329,20 +454,20 @@
       "implicitConstructor": true
     },
     {
-      "id": "m107374182410",
+      "id": "m107374182414",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.<lambda>0:void(java.lang.Object)",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
-      "line": 29
+      "line": 31
     },
     {
-      "id": "c30064771094",
+      "id": "c30064771104",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.<lambda>0:void(java.lang.Object)",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "code": "this.doInner()",
-      "line": 29,
+      "line": 31,
       "terminus": "fallthrough"
     }
   ],
@@ -359,7 +484,7 @@
     },
     {
       "from": "c30064771072",
-      "to": "m107374182403",
+      "to": "m107374182407",
       "type": "invoke"
     },
     {
@@ -369,12 +494,12 @@
     },
     {
       "from": "c30064771073",
-      "to": "m107374182405",
+      "to": "m107374182409",
       "type": "invoke"
     },
     {
       "from": "c30064771074",
-      "to": "c30064771076",
+      "to": "c30064771075",
       "type": "sequence"
     },
     {
@@ -383,64 +508,69 @@
       "type": "invoke"
     },
     {
-      "from": "c30064771076",
-      "to": "c30064771075",
-      "type": "data"
-    },
-    {
       "from": "c30064771075",
-      "to": "m107374182415",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771075",
-      "to": "m107374182410",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771076",
-      "to": "c30064771075",
+      "to": "c30064771076",
       "type": "sequence"
     },
     {
-      "from": "c30064771076",
-      "to": "m107374182420",
+      "from": "c30064771075",
+      "to": "m107374182402",
       "type": "invoke"
     },
     {
-      "from": "m107374182401",
-      "to": "c30064771077",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771077",
+      "from": "c30064771076",
       "to": "c30064771078",
       "type": "sequence"
     },
     {
-      "from": "c30064771077",
-      "to": "m107374182404",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771079",
-      "to": "m107374182405",
+      "from": "c30064771076",
+      "to": "m107374182403",
       "type": "invoke"
     },
     {
       "from": "c30064771078",
+      "to": "c30064771077",
+      "type": "data"
+    },
+    {
+      "from": "c30064771077",
+      "to": "m107374182420",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771077",
+      "to": "m107374182414",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771078",
+      "to": "c30064771077",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771078",
+      "to": "m107374182425",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182401",
       "to": "c30064771079",
       "type": "sequence"
     },
     {
-      "from": "c30064771078",
-      "to": "m107374182413",
+      "from": "c30064771079",
+      "to": "c30064771080",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771079",
+      "to": "m107374182408",
       "type": "invoke"
     },
     {
-      "from": "m107374182402",
-      "to": "c30064771080",
-      "type": "sequence"
+      "from": "c30064771081",
+      "to": "m107374182409",
+      "type": "invoke"
     },
     {
       "from": "c30064771080",
@@ -449,157 +579,277 @@
     },
     {
       "from": "c30064771080",
-      "to": "m107374182403",
+      "to": "m107374182418",
       "type": "invoke"
     },
     {
-      "from": "c30064771081",
-      "to": "m107374182406",
-      "type": "invoke"
-    },
-    {
-      "from": "m107374182403",
+      "from": "m107374182402",
       "to": "c30064771082",
       "type": "sequence"
     },
     {
       "from": "c30064771082",
-      "to": "m107374182404",
+      "to": "c30064771083",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771082",
+      "to": "m107374182408",
       "type": "invoke"
     },
     {
-      "from": "m107374182404",
+      "from": "c30064771084",
+      "to": "m107374182409",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771083",
       "to": "c30064771084",
       "type": "sequence"
     },
     {
       "from": "c30064771083",
-      "to": "m107374182412",
+      "to": "m107374182404",
       "type": "invoke"
     },
     {
-      "from": "c30064771084",
-      "to": "c30064771083",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771084",
-      "to": "m107374182417",
-      "type": "invoke"
-    },
-    {
-      "from": "m107374182405",
-      "to": "c30064771086",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771085",
-      "to": "m107374182412",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771086",
+      "from": "m107374182403",
       "to": "c30064771085",
       "type": "sequence"
     },
     {
+      "from": "c30064771085",
+      "to": "c30064771087",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771085",
+      "to": "m107374182408",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771089",
+      "to": "m107374182409",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771086",
+      "to": "c30064771089",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771087",
+      "to": "c30064771086",
+      "type": "data"
+    },
+    {
+      "from": "c30064771088",
+      "to": "c30064771086",
+      "type": "data"
+    },
+    {
       "from": "c30064771086",
       "to": "m107374182417",
       "type": "invoke"
     },
     {
-      "from": "m107374182406",
-      "to": "c30064771089",
+      "from": "c30064771087",
+      "to": "c30064771088",
       "type": "sequence"
     },
     {
-      "from": "c30064771089",
+      "from": "c30064771087",
+      "to": "c30064771086",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771088",
       "to": "c30064771087",
       "type": "data"
     },
     {
       "from": "c30064771087",
-      "to": "m107374182416",
+      "to": "m107374182404",
       "type": "invoke"
     },
     {
       "from": "c30064771088",
-      "to": "c30064771090",
+      "to": "c30064771086",
       "type": "sequence"
     },
     {
-      "from": "c30064771089",
+      "from": "c30064771087",
       "to": "c30064771088",
       "type": "data"
     },
     {
       "from": "c30064771088",
-      "to": "m107374182418",
+      "to": "m107374182405",
       "type": "invoke"
     },
     {
-      "from": "c30064771090",
-      "to": "c30064771087",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771089",
+      "from": "m107374182406",
       "to": "c30064771090",
-      "type": "data"
+      "type": "sequence"
     },
     {
       "from": "c30064771090",
-      "to": "m107374182414",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771089",
-      "to": "c30064771088",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771089",
-      "to": "m107374182411",
-      "type": "invoke"
-    },
-    {
-      "from": "m107374182408",
-      "to": "c30064771092",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771091",
-      "to": "m107374182412",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771092",
-      "to": "c30064771093",
-      "type": "sequence"
-    },
-    {
-      "from": "c30064771092",
-      "to": "m107374182417",
-      "type": "invoke"
-    },
-    {
-      "from": "c30064771093",
       "to": "c30064771091",
       "type": "sequence"
     },
     {
-      "from": "c30064771093",
-      "to": "m107374182419",
+      "from": "c30064771090",
+      "to": "m107374182407",
       "type": "invoke"
     },
     {
-      "from": "m107374182410",
+      "from": "c30064771091",
+      "to": "m107374182410",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182407",
+      "to": "c30064771092",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771092",
+      "to": "m107374182408",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182408",
       "to": "c30064771094",
       "type": "sequence"
     },
     {
+      "from": "c30064771093",
+      "to": "m107374182416",
+      "type": "invoke"
+    },
+    {
       "from": "c30064771094",
-      "to": "m107374182404",
+      "to": "c30064771093",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771094",
+      "to": "m107374182422",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182409",
+      "to": "c30064771096",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771095",
+      "to": "m107374182416",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771096",
+      "to": "c30064771095",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771096",
+      "to": "m107374182422",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182410",
+      "to": "c30064771099",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771099",
+      "to": "c30064771097",
+      "type": "data"
+    },
+    {
+      "from": "c30064771097",
+      "to": "m107374182421",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771098",
+      "to": "c30064771100",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771099",
+      "to": "c30064771098",
+      "type": "data"
+    },
+    {
+      "from": "c30064771098",
+      "to": "m107374182423",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771100",
+      "to": "c30064771097",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771099",
+      "to": "c30064771100",
+      "type": "data"
+    },
+    {
+      "from": "c30064771100",
+      "to": "m107374182419",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771099",
+      "to": "c30064771098",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771099",
+      "to": "m107374182415",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182412",
+      "to": "c30064771102",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771101",
+      "to": "m107374182416",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771102",
+      "to": "c30064771103",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771102",
+      "to": "m107374182422",
+      "type": "invoke"
+    },
+    {
+      "from": "c30064771103",
+      "to": "c30064771101",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771103",
+      "to": "m107374182424",
+      "type": "invoke"
+    },
+    {
+      "from": "m107374182414",
+      "to": "c30064771104",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771104",
+      "to": "m107374182408",
       "type": "invoke"
     }
   ],
@@ -608,9 +858,9 @@
       "id": "cs47244640256",
       "kind": "IF",
       "method": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
-      "line": 34,
+      "line": 36,
       "branchPointIds": [
-        "c30064771077"
+        "c30064771079"
       ],
       "arms": [
         {
@@ -618,6 +868,50 @@
           "empty": true,
           "terminus": "return",
           "conditionCode": "!authenticated"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640257",
+      "kind": "IF",
+      "method": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
+      "line": 44,
+      "branchPointIds": [
+        "c30064771083"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": true,
+          "terminus": "return",
+          "conditionCode": "this.hasRole()"
+        },
+        {
+          "label": "else",
+          "empty": true,
+          "terminus": "continues"
+        }
+      ]
+    },
+    {
+      "id": "cs47244640258",
+      "kind": "IF",
+      "method": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "line": 52,
+      "branchPointIds": [
+        "c30064771088"
+      ],
+      "arms": [
+        {
+          "label": "if",
+          "empty": true,
+          "terminus": "return",
+          "conditionCode": "hasRole() || isOwner()"
         },
         {
           "label": "else",
@@ -718,6 +1012,64 @@
       "outputType": "void"
     },
     "c30064771075": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "call",
+        "condition",
+        "return"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
+    "c30064771076": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "short",
+        "circuit",
+        "call",
+        "condition",
+        "return"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
+    "c30064771077": {
       "arguments": [
         "com.flowmap.fixture.OperationalChains.<lambda>0:void(java.lang.Object)"
       ],
@@ -726,7 +1078,7 @@
       "fieldsRead": [],
       "fieldsWritten": [],
       "dataSourceIds": [
-        "c30064771076"
+        "c30064771078"
       ],
       "domainTypes": [
         "java.util.List"
@@ -747,7 +1099,7 @@
       "receiverType": "java.util.List",
       "outputType": "void"
     },
-    "c30064771076": {
+    "c30064771078": {
       "arguments": [
         "\"lambda\""
       ],
@@ -777,7 +1129,7 @@
       "receiverType": "java.util.List",
       "outputType": "java.util.List"
     },
-    "c30064771077": {
+    "c30064771079": {
       "arguments": [],
       "argumentTypes": [],
       "inputIdentifiers": [],
@@ -806,7 +1158,7 @@
       "receiverType": "com.flowmap.fixture.OperationalChains",
       "outputType": "void"
     },
-    "c30064771079": {
+    "c30064771081": {
       "arguments": [],
       "argumentTypes": [],
       "inputIdentifiers": [],
@@ -835,7 +1187,7 @@
       "receiverType": "com.flowmap.fixture.OperationalChains",
       "outputType": "void"
     },
-    "c30064771078": {
+    "c30064771080": {
       "arguments": [
         "authenticated"
       ],
@@ -866,60 +1218,6 @@
       ],
       "outputType": "boolean"
     },
-    "c30064771080": {
-      "arguments": [],
-      "argumentTypes": [],
-      "inputIdentifiers": [],
-      "fieldsRead": [],
-      "fieldsWritten": [],
-      "dataSourceIds": [],
-      "domainTypes": [
-        "com.flowmap.fixture.OperationalChains"
-      ],
-      "methodTerms": [
-        "do",
-        "helper"
-      ],
-      "observedFeatures": [
-        "receiver",
-        "arguments",
-        "inputs",
-        "callsiteFields",
-        "ddg",
-        "output",
-        "calleeFields"
-      ],
-      "receiver": "this",
-      "receiverType": "com.flowmap.fixture.OperationalChains",
-      "outputType": "void"
-    },
-    "c30064771081": {
-      "arguments": [],
-      "argumentTypes": [],
-      "inputIdentifiers": [],
-      "fieldsRead": [],
-      "fieldsWritten": [],
-      "dataSourceIds": [],
-      "domainTypes": [
-        "com.flowmap.fixture.OperationalChains"
-      ],
-      "methodTerms": [
-        "do",
-        "y"
-      ],
-      "observedFeatures": [
-        "receiver",
-        "arguments",
-        "inputs",
-        "callsiteFields",
-        "ddg",
-        "output",
-        "calleeFields"
-      ],
-      "receiver": "this",
-      "receiverType": "com.flowmap.fixture.OperationalChains",
-      "outputType": "void"
-    },
     "c30064771082": {
       "arguments": [],
       "argumentTypes": [],
@@ -949,7 +1247,300 @@
       "receiverType": "com.flowmap.fixture.OperationalChains",
       "outputType": "void"
     },
+    "c30064771084": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [
+        "out"
+      ],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "x"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
     "c30064771083": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains",
+        "boolean"
+      ],
+      "methodTerms": [
+        "has",
+        "role"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "boolean"
+    },
+    "c30064771085": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [
+        "out"
+      ],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "inner"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
+    "c30064771089": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [
+        "out"
+      ],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "x"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
+    "c30064771086": {
+      "arguments": [
+        "this.hasRole()",
+        "this.isOwner()"
+      ],
+      "argumentTypes": [
+        "boolean",
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [
+        "c30064771087",
+        "c30064771088"
+      ],
+      "domainTypes": [
+        "boolean",
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "operator",
+        "logical",
+        "or"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output"
+      ],
+      "outputType": "boolean"
+    },
+    "c30064771087": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [
+        "c30064771088"
+      ],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains",
+        "boolean"
+      ],
+      "methodTerms": [
+        "has",
+        "role"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "boolean"
+    },
+    "c30064771088": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [
+        "c30064771087"
+      ],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains",
+        "boolean"
+      ],
+      "methodTerms": [
+        "is",
+        "owner"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "boolean"
+    },
+    "c30064771090": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "helper"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
+    "c30064771091": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "y"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
+    "c30064771092": {
+      "arguments": [],
+      "argumentTypes": [],
+      "inputIdentifiers": [],
+      "fieldsRead": [
+        "out"
+      ],
+      "fieldsWritten": [],
+      "dataSourceIds": [],
+      "domainTypes": [
+        "com.flowmap.fixture.OperationalChains"
+      ],
+      "methodTerms": [
+        "do",
+        "inner"
+      ],
+      "observedFeatures": [
+        "receiver",
+        "arguments",
+        "inputs",
+        "callsiteFields",
+        "ddg",
+        "output",
+        "calleeFields"
+      ],
+      "receiver": "this",
+      "receiverType": "com.flowmap.fixture.OperationalChains",
+      "outputType": "void"
+    },
+    "c30064771093": {
       "arguments": [
         "\"doInner\""
       ],
@@ -979,7 +1570,7 @@
       "receiverType": "java.io.PrintStream",
       "outputType": "void"
     },
-    "c30064771084": {
+    "c30064771094": {
       "arguments": [
         "System",
         "out"
@@ -1014,7 +1605,7 @@
       ],
       "outputType": "java.io.PrintStream"
     },
-    "c30064771085": {
+    "c30064771095": {
       "arguments": [
         "\"doX\""
       ],
@@ -1044,7 +1635,7 @@
       "receiverType": "java.io.PrintStream",
       "outputType": "void"
     },
-    "c30064771086": {
+    "c30064771096": {
       "arguments": [
         "System",
         "out"
@@ -1079,7 +1670,7 @@
       ],
       "outputType": "java.io.PrintStream"
     },
-    "c30064771087": {
+    "c30064771097": {
       "arguments": [],
       "argumentTypes": [
         "java.lang.IllegalArgumentException",
@@ -1090,7 +1681,7 @@
       "fieldsRead": [],
       "fieldsWritten": [],
       "dataSourceIds": [
-        "c30064771089"
+        "c30064771099"
       ],
       "domainTypes": [
         "java.lang.IllegalArgumentException",
@@ -1106,7 +1697,7 @@
         "ddg"
       ]
     },
-    "c30064771088": {
+    "c30064771098": {
       "arguments": [
         "$obj0",
         "new IllegalArgumentException(\"doY\")"
@@ -1118,7 +1709,7 @@
       "fieldsRead": [],
       "fieldsWritten": [],
       "dataSourceIds": [
-        "c30064771089"
+        "c30064771099"
       ],
       "domainTypes": [
         "java.lang.IllegalArgumentException"
@@ -1137,7 +1728,7 @@
       ],
       "outputType": "java.lang.IllegalArgumentException"
     },
-    "c30064771090": {
+    "c30064771100": {
       "arguments": [
         "\"doY\""
       ],
@@ -1148,7 +1739,7 @@
       "fieldsRead": [],
       "fieldsWritten": [],
       "dataSourceIds": [
-        "c30064771089"
+        "c30064771099"
       ],
       "domainTypes": [
         "java.lang.IllegalArgumentException",
@@ -1169,7 +1760,7 @@
       "receiverType": "java.lang.IllegalArgumentException",
       "outputType": "void"
     },
-    "c30064771089": {
+    "c30064771099": {
       "arguments": [],
       "argumentTypes": [],
       "inputIdentifiers": [],
@@ -1193,7 +1784,7 @@
       ],
       "outputType": "java.lang.IllegalArgumentException"
     },
-    "c30064771091": {
+    "c30064771101": {
       "arguments": [
         "\"Analyze this with joern-parse, not `java`. \" + \"See test/test_full_cfg.py for the expected roots/orphans shape.\""
       ],
@@ -1223,7 +1814,7 @@
       "receiverType": "java.io.PrintStream",
       "outputType": "void"
     },
-    "c30064771092": {
+    "c30064771102": {
       "arguments": [
         "System",
         "out"
@@ -1258,7 +1849,7 @@
       ],
       "outputType": "java.io.PrintStream"
     },
-    "c30064771093": {
+    "c30064771103": {
       "arguments": [
         "\"Analyze this with joern-parse, not `java`. \"",
         "\"See test/test_full_cfg.py for the expected roots/orphans shape.\""
@@ -1287,7 +1878,7 @@
       ],
       "outputType": "java.lang.String"
     },
-    "c30064771094": {
+    "c30064771104": {
       "arguments": [],
       "argumentTypes": [],
       "inputIdentifiers": [],

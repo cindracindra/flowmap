@@ -210,6 +210,20 @@ def _recompute_branch_geometry(
         ):
             continue
 
+        # Filtering can erase every operation in an IF while leaving the
+        # extracted control-structure metadata behind.  When every arm then
+        # continues normally, the branch is transparent in the projected
+        # graph: retaining it would manufacture duplicate routes from the
+        # preceding visible call in addition to that call's inlined return
+        # route.  Do retain zero-call guards whose arms return or throw --
+        # their different termini still encode observable control flow.
+        if (
+            group.kind == "IF"
+            and arms
+            and all(arm.empty and arm.terminus == "continues" for arm in arms)
+        ):
+            continue
+
         rebuilt.append(
             dataclasses.replace(
                 group,

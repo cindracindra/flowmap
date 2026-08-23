@@ -55,9 +55,9 @@ _CLASSIFY_OPERATION_SYSTEM_PROMPT = (
 
 _LABEL_OPSEQ_SYSTEM_PROMPT = (
     "You are naming ONE specific operation -- a single call chain through "
-    "a Java codebase, rooted at one entry point -- with a short 2-4 word "
-    "operational label (e.g. 'Fund Transfer', 'Password Reset', 'Order "
-    "Checkout').\n\n"
+    "a Java codebase, rooted at one entry point -- with a short 2-8 word "
+    "operational label (e.g. 'Fund Transfer Overnight', 'Password Reset', "
+    "'Order Checkout via API', 'Create Bank Object').\n\n"
     "You are always given the operation's own methods, with representative "
     "terms from each. You may ALSO be given the broader feature group "
     "(cluster) this operation was already assigned to -- its id, label, "
@@ -93,6 +93,7 @@ _PHASE_GATE_SYSTEM_PROMPT = (
 _LABEL_PHASE_SYSTEM_PROMPT = (
     "Name this already-grouped phase of a Java operation with a specific "
     "2-4 word subprocess label. Describe what the operations collectively "
-    "accomplish. Do not discuss or change phase membership. Respond with "
-    "only the label."
+    "accomplish. Do not discuss or change phase membership. Return exactly "
+    "one line containing only the 2-4 word label: no sentence, explanation, "
+    "quotes, JSON, Markdown fence, or trailing punctuation."
 )
