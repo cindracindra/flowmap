@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 
 ArmTerminus = Literal["throw", "return", "continues"]
+ExitKind = Literal["return", "throw", "continues"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,45 @@ class BranchRequirement:
 
 
 @dataclass(slots=True)
+class ArmExit:
+    """One path-level outcome from a branch arm.
+
+    Extraction records original frontier ids. Flattening scopes those ids to
+    clones and resolves targetIds. Requirements are route constraints beyond
+    the owning arm, notably those introduced by nested branches.
+    """
+
+    kind: ExitKind
+    frontierIds: list[str] = field(default_factory=list)
+    targetIds: list[str] = field(default_factory=list)
+    branchRequirements: list[BranchRequirement] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ArmExit:
+        return cls(
+            kind=data["kind"],
+            frontierIds=list(data.get("frontierIds", [])),
+            targetIds=list(data.get("targetIds", [])),
+            branchRequirements=[
+                BranchRequirement.from_dict(requirement)
+                for requirement in data.get("branchRequirements", [])
+            ],
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        result: dict[str, Any] = {"kind": self.kind}
+        if self.frontierIds:
+            result["frontierIds"] = self.frontierIds
+        if self.targetIds:
+            result["targetIds"] = self.targetIds
+        if self.branchRequirements:
+            result["branchRequirements"] = [
+                requirement.to_dict() for requirement in self.branchRequirements
+            ]
+        return result
+
+
+@dataclass(slots=True)
 class BranchArm:
     label: str
 
@@ -58,6 +98,10 @@ class BranchArm:
 
     # How this arm exits -- set for every arm, empty ones included.
     terminus: ArmTerminus | None = None
+
+    # Path-level authoritative outcomes. Empty on legacy artifacts, where
+    # consumers fall back to `terminus` through arm_exit_kinds().
+    exits: list[ArmExit] = field(default_factory=list)
 
     # The `if`/`else if` condition that selects this arm. Absent on an
     # `else` arm (no condition of its own) and on every TRY arm.
@@ -88,6 +132,7 @@ class BranchArm:
             firstCallId=data.get("firstCallId"),
             empty=data.get("empty", False),
             terminus=data.get("terminus"),
+            exits=[ArmExit.from_dict(exit_) for exit_ in data.get("exits", [])],
             conditionCode=data.get("conditionCode"),
             exceptionType=data.get("exceptionType"),
             targetIds=(list(data["targetIds"]) if "targetIds" in data else None),
@@ -97,6 +142,8 @@ class BranchArm:
         result: dict[str, Any] = {"label": self.label, "empty": self.empty}
         if self.terminus is not None:
             result["terminus"] = self.terminus
+        if self.exits:
+            result["exits"] = [exit_.to_dict() for exit_ in self.exits]
         if self.conditionCode is not None:
             result["conditionCode"] = self.conditionCode
         if self.exceptionType is not None:
@@ -106,6 +153,23 @@ class BranchArm:
         if self.targetIds is not None:
             result["targetIds"] = self.targetIds
         return result
+
+
+def arm_exit_kinds(arm: BranchArm) -> set[ExitKind]:
+    """Authoritative exit kinds with compatibility for old artifacts."""
+    if arm.exits:
+        return {exit_.kind for exit_ in arm.exits}
+    return {arm.terminus or "continues"}
+
+
+def legacy_terminus(exits: list[ArmExit]) -> ArmTerminus:
+    """Conservative compatibility summary for path-level exits."""
+    kinds = {exit_.kind for exit_ in exits}
+    if kinds == {"throw"}:
+        return "throw"
+    if kinds == {"return"}:
+        return "return"
+    return "continues"
 
 
 @dataclass(slots=True)

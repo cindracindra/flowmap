@@ -16,13 +16,14 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     if (!nodes.contains(id)) nodes(id) = obj
   }
 
+  // --- SECTION: SEMANTIC FEATURE EXTRACTION ---
+
   def stringArray(values: Iterable[String]): ujson.Arr =
     ujson.Arr(values.toList.distinct.map(ujson.Str(_))*)
 
+  // Extracts candidate Java types from a receiver or argument expression for 
+  // semanticFeature
   def expressionTypes(expression: Expression): List[String] = (
-    // Prefer the type of the expression itself. For `System.out`, walking
-    // identifiers first yields java.lang.System rather than the field-access
-    // expression's actual java.io.PrintStream type.
     expression.start.isCall.typeFullName.l ++
       expression.start.ast.isIdentifier.typeFullName.l ++
       expression.start.ast.isLiteral.typeFullName.l ++
@@ -63,8 +64,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
         .flatMap(_.argument.l.filter(_.argumentIndex == 1))
         .flatMap(lhs => lhs.start.ast.isFieldIdentifier.canonicalName.l)
     }.distinct
-    // Every field identifier in the callee body, minus the ones proven to be
-    // assignment targets.
     val calleeFields = calleeEntries.flatMap(
       callee => callee.ast.isFieldIdentifier.canonicalName.l
     ).distinct.filterNot(writtenFields.contains)
@@ -83,8 +82,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       .map(_.toLowerCase).filter(_.nonEmpty).toList
 
     val observed =
-      // "No receiver at all" is an observation (a static or operator call);
-      // "a receiver we could not render" is not.
       (if (receiver.isEmpty || receiverCode.isDefined) List("receiver") else Nil) ++
       (if (argumentsObserved) List("arguments", "inputs") else Nil) ++
       List("callsiteFields", "ddg") ++
@@ -108,33 +105,36 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     result
   }
 
-  // Static initializers can carry Joern's "<empty>" method filename even
-  // though their owning type declaration has the real source location.
+
+  // --- SECTION: LAMBDA FUNCTION RESOLUTION ---
+
+  // For a method with a missing filename (Joern declaring <empty>), use 
+  // filename of the class owning the method if available. 
   def methodSourceFile(method: Method): String = {
     val direct = method.filename
     if (direct.nonEmpty && direct != "<empty>") direct
     else method.typeDecl.filename.headOption.getOrElse(direct)
   }
 
-  // Java lambdas are emitted as synthetic internal METHOD nodes, but the
-  // functional-interface call that executes one does not expose that method
-  // through call.callee.  The implementation is instead named by a METHOD_REF
-  // argument (for example, values.forEach(<lambda>)).  Resolve those references
-  // here so the synthetic method participates in the enclosing operation's
-  // inter-method flow rather than being misclassified as a codebase root.
+  // List all internal methods for purpose of resolving lambdas. 
   val internalMethodsByFullName: Map[String, List[Method]] =
     cpg.method.isExternal(false).whereNot(_.isAbstract).l.groupBy(_.fullName)
 
   def isLambdaImplementation(method: Method): Boolean =
     method.name.matches("(?:lambda\\$.*\\$\\d+|<lambda>\\d+)")
 
+  // Bridge METHOD REF to actual lambda method implementation
   def referencedInternalMethods(call: Call): List[Method] =
     call.argument.isMethodRef.l.flatMap { ref =>
       internalMethodsByFullName.getOrElse(ref.methodFullName, Nil)
     }.filter(isLambdaImplementation).distinctBy(_.id)
 
+
+  // --- SECTION: CREATE BRANCH GROUP AND DETAILS ---
+
   // Distinguishes an explicit `return` from an implicit end-of-method,
   // for a call that has NO further call ahead of it. 
+  // LEGACY IMPLEMENTATION >> USE EXIT INFO INSTEAD
   def classifyTerminus(startPoints: List[CfgNode]): String = {
     val seen = mutable.Set[Long]()
     var frontier = startPoints
@@ -172,14 +172,66 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   }
 
   // Check how branch arm ends - throw, return or continues
+  // LEGACY IMPLEMENTATION >> USE EXIT INFO INSTEAD
   def armTerminus(armRoot: AstNode, armCalls: List[Call]): String = {
     if (armCalls.exists(_.methodFullName == "<operator>.throw")) "throw"
     else if (armRoot.ast.collectAll[Return].nonEmpty) "return"
     else "continues"
   }
 
-  // Create a branch arm object based on certain branch entry point/
-  // arm root
+  // Path-level arm outcomes. `terminus` remains a conservative compatibility
+  // summary; these exits retain the concrete RETURN/throw route and its
+  // nearest call frontier for filtering and flattening to resolve later.
+  def armExits(armRoot: AstNode, armCalls: List[Call]): ujson.Arr = {
+    val exits = ujson.Arr()
+    val armCallIds = armCalls.map(_.id).toSet
+    val armAstNodes = armRoot.ast.l
+    val armAstIds = armAstNodes.map(_.id).toSet
+
+    armRoot.ast.collectAll[Return].l.foreach { ret =>
+      val frontiers = ret.start.repeat(_.cfgPrev)(_.until(_.isCall)).isCall.l
+        .filter(call => armCallIds.contains(call.id))
+        .map(call => s"c${call.id}")
+      exits.arr.addOne(ujson.Obj(
+        "kind" -> ujson.Str("return"),
+        "frontierIds" -> stringArray(frontiers)
+      ))
+    }
+
+    armCalls.filter(_.methodFullName == "<operator>.throw").foreach { call =>
+      exits.arr.addOne(ujson.Obj(
+        "kind" -> ujson.Str("throw"),
+        "frontierIds" -> stringArray(List(s"c${call.id}"))
+      ))
+    }
+
+    // A mixed arm can have terminal paths and a normal path. Find CFG actual 
+    // boundary crossings and store its nearest call node as continuingFrontiers.
+    val continuingBoundaries = armAstNodes.collect { case node: CfgNode => node }
+      .filter { node =>
+        val isReturn = node.label == "RETURN"
+        val isThrow = node match {
+          case call: Call => call.methodFullName == "<operator>.throw"
+          case _          => false
+        }
+        !isReturn && !isThrow && node.start.cfgNext.l.exists(next => !armAstIds.contains(next.id))
+      }
+    val continuingFrontiers = continuingBoundaries.flatMap {
+      case call: Call if armCallIds.contains(call.id) => List(s"c${call.id}")
+      case node => node.start.repeat(_.cfgPrev)(_.until(_.isCall)).isCall.l
+        .filter(call => armCallIds.contains(call.id))
+        .map(call => s"c${call.id}")
+    }.distinct
+    if (continuingBoundaries.nonEmpty || exits.arr.isEmpty) {
+      exits.arr.addOne(ujson.Obj(
+        "kind" -> ujson.Str("continues"),
+        "frontierIds" -> stringArray(continuingFrontiers)
+      ))
+    }
+    exits
+  }
+
+  // Create a branch arm object based on certain branch entry point/ arm root
   def addArm(
     groupId: String, label: String, conditionCode: Option[String],
     armRoot: AstNode, arms: ujson.Arr, armTags: ArmTags
@@ -191,7 +243,8 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val armObj = ujson.Obj(
       "label" -> label,
       "empty" -> ujson.Bool(armCalls.isEmpty),
-      "terminus" -> armTerminus(armRoot, armCalls)
+      "terminus" -> armTerminus(armRoot, armCalls),
+      "exits" -> armExits(armRoot, armCalls)
     )
     conditionCode.foreach { cc => armObj("conditionCode") = ujson.Str(cc) }
     armCalls.headOption.foreach { c => armObj("firstCallId") = ujson.Str(s"c${c.id}") }
@@ -203,7 +256,8 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     arms.arr.addOne(ujson.Obj(
       "label" -> "else",
       "empty" -> ujson.Bool(true),
-      "terminus" -> ujson.Str("continues")
+      "terminus" -> ujson.Str("continues"),
+      "exits" -> ujson.Arr(ujson.Obj("kind" -> ujson.Str("continues")))
     ))
   }
 
@@ -237,14 +291,11 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           walking = false
       }
     }
-    // Usually filter_noise_cfg can recover the visible fork from the first
-    // calls in the arms. A guard containing only `return`, however, has no
-    // call in either arm. Prefer the last non-operator call evaluated by the
-    // condition itself: `if (user.hasRole(...)) return` must fork at hasRole,
-    // not at an unrelated call before the IF. For an operator-only condition
-    // such as `if (!authenticated) return`, retain the existing predecessor
-    // fallback; the operator node is filtered later and offers no visible
-    // anchor of its own.
+
+    // Identify branch point for this control structure. Priority is:
+    // 1. Last visible call inside the condition
+    // 2. Nearest preceding call(s) before the condition - for consecutive branch group
+    // 3. Method entry
     val visibleConditionCalls = head.condition.headOption.toList.flatMap(
       condition => condition.start.ast.isCall.l
         .filterNot(_.methodFullName.startsWith("<operator>."))
@@ -283,10 +334,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       if (structureType == "CATCH") {
         catchIdx += 1
         addArm(groupId, s"catch$catchIdx", None, armRoot, arms, armTags)
-        // The Java frontend does not emit the catch declaration itself
-        // beneath the CATCH node. Usages of its variable are identifiers
-        // with the correct type, though, and unlike ordinary parameters/
-        // locals their name is absent from the method declaration lists.
         val exceptionType = armRoot.ast.isIdentifier
           .filterNot(i => ordinaryVariableNames.contains(i.name))
           .map(_.typeFullName)
@@ -299,7 +346,8 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     arms.arr.addOne(ujson.Obj(
       "label" -> "noCatch",
       "empty" -> ujson.Bool(true),
-      "terminus" -> ujson.Str("continues")
+      "terminus" -> ujson.Str("continues"),
+      "exits" -> ujson.Arr(ujson.Obj("kind" -> ujson.Str("continues")))
     ))
     branchGroups += ujson.Obj(
       "id" -> groupId, "kind" -> "TRY",
@@ -368,6 +416,47 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     addNode(entryId, entryNode)
 
     val methodCalls = method.call.l
+    val explicitReturns = method.ast.collectAll[Return].l
+    val methodReturn = Option(method.methodReturn)
+    val returnIds = explicitReturns.map(_.id).toSet
+
+    explicitReturns.foreach { ret =>
+      val exitId = s"r${ret.id}"
+      addNode(exitId, ujson.Obj(
+        "id" -> exitId, "type" -> "exit", "exitKind" -> "return",
+        "callerMethod" -> method.fullName,
+        "sourceFile" -> methodSourceFile(method),
+        "code" -> ret.code, "line" -> ret.lineNumber.getOrElse(-1)
+      ))
+    }
+    methodReturn.foreach { ret =>
+      val exitId = s"f${ret.id}"
+      addNode(exitId, ujson.Obj(
+        "id" -> exitId, "type" -> "exit", "exitKind" -> "fallthrough",
+        "callerMethod" -> method.fullName,
+        "sourceFile" -> methodSourceFile(method),
+        "line" -> method.lineNumberEnd.getOrElse(method.lineNumber.getOrElse(-1))
+      ))
+    }
+
+    // Starting immediately after an active node, find method exits reached
+    // before another call.
+    def directExitIds(startPoints: List[CfgNode]): List[String] = {
+      val found = mutable.ArrayBuffer[String]()
+      val seen = mutable.Set[Long]()
+      var frontier = startPoints
+      while (frontier.nonEmpty) {
+        val node = frontier.head
+        frontier = frontier.tail
+        if (!seen.contains(node.id)) {
+          seen += node.id
+          if (returnIds.contains(node.id)) found += s"r${node.id}"
+          else if (methodReturn.exists(_.id == node.id)) found += s"f${node.id}"
+          else if (!node.isInstanceOf[Call]) frontier = frontier ++ node.start.cfgNext.l
+        }
+      }
+      found.distinct.toList
+    }
 
     val nextCallsById: Map[Long, List[Call]] =
       methodCalls.map(c => c.id -> c.start.repeat(_.cfgNext)(_.until(_.isCall)).isCall.l).toMap
@@ -381,20 +470,15 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       value.map(v => c.id -> v)
     }.toMap
 
-    // Branch-group capture: runs before the node pass so every call in
-    // an arm can be tagged when its node is built. Chain heads only --
-    // an IF that is some other IF's else-chain continuation is folded
-    // into that chain's group instead of getting one of its own.
+    // Identify all constrol structure info: runs before the node pass so 
+    // every call in an arm can be tagged when its node is built.
     val armTags: ArmTags = mutable.Map()
     val loopTags: LoopTags = mutable.Map()
     val controlStructures = method.controlStructure.l
     val ifs = controlStructures.filter(_.controlStructureType == "IF")
     val chainedIfIds = ifs.flatMap(cs => elseChainNext(cs).map(_.id)).toSet
 
-    // Each group records its owning method: a group is method-level
-    // metadata with no node of its own, so nothing else identifies where
-    // it lives once the graph is sliced (a group whose every arm is empty
-    // has no tagged node to recover it from either).
+    // Each group records its owning method.
     ifs.filterNot(cs => chainedIfIds.contains(cs.id)).foreach { head =>
       emitIfChain(head, method.fullName, entryId, armTags)
     }
@@ -411,6 +495,9 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     method.start.repeat(_.cfgNext)(_.until(_.isCall)).isCall.l.foreach { fc =>
       edges += ujson.Obj("from" -> entryId, "to" -> s"c${fc.id}", "type" -> "sequence")
     }
+    directExitIds(method.start.cfgNext.l).foreach { exitId =>
+      edges += ujson.Obj("from" -> entryId, "to" -> exitId, "type" -> "sequence")
+    }
 
     methodCalls.foreach { call =>
       val callId = s"c${call.id}"
@@ -418,6 +505,20 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       // intra-method sequence: next call(s) after this one
       nextCallsById(call.id).foreach { nc =>
         edges += ujson.Obj("from" -> callId, "to" -> s"c${nc.id}", "type" -> "sequence")
+      }
+      if (call.methodFullName == "<operator>.throw") {
+        val throwExitId = s"t${call.id}"
+        addNode(throwExitId, ujson.Obj(
+          "id" -> throwExitId, "type" -> "exit", "exitKind" -> "throw",
+          "callerMethod" -> method.fullName,
+          "sourceFile" -> methodSourceFile(method),
+          "code" -> call.code, "line" -> call.lineNumber.getOrElse(-1)
+        ))
+        edges += ujson.Obj("from" -> callId, "to" -> throwExitId, "type" -> "sequence")
+      } else {
+        directExitIds(call.start.cfgNext.l).foreach { exitId =>
+          edges += ujson.Obj("from" -> callId, "to" -> exitId, "type" -> "sequence")
+        }
       }
 
       val callNode = ujson.Obj(
@@ -471,9 +572,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
         }
       }
 
-      // METHOD_REF targets are additional callees, not alternatives to the
-      // ordinary resolved target above: forEach itself may resolve to an
-      // external method while its lambda implementation is internal.
+      // Bridge lambda implementation via METHOD_REF targets.
       referencedInternalMethods(call).foreach { implementation =>
         edges += ujson.Obj(
           "from" -> callId,

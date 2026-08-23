@@ -5,7 +5,9 @@ from typing import Any, Literal
 
 from .branch import BranchArmRef
 
-NodeType = Literal["entry", "call", "leaf"]
+NodeType = Literal["entry", "call", "leaf", "exit"]
+
+MethodExitKind = Literal["return", "throw", "fallthrough"]
 
 Terminus = Literal["throw", "return", "fallthrough", "continues"]
 
@@ -53,6 +55,12 @@ class Node:
     # a terminus at all.
     terminus: Terminus | None = None
 
+    # extraction only: authoritative method-local control-flow exit. Explicit
+    # RETURN and throw exits retain their source construct; fallthrough is the
+    # method's implicit METHOD_RETURN. Flattening consumes these nodes rather
+    # than exposing them as operations.
+    exitKind: MethodExitKind | None = None
+
     # call only: every (group, arm) this call is a member of. Empty for a 
     # call that isn't part of any branch arm.
     branchArms: list[BranchArmRef] = field(default_factory=list)
@@ -78,6 +86,7 @@ class Node:
             origId=data.get("origId"),
             deadEnd=data.get("deadEnd"),
             terminus=data.get("terminus"),
+            exitKind=data.get("exitKind"),
             branchArms=[BranchArmRef.from_dict(t) for t in data.get("branchArms", [])],
             loopIds=list(data.get("loopIds", [])),
             depth=data.get("depth"),
@@ -95,6 +104,7 @@ class Node:
             ("reason", self.reason),
             ("origId", self.origId),
             ("terminus", self.terminus),
+            ("exitKind", self.exitKind),
             ("depth", self.depth),
         ):
             if value is not None:

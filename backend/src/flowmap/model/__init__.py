@@ -1,10 +1,20 @@
-from .branch import ArmTerminus, BranchArm, BranchArmRef, BranchGroup, BranchRequirement
+from .branch import (
+    ArmExit,
+    ArmTerminus,
+    BranchArm,
+    BranchArmRef,
+    BranchGroup,
+    BranchRequirement,
+    ExitKind,
+    arm_exit_kinds,
+    legacy_terminus,
+)
 from .class_document import ClassDocument
 from .edge import Edge, EdgeType
 from .graph import Graph
 from .loop import LoopGroup, LoopKind
 from .method_document import MethodDocument
-from .node import Node, NodeType, Terminus
+from .node import MethodExitKind, Node, NodeType, Terminus
 from .phase import (
     BoundaryType,
     DecisionSource,
@@ -21,6 +31,7 @@ __all__ = [
     "Node",
     "NodeType",
     "Terminus",
+    "MethodExitKind",
     "Edge",
     "EdgeType",
     "Graph",
@@ -28,9 +39,13 @@ __all__ = [
     "LoopKind",
     "BranchGroup",
     "BranchArm",
+    "ArmExit",
     "BranchArmRef",
     "BranchRequirement",
     "ArmTerminus",
+    "ExitKind",
+    "arm_exit_kinds",
+    "legacy_terminus",
     "Phase",
     "Transition",
     "TransitionReason",

@@ -16,7 +16,7 @@ class Edge:
     type: EdgeType
 
     # flatten_intermethod_cfg only, "sequence" edges synthesized as a
-    # method return: the call-site node this return is attributed to (the
+    # method return: the call-site node this return is attributed to the
     # ORIGINAL call site, not the callee's tail node.
     returnFrom: str | None = None
 
