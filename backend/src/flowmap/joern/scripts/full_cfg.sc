@@ -5,6 +5,10 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   val nodes = mutable.LinkedHashMap[String, ujson.Obj]()
   val edges = mutable.ArrayBuffer[ujson.Obj]()
   val branchGroups = mutable.ArrayBuffer[ujson.Obj]()
+  // IF arm-entry edges that the call-only CFG projection must retain.  They
+  // are merged after ordinary sequence extraction so an edge already found
+  // by Joern is not duplicated.
+  val branchEntryEdges = mutable.ArrayBuffer[(String, String)]()
   val loopGroups = mutable.ArrayBuffer[ujson.Obj]()
   val semanticFeatures = ujson.Obj()
 
@@ -258,8 +262,17 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   def addArm(
     groupId: String, label: String, conditionCode: Option[String],
     armRoot: AstNode, arms: ujson.Arr, armTags: ArmTags
-  ): Unit = {
+  ): List[String] = {
     val armCalls = armRoot.ast.isCall.l
+    val armCallIds = armCalls.map(_.id).toSet
+    // AST order is not execution order (a variable initializer's outer call
+    // can precede its arguments in the AST).  An arm entry is a call whose
+    // nearest preceding call is outside this arm.  There may be several when
+    // the arm itself begins with a fork.
+    val entryCalls = armCalls.filter { call =>
+      nearestCalls(call.start.cfgPrev.l, _.start.cfgPrev.l)
+        .forall(previous => !armCallIds.contains(previous.id))
+    }
     val armReturns = armRoot.ast.collectAll[Return].l
     armCalls.foreach { c =>
       armTags.getOrElseUpdate(c.id, mutable.ArrayBuffer()) += ((groupId, label))
@@ -280,8 +293,9 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       "exits" -> exits
     )
     conditionCode.foreach { cc => armObj("conditionCode") = ujson.Str(cc) }
-    armCalls.headOption.foreach { c => armObj("firstCallId") = ujson.Str(s"c${c.id}") }
+    entryCalls.headOption.foreach { c => armObj("firstCallId") = ujson.Str(s"c${c.id}") }
     arms.arr.addOne(armObj)
+    entryCalls.map(call => s"c${call.id}")
   }
 
   // Add explicit empty arm for `if` with no `else`.
@@ -313,7 +327,12 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       val armRoots = current.astChildren.l.filterNot(c => conditionId.contains(c.id))
       val label = if (idx == 0) "if" else s"elseif$idx"
       armRoots.headOption.foreach { thenRoot =>
-        addArm(groupId, label, current.condition.headOption.map(_.code), thenRoot, arms, armTags)
+        val heads = addArm(
+          groupId, label, current.condition.headOption.map(_.code), thenRoot, arms, armTags
+        )
+        // The concrete branch point is resolved below; retain the heads for
+        // now so both sides of an asymmetric IF survive call projection.
+        heads.foreach(headId => branchEntryEdges += ((groupId, headId)))
       }
       elseChainNext(current) match {
         case Some(next) =>
@@ -323,6 +342,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           val chainEndsWithElse = armRoots.size > 1
           if (chainEndsWithElse) {
             addArm(groupId, "else", None, armRoots.last, arms, armTags)
+              .foreach(headId => branchEntryEdges += ((groupId, headId)))
           } else {
             addImplicitElse(groupId, arms)
           }
@@ -353,6 +373,16 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       "branchPointIds" -> stringArray(branchPointIds),
       "arms" -> arms
     )
+
+    // Replace the temporary group key with each physical anchor.  Deferring
+    // insertion until all normal sequence edges exist avoids duplicates.
+    val groupHeads = branchEntryEdges.collect {
+      case (`groupId`, headId) => headId
+    }.toList
+    branchEntryEdges.filterInPlace(_._1 != groupId)
+    branchPointIds.foreach { pointId =>
+      groupHeads.foreach(headId => branchEntryEdges += ((pointId, headId)))
+    }
   }
 
   // Emits ONE group for a try's mutually exclusive outcomes. The try body
@@ -648,6 +678,16 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           "type" -> "invoke"
         )
       }
+    }
+  }
+
+  val existingSequenceEdges = edges.collect {
+    case edge if edge.obj.get("type").exists(_.str == "sequence") =>
+      (edge.obj("from").str, edge.obj("to").str)
+  }.toSet
+  branchEntryEdges.distinct.foreach { case (source, target) =>
+    if (!existingSequenceEdges.contains((source, target))) {
+      edges += ujson.Obj("from" -> source, "to" -> target, "type" -> "sequence")
     }
   }
 
