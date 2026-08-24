@@ -126,7 +126,24 @@
         "depth": 1
       },
       {
-        "id": "m107374182408~12",
+        "id": "r141733920768~12",
+        "type": "exit",
+        "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
+        "code": "return;",
+        "line": 37,
+        "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+        "origId": "r141733920768",
+        "exitKind": "return",
+        "depth": 1,
+        "branchArms": [
+          {
+            "groupId": "cs47244640256~9",
+            "armLabel": "if"
+          }
+        ]
+      },
+      {
+        "id": "m107374182408~13",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "line": 75,
@@ -135,7 +152,7 @@
         "depth": 2
       },
       {
-        "id": "m107374182409~13",
+        "id": "m107374182409~14",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
         "line": 79,
@@ -144,7 +161,7 @@
         "depth": 2
       },
       {
-        "id": "c30064771076~14",
+        "id": "c30064771076~15",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
@@ -155,7 +172,7 @@
         "depth": 0
       },
       {
-        "id": "m107374182402~15",
+        "id": "m107374182402~16",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
         "line": 42,
@@ -164,7 +181,7 @@
         "depth": 1
       },
       {
-        "id": "c30064771082~16",
+        "id": "c30064771082~17",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
@@ -175,7 +192,7 @@
         "depth": 1
       },
       {
-        "id": "c30064771083~17",
+        "id": "c30064771083~18",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
@@ -186,7 +203,7 @@
         "depth": 1
       },
       {
-        "id": "m107374182408~18",
+        "id": "m107374182408~19",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "line": 75,
@@ -195,7 +212,7 @@
         "depth": 2
       },
       {
-        "id": "c30064771084~19",
+        "id": "c30064771084~20",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
@@ -207,7 +224,24 @@
         "depth": 1
       },
       {
-        "id": "m107374182404~20",
+        "id": "r141733920769~21",
+        "type": "exit",
+        "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
+        "code": "return;",
+        "line": 45,
+        "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+        "origId": "r141733920769",
+        "exitKind": "return",
+        "depth": 1,
+        "branchArms": [
+          {
+            "groupId": "cs47244640257~16",
+            "armLabel": "if"
+          }
+        ]
+      },
+      {
+        "id": "m107374182404~22",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
         "line": 58,
@@ -216,7 +250,18 @@
         "depth": 2
       },
       {
-        "id": "m107374182409~21",
+        "id": "r141733920771~23",
+        "type": "exit",
+        "callerMethod": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
+        "code": "return true;",
+        "line": 59,
+        "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+        "origId": "r141733920771",
+        "exitKind": "return",
+        "depth": 2
+      },
+      {
+        "id": "m107374182409~24",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
         "line": 79,
@@ -225,7 +270,7 @@
         "depth": 2
       },
       {
-        "id": "c30064771077~22",
+        "id": "c30064771077~25",
         "type": "call",
         "calleeFullName": "java.util.List.forEach:void(java.util.function.Consumer)",
         "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
@@ -237,7 +282,7 @@
         "depth": 0
       },
       {
-        "id": "m107374182403~23",
+        "id": "m107374182403~26",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
         "line": 50,
@@ -246,7 +291,7 @@
         "depth": 1
       },
       {
-        "id": "c30064771085~24",
+        "id": "c30064771085~27",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
@@ -257,7 +302,7 @@
         "depth": 1
       },
       {
-        "id": "c30064771087~25",
+        "id": "c30064771087~28",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
@@ -268,7 +313,7 @@
         "depth": 1
       },
       {
-        "id": "m107374182408~26",
+        "id": "m107374182408~29",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "line": 75,
@@ -277,7 +322,7 @@
         "depth": 2
       },
       {
-        "id": "c30064771088~27",
+        "id": "c30064771088~30",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
@@ -288,7 +333,7 @@
         "depth": 1
       },
       {
-        "id": "c30064771089~28",
+        "id": "c30064771089~31",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
@@ -300,7 +345,24 @@
         "depth": 1
       },
       {
-        "id": "m107374182404~29",
+        "id": "r141733920770~32",
+        "type": "exit",
+        "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+        "code": "return;",
+        "line": 53,
+        "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+        "origId": "r141733920770",
+        "exitKind": "return",
+        "depth": 1,
+        "branchArms": [
+          {
+            "groupId": "cs47244640258~26",
+            "armLabel": "if"
+          }
+        ]
+      },
+      {
+        "id": "m107374182404~33",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
         "line": 58,
@@ -309,7 +371,18 @@
         "depth": 2
       },
       {
-        "id": "m107374182409~30",
+        "id": "r141733920771~34",
+        "type": "exit",
+        "callerMethod": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
+        "code": "return true;",
+        "line": 59,
+        "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+        "origId": "r141733920771",
+        "exitKind": "return",
+        "depth": 2
+      },
+      {
+        "id": "m107374182409~35",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doX:void()",
         "line": 79,
@@ -318,7 +391,7 @@
         "depth": 2
       },
       {
-        "id": "m107374182405~31",
+        "id": "m107374182405~36",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
         "line": 62,
@@ -327,14 +400,25 @@
         "depth": 2
       },
       {
-        "id": "m107374182420~32",
+        "id": "r141733920772~37",
+        "type": "exit",
+        "callerMethod": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
+        "code": "return true;",
+        "line": 63,
+        "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+        "origId": "r141733920772",
+        "exitKind": "return",
+        "depth": 2
+      },
+      {
+        "id": "m107374182420~38",
         "type": "leaf",
         "calleeFullName": "java.util.List.forEach:void(java.util.function.Consumer)",
         "origId": "m107374182420",
         "depth": 1
       },
       {
-        "id": "m107374182414~33",
+        "id": "m107374182414~39",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.<lambda>0:void(java.lang.Object)",
         "line": 31,
@@ -343,7 +427,7 @@
         "depth": 1
       },
       {
-        "id": "c30064771104~34",
+        "id": "c30064771104~40",
         "type": "call",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "callerMethod": "com.flowmap.fixture.OperationalChains.<lambda>0:void(java.lang.Object)",
@@ -355,7 +439,7 @@
         "depth": 1
       },
       {
-        "id": "m107374182408~35",
+        "id": "m107374182408~41",
         "type": "entry",
         "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
         "line": 75,
@@ -408,7 +492,7 @@
         "type": "sequence"
       },
       {
-        "from": "m107374182408~12",
+        "from": "m107374182408~13",
         "to": "c30064771081~11",
         "type": "sequence",
         "returnFrom": "c30064771079~10",
@@ -420,19 +504,37 @@
         ]
       },
       {
+        "from": "m107374182408~13",
+        "to": "r141733920768~12",
+        "type": "sequence",
+        "returnFrom": "c30064771079~10",
+        "branchRequirements": [
+          {
+            "groupId": "cs47244640256~9",
+            "armLabel": "if"
+          }
+        ]
+      },
+      {
         "from": "c30064771079~10",
-        "to": "m107374182408~12",
+        "to": "m107374182408~13",
         "type": "invoke"
       },
       {
-        "from": "m107374182409~13",
+        "from": "r141733920768~12",
+        "to": "c30064771075~8",
+        "type": "sequence",
+        "returnFrom": "c30064771074~6"
+      },
+      {
+        "from": "m107374182409~14",
         "to": "c30064771075~8",
         "type": "sequence",
         "returnFrom": "c30064771074~6"
       },
       {
         "from": "c30064771081~11",
-        "to": "m107374182409~13",
+        "to": "m107374182409~14",
         "type": "invoke"
       },
       {
@@ -441,148 +543,223 @@
         "type": "invoke"
       },
       {
-        "from": "m107374182402~15",
-        "to": "c30064771082~16",
+        "from": "m107374182402~16",
+        "to": "c30064771082~17",
         "type": "sequence"
       },
       {
-        "from": "m107374182408~18",
-        "to": "c30064771083~17",
+        "from": "m107374182408~19",
+        "to": "c30064771083~18",
         "type": "sequence",
-        "returnFrom": "c30064771082~16"
+        "returnFrom": "c30064771082~17"
       },
       {
-        "from": "c30064771082~16",
-        "to": "m107374182408~18",
+        "from": "c30064771082~17",
+        "to": "m107374182408~19",
         "type": "invoke"
       },
       {
-        "from": "m107374182404~20",
-        "to": "c30064771084~19",
+        "from": "m107374182404~22",
+        "to": "r141733920771~23",
+        "type": "sequence"
+      },
+      {
+        "from": "r141733920771~23",
+        "to": "c30064771084~20",
         "type": "sequence",
-        "returnFrom": "c30064771083~17",
+        "returnFrom": "c30064771083~18",
         "branchRequirements": [
           {
-            "groupId": "cs47244640257~15",
+            "groupId": "cs47244640257~16",
             "armLabel": "else"
           }
         ]
       },
       {
-        "from": "c30064771083~17",
-        "to": "m107374182404~20",
+        "from": "r141733920771~23",
+        "to": "r141733920769~21",
+        "type": "sequence",
+        "returnFrom": "c30064771083~18",
+        "branchRequirements": [
+          {
+            "groupId": "cs47244640257~16",
+            "armLabel": "if"
+          }
+        ]
+      },
+      {
+        "from": "c30064771083~18",
+        "to": "m107374182404~22",
         "type": "invoke"
       },
       {
-        "from": "m107374182409~21",
-        "to": "c30064771076~14",
+        "from": "r141733920769~21",
+        "to": "c30064771076~15",
         "type": "sequence",
         "returnFrom": "c30064771075~8"
       },
       {
-        "from": "c30064771084~19",
-        "to": "m107374182409~21",
+        "from": "m107374182409~24",
+        "to": "c30064771076~15",
+        "type": "sequence",
+        "returnFrom": "c30064771075~8"
+      },
+      {
+        "from": "c30064771084~20",
+        "to": "m107374182409~24",
         "type": "invoke"
       },
       {
         "from": "c30064771075~8",
-        "to": "m107374182402~15",
+        "to": "m107374182402~16",
         "type": "invoke"
       },
       {
-        "from": "m107374182403~23",
-        "to": "c30064771085~24",
+        "from": "m107374182403~26",
+        "to": "c30064771085~27",
         "type": "sequence"
       },
       {
-        "from": "m107374182408~26",
-        "to": "c30064771087~25",
+        "from": "m107374182408~29",
+        "to": "c30064771087~28",
         "type": "sequence",
-        "returnFrom": "c30064771085~24"
+        "returnFrom": "c30064771085~27"
       },
       {
-        "from": "c30064771085~24",
-        "to": "m107374182408~26",
+        "from": "c30064771085~27",
+        "to": "m107374182408~29",
         "type": "invoke"
       },
       {
-        "from": "m107374182404~29",
-        "to": "c30064771088~27",
+        "from": "m107374182404~33",
+        "to": "r141733920771~34",
+        "type": "sequence"
+      },
+      {
+        "from": "r141733920771~34",
+        "to": "c30064771088~30",
         "type": "sequence",
-        "returnFrom": "c30064771087~25"
-      },
-      {
-        "from": "m107374182404~29",
-        "to": "c30064771089~28",
-        "type": "sequence",
-        "returnFrom": "c30064771087~25"
-      },
-      {
-        "from": "c30064771087~25",
-        "to": "m107374182404~29",
-        "type": "invoke"
-      },
-      {
-        "from": "m107374182409~30",
-        "to": "c30064771077~22",
-        "type": "sequence",
-        "returnFrom": "c30064771076~14"
-      },
-      {
-        "from": "c30064771089~28",
-        "to": "m107374182409~30",
-        "type": "invoke"
-      },
-      {
-        "from": "m107374182405~31",
-        "to": "c30064771089~28",
-        "type": "sequence",
-        "returnFrom": "c30064771088~27",
+        "returnFrom": "c30064771087~28",
         "branchRequirements": [
           {
-            "groupId": "cs47244640258~23",
+            "groupId": "cs47244640258~26",
             "armLabel": "else"
           }
         ]
       },
       {
-        "from": "c30064771088~27",
-        "to": "m107374182405~31",
+        "from": "r141733920771~34",
+        "to": "c30064771089~31",
+        "type": "sequence",
+        "returnFrom": "c30064771087~28",
+        "branchRequirements": [
+          {
+            "groupId": "cs47244640258~26",
+            "armLabel": "else"
+          }
+        ]
+      },
+      {
+        "from": "r141733920771~34",
+        "to": "r141733920770~32",
+        "type": "sequence",
+        "returnFrom": "c30064771087~28",
+        "branchRequirements": [
+          {
+            "groupId": "cs47244640258~26",
+            "armLabel": "if"
+          }
+        ]
+      },
+      {
+        "from": "c30064771087~28",
+        "to": "m107374182404~33",
         "type": "invoke"
       },
       {
-        "from": "c30064771087~25",
-        "to": "c30064771088~27",
-        "type": "data"
+        "from": "r141733920770~32",
+        "to": "c30064771077~25",
+        "type": "sequence",
+        "returnFrom": "c30064771076~15"
       },
       {
-        "from": "c30064771088~27",
-        "to": "c30064771087~25",
-        "type": "data"
+        "from": "m107374182409~35",
+        "to": "c30064771077~25",
+        "type": "sequence",
+        "returnFrom": "c30064771076~15"
       },
       {
-        "from": "c30064771076~14",
-        "to": "m107374182403~23",
+        "from": "c30064771089~31",
+        "to": "m107374182409~35",
         "type": "invoke"
       },
       {
-        "from": "c30064771077~22",
-        "to": "m107374182420~32",
-        "type": "invoke"
-      },
-      {
-        "from": "m107374182414~33",
-        "to": "c30064771104~34",
+        "from": "m107374182405~36",
+        "to": "r141733920772~37",
         "type": "sequence"
       },
       {
-        "from": "c30064771104~34",
-        "to": "m107374182408~35",
+        "from": "r141733920772~37",
+        "to": "c30064771089~31",
+        "type": "sequence",
+        "returnFrom": "c30064771088~30",
+        "branchRequirements": [
+          {
+            "groupId": "cs47244640258~26",
+            "armLabel": "else"
+          }
+        ]
+      },
+      {
+        "from": "r141733920772~37",
+        "to": "r141733920770~32",
+        "type": "sequence",
+        "returnFrom": "c30064771088~30",
+        "branchRequirements": [
+          {
+            "groupId": "cs47244640258~26",
+            "armLabel": "if"
+          }
+        ]
+      },
+      {
+        "from": "c30064771088~30",
+        "to": "m107374182405~36",
         "type": "invoke"
       },
       {
-        "from": "c30064771077~22",
-        "to": "m107374182414~33",
+        "from": "c30064771087~28",
+        "to": "c30064771088~30",
+        "type": "data"
+      },
+      {
+        "from": "c30064771088~30",
+        "to": "c30064771087~28",
+        "type": "data"
+      },
+      {
+        "from": "c30064771076~15",
+        "to": "m107374182403~26",
+        "type": "invoke"
+      },
+      {
+        "from": "c30064771077~25",
+        "to": "m107374182420~38",
+        "type": "invoke"
+      },
+      {
+        "from": "m107374182414~39",
+        "to": "c30064771104~40",
+        "type": "sequence"
+      },
+      {
+        "from": "c30064771104~40",
+        "to": "m107374182408~41",
+        "type": "invoke"
+      },
+      {
+        "from": "c30064771077~25",
+        "to": "m107374182414~39",
         "type": "invoke"
       }
     ],
@@ -597,13 +774,28 @@
         "branchPointIds": [
           "c30064771079~10"
         ],
-        "convergesAt": "c30064771081~11",
+        "convergesAt": "c30064771075~8",
         "arms": [
           {
             "label": "if",
-            "empty": true,
+            "empty": false,
             "terminus": "return",
+            "exits": [
+              {
+                "kind": "return",
+                "frontierIds": [
+                  "c30064771079"
+                ],
+                "branchRequirements": [
+                  {
+                    "groupId": "cs47244640256",
+                    "armLabel": "if"
+                  }
+                ]
+              }
+            ],
             "conditionCode": "!authenticated",
+            "firstCallId": "r141733920768~12",
             "targetIds": [
               "c30064771075~8"
             ]
@@ -612,6 +804,20 @@
             "label": "else",
             "empty": true,
             "terminus": "continues",
+            "exits": [
+              {
+                "kind": "continues",
+                "frontierIds": [
+                  "c30064771079"
+                ],
+                "branchRequirements": [
+                  {
+                    "groupId": "cs47244640256",
+                    "armLabel": "else"
+                  }
+                ]
+              }
+            ],
             "targetIds": [
               "c30064771081~11"
             ]
@@ -619,59 +825,121 @@
         ]
       },
       {
-        "id": "cs47244640257~15",
+        "id": "cs47244640257~16",
         "kind": "IF",
         "method": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
         "line": 44,
         "branchPointIds": [
-          "c30064771083~17"
+          "c30064771083~18"
         ],
-        "convergesAt": "c30064771084~19",
+        "convergesAt": "c30064771076~15",
         "arms": [
           {
             "label": "if",
-            "empty": true,
+            "empty": false,
             "terminus": "return",
+            "exits": [
+              {
+                "kind": "return",
+                "frontierIds": [
+                  "c30064771083"
+                ],
+                "branchRequirements": [
+                  {
+                    "groupId": "cs47244640257",
+                    "armLabel": "if"
+                  }
+                ]
+              }
+            ],
             "conditionCode": "this.hasRole()",
+            "firstCallId": "r141733920769~21",
             "targetIds": [
-              "c30064771076~14"
+              "c30064771076~15"
             ]
           },
           {
             "label": "else",
             "empty": true,
             "terminus": "continues",
+            "exits": [
+              {
+                "kind": "continues",
+                "frontierIds": [
+                  "c30064771083"
+                ],
+                "branchRequirements": [
+                  {
+                    "groupId": "cs47244640257",
+                    "armLabel": "else"
+                  }
+                ]
+              }
+            ],
             "targetIds": [
-              "c30064771084~19"
+              "c30064771084~20"
             ]
           }
         ]
       },
       {
-        "id": "cs47244640258~23",
+        "id": "cs47244640258~26",
         "kind": "IF",
         "method": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
         "line": 52,
         "branchPointIds": [
-          "c30064771088~27"
+          "c30064771087~28",
+          "c30064771088~30"
         ],
-        "convergesAt": "c30064771089~28",
+        "convergesAt": "c30064771077~25",
         "arms": [
           {
             "label": "if",
-            "empty": true,
+            "empty": false,
             "terminus": "return",
+            "exits": [
+              {
+                "kind": "return",
+                "frontierIds": [
+                  "c30064771087",
+                  "c30064771088"
+                ],
+                "branchRequirements": [
+                  {
+                    "groupId": "cs47244640258",
+                    "armLabel": "if"
+                  }
+                ]
+              }
+            ],
             "conditionCode": "hasRole() || isOwner()",
+            "firstCallId": "r141733920770~32",
             "targetIds": [
-              "c30064771077~22"
+              "c30064771077~25"
             ]
           },
           {
             "label": "else",
             "empty": true,
             "terminus": "continues",
+            "exits": [
+              {
+                "kind": "continues",
+                "frontierIds": [
+                  "c30064771087",
+                  "c30064771088"
+                ],
+                "branchRequirements": [
+                  {
+                    "groupId": "cs47244640258",
+                    "armLabel": "else"
+                  }
+                ]
+              }
+            ],
             "targetIds": [
-              "c30064771089~28"
+              "c30064771088~30",
+              "c30064771089~31"
             ]
           }
         ]
@@ -845,7 +1113,7 @@
           "calleeFields"
         ]
       },
-      "c30064771076~14": {
+      "c30064771076~15": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "void",
@@ -869,7 +1137,7 @@
           "calleeFields"
         ]
       },
-      "c30064771082~16": {
+      "c30064771082~17": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "void",
@@ -893,7 +1161,7 @@
           "calleeFields"
         ]
       },
-      "c30064771083~17": {
+      "c30064771083~18": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "boolean",
@@ -915,7 +1183,7 @@
           "calleeFields"
         ]
       },
-      "c30064771084~19": {
+      "c30064771084~20": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "void",
@@ -939,7 +1207,7 @@
           "calleeFields"
         ]
       },
-      "c30064771077~22": {
+      "c30064771077~25": {
         "receiver": "List.of(\"lambda\")",
         "receiverType": "java.util.List",
         "outputType": "void",
@@ -962,7 +1230,7 @@
           "output"
         ]
       },
-      "c30064771085~24": {
+      "c30064771085~27": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "void",
@@ -986,15 +1254,15 @@
           "calleeFields"
         ]
       },
-      "c30064771087~25": {
+      "c30064771087~28": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "boolean",
         "dataSourceIds": [
-          "c30064771088~27"
+          "c30064771088~30"
         ],
         "dataConsumerIds": [
-          "c30064771088~27"
+          "c30064771088~30"
         ],
         "domainTypes": [
           "com.flowmap.fixture.OperationalChains",
@@ -1014,15 +1282,15 @@
           "calleeFields"
         ]
       },
-      "c30064771088~27": {
+      "c30064771088~30": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "boolean",
         "dataSourceIds": [
-          "c30064771087~25"
+          "c30064771087~28"
         ],
         "dataConsumerIds": [
-          "c30064771087~25"
+          "c30064771087~28"
         ],
         "domainTypes": [
           "com.flowmap.fixture.OperationalChains",
@@ -1042,7 +1310,7 @@
           "calleeFields"
         ]
       },
-      "c30064771089~28": {
+      "c30064771089~31": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "void",
@@ -1066,7 +1334,7 @@
           "calleeFields"
         ]
       },
-      "c30064771104~34": {
+      "c30064771104~40": {
         "receiver": "this",
         "receiverType": "com.flowmap.fixture.OperationalChains",
         "outputType": "void",
@@ -1184,6 +1452,17 @@
         "calleeFullName": "java.lang.IllegalArgumentException.<init>:void(java.lang.String)",
         "origId": "m107374182419",
         "depth": 2
+      },
+      {
+        "id": "t30064771097~9",
+        "type": "exit",
+        "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
+        "code": "throw new IllegalArgumentException(\"doY\");",
+        "line": 84,
+        "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+        "origId": "t30064771097",
+        "exitKind": "throw",
+        "depth": 1
       }
     ],
     "edges": [
@@ -1222,6 +1501,11 @@
         "from": "c30064771100~7",
         "to": "m107374182419~8",
         "type": "invoke"
+      },
+      {
+        "from": "c30064771100~7",
+        "to": "t30064771097~9",
+        "type": "sequence"
       },
       {
         "from": "c30064771091~2",

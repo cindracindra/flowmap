@@ -52,9 +52,13 @@ function armSwitcherLabel(arm: PanelArm): string {
 export function BranchRegions({
   geometries,
   activeId,
+  onSelect,
+  onHover,
 }: {
   geometries: PanelGeometry[];
   activeId: string | null;
+  onSelect: (panelId: string) => void;
+  onHover: (panelId: string | null) => void;
 }) {
   return (
     <g>
@@ -75,7 +79,25 @@ export function BranchRegions({
               strokeOpacity={isActive ? 0.95 : 0.5}
               strokeWidth={isActive ? 1.8 : 1.1}
               strokeDasharray={style.dash}
-              style={{ transition: "fill-opacity 0.15s, stroke-opacity 0.15s" }}
+              pointerEvents="stroke"
+              role="button"
+              aria-label={`Show ${geometry.panel.title} branch details`}
+              tabIndex={0}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelect(geometry.panel.id);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                onSelect(geometry.panel.id);
+              }}
+              onMouseEnter={() => onHover(geometry.panel.id)}
+              onMouseLeave={() => onHover(null)}
+              style={{
+                cursor: "pointer",
+                transition: "fill-opacity 0.15s, stroke-opacity 0.15s",
+              }}
             />
           </g>
         );
@@ -125,6 +147,8 @@ export function BranchSwitchers({
         if (options.length === 0) return null;
 
         const selectedOption = options.find((option) => option.id === selected) ?? options[0];
+        const selectedArm = alternatives.find((arm) => arm.id === selected)
+          ?? alternatives[0];
         const nextOption = options[(options.findIndex((option) => option.id === selected) + 1) % options.length];
         const badgeWidth = pillWidth(selectedOption.label);
 
@@ -171,7 +195,8 @@ export function BranchSwitchers({
               fontFamily={MONO}
               fill="var(--canvas-foreground)"
             >
-              {style.glyph} {style.badge} · {panel.title}
+              {style.glyph} {style.badge}
+              {panel.title !== style.badge ? ` · ${panel.title}` : ""}
             </text>
             <g
               className="graph-node"
@@ -181,6 +206,7 @@ export function BranchSwitchers({
                 onSelect(panel.id, nextOption.id);
               }}
             >
+              <title>{selectedArm.label}</title>
               <rect
                 x={geometry.x + geometry.width - badgeWidth - 8}
                 y={geometry.y + 5}

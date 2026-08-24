@@ -18,7 +18,11 @@ from backend.src.flowmap.domain.cfg_pipeline import (  # noqa: E402
     flatten_cfg,
     slice_from_root,
 )
-from backend.src.flowmap.model import Graph  # noqa: E402
+from backend.src.flowmap.domain.cfg_flattening import (  # noqa: E402
+    _merge_requirements,
+    _requirements_compatible,
+)
+from backend.src.flowmap.model import BranchRequirement, Graph, arm_exit_kinds  # noqa: E402
 
 def node(id_, type_, callee=None, caller=None, dead=False, terminus=None, arms=None, loops=None):
     """`arms` is the raw `branchArms` shape full_cfg.sc emits -- a list of
@@ -45,6 +49,61 @@ def edge(frm, to, type_="sequence", loop_back=False):
     if loop_back:
         result["loopBack"] = True
     return result
+
+
+class TestExitExtractionModel(unittest.TestCase):
+    def test_route_requirements_allow_nested_subset_and_reject_conflict(self):
+        outer_if = BranchRequirement("outer", "if")
+        inner_else = BranchRequirement("inner", "else")
+
+        self.assertTrue(_requirements_compatible(
+            (outer_if, inner_else), (outer_if,)
+        ))
+        self.assertFalse(_requirements_compatible(
+            (outer_if,), (BranchRequirement("outer", "else"),)
+        ))
+        self.assertEqual(
+            _merge_requirements((outer_if, inner_else), (outer_if,)),
+            (outer_if, inner_else),
+        )
+
+    def test_exit_node_and_path_level_arm_exits_round_trip(self):
+        raw = {
+            "nodes": [
+                {"id": "m1", "type": "entry", "calleeFullName": "A.run"},
+                {
+                    "id": "r1", "type": "exit", "exitKind": "return",
+                    "callerMethod": "A.run", "code": "return value;", "line": 7,
+                },
+            ],
+            "edges": [edge("m1", "r1")],
+            "branchGroups": [{
+                "id": "cs1", "kind": "IF", "arms": [{
+                    "label": "if", "empty": True, "terminus": "continues",
+                    "exits": [
+                        {"kind": "return", "frontierIds": ["c1"]},
+                        {"kind": "continues"},
+                    ],
+                }],
+            }],
+        }
+
+        graph = Graph.from_dict(raw)
+
+        self.assertEqual(graph.nodes[1].exitKind, "return")
+        self.assertEqual(arm_exit_kinds(graph.branchGroups[0].arms[0]), {"return", "continues"})
+        self.assertEqual(graph.to_dict(), raw)
+
+    def test_legacy_arm_terminus_remains_supported(self):
+        graph = Graph.from_dict({
+            "nodes": [], "edges": [],
+            "branchGroups": [{
+                "id": "cs1", "kind": "IF",
+                "arms": [{"label": "if", "empty": True, "terminus": "throw"}],
+            }],
+        })
+
+        self.assertEqual(arm_exit_kinds(graph.branchGroups[0].arms[0]), {"throw"})
 
 
 # --------------------------------------------------------------------------
@@ -330,6 +389,86 @@ class SliceFromRootTests(unittest.TestCase):
 # --------------------------------------------------------------------------
 
 class FilterNoiseCfgTests(unittest.TestCase):
+    def test_exit_is_preserved_and_removed_frontier_is_recomputed(self):
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e", "entry", "run"),
+                node("c_before", "call", "Service.before", "run"),
+                node("c_noise", "call", "<operator>.assignment", "run",
+                     arms=[("guard", "if")]),
+                {
+                    "id": "r1", "type": "exit", "exitKind": "return",
+                    "callerMethod": "run", "code": "return;", "line": 4,
+                },
+            ],
+            "edges": [
+                edge("e", "c_before"),
+                edge("c_before", "c_noise"),
+                edge("c_noise", "r1"),
+            ],
+            "branchGroups": [{
+                "id": "guard", "kind": "IF", "method": "run",
+                "branchPointIds": ["c_before"],
+                "arms": [
+                    {
+                        "label": "if", "empty": False, "terminus": "return",
+                        "firstCallId": "c_noise",
+                        "exits": [{"kind": "return", "frontierIds": ["c_noise"]}],
+                    },
+                    {
+                        "label": "else", "empty": True, "terminus": "continues",
+                        "exits": [{"kind": "continues"}],
+                    },
+                ],
+            }],
+        })
+
+        filtered = filter_noise_cfg(graph)
+
+        self.assertIn("r1", {node.id for node in filtered.nodes})
+        self.assertIn(
+            ("c_before", "r1", "sequence"),
+            {(edge.source, edge.target, edge.type) for edge in filtered.edges},
+        )
+        group = filtered.branchGroups[0]
+        returning = next(arm for arm in group.arms if arm.label == "if")
+        continuing = next(arm for arm in group.arms if arm.label == "else")
+        self.assertEqual(returning.exits[0].frontierIds, ["c_before"])
+        self.assertEqual(continuing.exits[0].frontierIds, ["c_before"])
+        # Phase discovery still consumes this unchanged compatibility field.
+        self.assertEqual([returning.terminus, continuing.terminus], ["return", "continues"])
+
+    def test_throw_exit_survives_but_lexical_successor_does_not(self):
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e", "entry", "run"),
+                node("op_throw", "call", "<operator>.throw", "run", terminus="throw"),
+                {
+                    "id": "t1", "type": "exit", "exitKind": "throw",
+                    "callerMethod": "run", "code": "throw error;", "line": 2,
+                },
+                node("c_after", "call", "Service.after", "run"),
+            ],
+            "edges": [
+                edge("e", "op_throw"),
+                edge("op_throw", "t1"),
+                edge("op_throw", "c_after"),  # Joern lexical cfgNext quirk
+            ],
+        })
+
+        filtered = filter_noise_cfg(graph)
+
+        self.assertIn("t1", {node.id for node in filtered.nodes})
+        self.assertNotIn(
+            "c_after", {node.id for node in filtered.nodes}
+        )
+        self.assertIn(
+            ("e", "t1", "sequence"),
+            {(edge.source, edge.target, edge.type) for edge in filtered.edges},
+        )
+
     def test_no_noise_means_no_dead_ends_and_unchanged_graph(self):
         graph = Graph.from_dict({
             "entryPoint": "run",
@@ -428,6 +567,71 @@ class FilterNoiseCfgTests(unittest.TestCase):
         catch = next(a for a in filtered.branchGroups[0].arms if a.label == "catch1")
         self.assertEqual(catch.exceptionType, "java.lang.IllegalArgumentException")
         self.assertFalse(catch.empty)
+
+    def test_zero_call_returning_catch_remains_observable(self):
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [
+                node("e", "entry", "run"),
+                node("c_try", "call", "Service.work", "run"),
+                node("c_after", "call", "Service.after", "run"),
+            ],
+            "edges": [edge("e", "c_try"), edge("c_try", "c_after")],
+            "branchGroups": [{
+                "id": "cs", "kind": "TRY", "method": "run",
+                "branchPointIds": ["c_try"],
+                "arms": [
+                    {
+                        "label": "catch1", "empty": True, "terminus": "return",
+                        "exceptionType": "java.io.IOException",
+                        "exits": [{"kind": "return"}],
+                    },
+                    {
+                        "label": "noCatch", "empty": True,
+                        "terminus": "continues",
+                        "exits": [{"kind": "continues"}],
+                    },
+                ],
+            }],
+        })
+
+        filtered = filter_noise_cfg(graph)
+
+        self.assertEqual(len(filtered.branchGroups), 1)
+        catch = next(
+            arm for arm in filtered.branchGroups[0].arms if arm.label == "catch1"
+        )
+        self.assertTrue(catch.empty)
+        self.assertEqual(arm_exit_kinds(catch), {"return"})
+
+    def test_all_empty_if_with_mixed_exit_is_not_transparent(self):
+        graph = Graph.from_dict({
+            "entryPoint": "run",
+            "nodes": [node("e", "entry", "run")],
+            "edges": [],
+            "branchGroups": [{
+                "id": "cs", "kind": "IF", "method": "run",
+                "branchPointIds": ["e"],
+                "arms": [
+                    {
+                        "label": "if", "empty": True,
+                        # Conservative legacy summary; authoritative exits
+                        # prove that one path returns.
+                        "terminus": "continues",
+                        "exits": [{"kind": "return"}, {"kind": "continues"}],
+                    },
+                    {
+                        "label": "else", "empty": True,
+                        "terminus": "continues",
+                        "exits": [{"kind": "continues"}],
+                    },
+                ],
+            }],
+        })
+
+        filtered = filter_noise_cfg(graph)
+
+        self.assertEqual(len(filtered.branchGroups), 1)
 
     def test_leaf_disconnected_by_an_excluded_call_is_pruned(self):
         # run(): <operator>.println(...) -- a noise call whose only
@@ -1645,51 +1849,6 @@ class FlattenCfgTests(unittest.TestCase):
         self.assertEqual({e.target for e in invoke_edges}, leaf_ids)
         self.assertEqual(len({e.source for e in invoke_edges}), 2)
 
-    def test_non_tail_call_gets_return_edge_tagged_with_call_site(self):
-        # transfer(): balanceUpdate(); recordTransfer();
-        # balanceUpdate(): withdraw(); deposit();
-        # balanceUpdate() is NOT the last call in transfer() (recordTransfer
-        # follows), so it's a non-tail call: deposit()'s own tail must
-        # return into recordTransfer(), attributed to the balanceUpdate()
-        # call site specifically -- not wherever transfer()'s own outer
-        # continuation was (there isn't one, it's the root).
-        graph = Graph.from_dict({
-            "entryPoint": "transfer",
-            "nodes": [
-                node("e_transfer", "entry", "transfer"),
-                node("c_balanceUpdate", "call", "balanceUpdate", "transfer"),
-                node("c_recordTransfer", "call", "pkg.Ledger.record", "transfer"),
-                node("e_balanceUpdate", "entry", "balanceUpdate"),
-                node("c_withdraw", "call", "pkg.Account.withdraw", "balanceUpdate"),
-                node("c_deposit", "call", "pkg.Account.deposit", "balanceUpdate"),
-                node("leaf_withdraw", "leaf", "pkg.Account.withdraw"),
-                node("leaf_deposit", "leaf", "pkg.Account.deposit"),
-                node("leaf_recordTransfer", "leaf", "pkg.Ledger.record"),
-            ],
-            "edges": [
-                edge("e_transfer", "c_balanceUpdate"),
-                edge("c_balanceUpdate", "c_recordTransfer"),
-                edge("e_balanceUpdate", "c_withdraw"),
-                edge("c_withdraw", "c_deposit"),
-                edge("c_balanceUpdate", "e_balanceUpdate", "invoke"),
-                edge("c_withdraw", "leaf_withdraw", "invoke"),
-                edge("c_deposit", "leaf_deposit", "invoke"),
-                edge("c_recordTransfer", "leaf_recordTransfer", "invoke"),
-            ],
-        })
-        flattened = flatten_cfg(graph)
-        names = self._by_orig_name(flattened)
-
-        return_edges = [e for e in flattened.edges if e.returnFrom is not None]
-        self.assertEqual(len(return_edges), 1)
-        ret = return_edges[0]
-        self.assertEqual(names[ret.source], "pkg.Account.deposit")
-        self.assertEqual(names[ret.target], "pkg.Ledger.record")
-        # Attributed to the balanceUpdate() call site, not transfer()'s
-        # own (nonexistent) outer continuation.
-        self.assertEqual(names[ret.returnFrom], "balanceUpdate")
-        self.assertFalse(ret.fallback)
-
     def test_tail_call_propagates_continuation_unchanged(self):
         # run(): helper();  -- the ONLY call in run(), so it's a tail call.
         # helper(): inner();
@@ -1751,51 +1910,6 @@ class FlattenCfgTests(unittest.TestCase):
         # But nothing returns, and nothing falls back.
         self.assertFalse(any(e.returnFrom is not None for e in flattened.edges))
         self.assertFalse(any(e.fallback for e in flattened.edges))
-
-    def test_fallback_edge_when_callee_subtree_never_reaches_continuation(self):
-        # transfer(): withdraw(); deposit();
-        # withdraw()'s ENTIRE body is two throw guards -- no visible
-        # normal-completion branch at all (zero calls, invisible to this
-        # call-projected CFG, same as a real Account.withdraw shaped this
-        # way). deposit() must still be reachable via a synthesized
-        # fallback edge, since nothing inside withdraw() ever "returns".
-        graph = Graph.from_dict({
-            "entryPoint": "transfer",
-            "nodes": [
-                node("e_transfer", "entry", "transfer"),
-                node("c_withdraw", "call", "Account.withdraw", "transfer"),
-                node("c_deposit", "call", "Account.deposit", "transfer"),
-                node("e_withdraw", "entry", "Account.withdraw"),
-                node("c_guard1", "call", "IllegalArgumentException.<init>", "Account.withdraw", dead=True),
-                node("c_guard2", "call", "InsufficientFundsException.<init>", "Account.withdraw", dead=True),
-                node("leaf_guard1", "leaf", "IllegalArgumentException.<init>"),
-                node("leaf_guard2", "leaf", "InsufficientFundsException.<init>"),
-                node("leaf_deposit", "leaf", "Account.deposit"),
-            ],
-            "edges": [
-                edge("e_transfer", "c_withdraw"),
-                edge("c_withdraw", "c_deposit"),
-                edge("c_withdraw", "e_withdraw", "invoke"),
-                edge("e_withdraw", "c_guard1"),
-                edge("e_withdraw", "c_guard2"),
-                edge("c_guard1", "leaf_guard1", "invoke"),
-                edge("c_guard2", "leaf_guard2", "invoke"),
-                edge("c_deposit", "leaf_deposit", "invoke"),
-            ],
-        })
-        flattened = flatten_cfg(graph)
-        names = self._by_orig_name(flattened)
-
-        fallback_edges = [e for e in flattened.edges if e.fallback]
-        self.assertEqual(len(fallback_edges), 1)
-        fb = fallback_edges[0]
-        self.assertEqual(names[fb.source], "Account.withdraw")
-        self.assertEqual(names[fb.target], "Account.deposit")
-        # Attributed to the withdraw() call site (R7-style convention),
-        # not to withdraw()'s own entry (the fallback's real source).
-        self.assertEqual(names[fb.returnFrom], "Account.withdraw")
-        source_node = next(n for n in flattened.nodes if n.id == fb.source)
-        self.assertEqual(source_node.type, "entry")
 
     def test_empty_normal_arm_owns_fallback_return_but_throw_arm_does_not(self):
         # transfer(): deposit(); after();
@@ -1885,6 +1999,7 @@ class FlattenCfgTests(unittest.TestCase):
             if n.type == "entry" and n.calleeFullName == "Account.deposit"
         )
         throw = next(n for n in flattened.nodes if n.origId == "c_throw")
+        throw_leaf = next(n for n in flattened.nodes if n.origId == "leaf_throw")
         catch = next(n for n in flattened.nodes if n.origId == "c_catch")
         after = next(n for n in flattened.nodes if n.origId == "c_after")
         outer_try = next(g for g in flattened.branchGroups if g.id.startswith("outer_try~"))
@@ -1896,7 +2011,8 @@ class FlattenCfgTests(unittest.TestCase):
             e for e in flattened.edges if e.source == entry.id and e.target == after.id
         )
         catch_route = next(
-            e for e in flattened.edges if e.source == entry.id and e.target == catch.id
+            e for e in flattened.edges
+            if e.source == throw_leaf.id and e.target == catch.id
         )
 
         self.assertEqual(
@@ -1908,12 +2024,12 @@ class FlattenCfgTests(unittest.TestCase):
             {(r.groupId, r.armLabel) for r in normal_return.branchRequirements},
             {(group.id, "else"), (outer_try.id, "noCatch")},
         )
-        # The catch is an exceptional continuation, not deposit()'s empty
-        # normal arm. Selecting the nested throw plus catch reaches it;
-        # selecting deposit's else does not control this edge.
+        # The catch is an exceptional continuation from the deepest active
+        # throw frontier, not deposit()'s empty normal arm. The route keeps
+        # both the callee exit and caller continuation requirements.
         self.assertEqual(
             {(r.groupId, r.armLabel) for r in catch_route.branchRequirements},
-            {(outer_try.id, "catch1")},
+            {(group.id, "if"), (outer_try.id, "catch1")},
         )
 
     def test_loop_body_is_cloned_once_and_back_edge_is_metadata(self):

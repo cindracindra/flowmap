@@ -104,7 +104,12 @@ def overlay_phases(analysis: Analysis, flattened: Graph) -> list[Phase]:
                 )
             clones[original] = clone_id
 
-            if clone.type == "call" and internal_entry_targets(clone_id):
+            # Both internally expanded calls and external leaf calls resume
+            # through edges attributed to their call site. Restricting this
+            # to calls with an internal entry stops the caller-instance walk
+            # at its first external operation once leaf returns correctly
+            # carry returnFrom.
+            if clone.type == "call" and returns_by_call.get(clone_id):
                 successors = returns_by_call.get(clone_id, ())
             else:
                 successors = plain_sequence_out.get(clone_id, ())

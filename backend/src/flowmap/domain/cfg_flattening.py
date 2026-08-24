@@ -1,5 +1,6 @@
 import dataclasses
 import itertools
+from dataclasses import dataclass
 
 from domain.cfg_loops import scope_loop_to_instance, tag_loop_back_edges
 from domain.cfg_routing import analyze_branch_routes, materialize_empty_arm_routes
@@ -8,59 +9,87 @@ from model import (
     BranchArm,
     BranchArmRef,
     BranchGroup,
+    BranchRequirement,
     Edge,
     Graph,
     LoopGroup,
+    MethodExitKind,
     Node,
     NodeSemanticFeatures,
 )
 
 
-def _scope_group_to_instance(
-    group: BranchGroup, suffix: str, local_clone: dict[str, str],
-    continuations: list[str],
-) -> BranchGroup:
-    """
-    One inlined instance's copy of a branch group: `cs20` -> `cs20~7`,
-    with every node id it holds re-pointed at that instance's clones.
+@dataclass(frozen=True, slots=True)
+class Continuation:
+    """One route a completed call may resume.
 
-    An arm whose head wasn't cloned here is empty FOR THIS INSTANCE --
-    the trace simply doesn't contain it, whatever the pre-flatten graph
-    said.
+    ``exitKind`` marks a method-local control exit rather than a concrete
+    operation target. Such continuations are collapsed into ExitRoute values
+    and never emitted as final graph nodes.
     """
-    arms = [
-        dataclasses.replace(
-            arm,
-            firstCallId=local_clone.get(arm.firstCallId) if arm.firstCallId else None,
-            empty=local_clone.get(arm.firstCallId) is None if arm.firstCallId else True,
-            targetIds=None,
-        )
-        for arm in group.arms
-    ]
-    return dataclasses.replace(
-        group,
-        id=f"{group.id}~{suffix}",
-        arms=arms,
-        branchPointIds=[
-            local_clone[p] for p in group.branchPointIds if p in local_clone
-        ],
-        # Where this instance returns to, for a "return" arm's arrow and
-        # for the zero-call-arm case in _analyze_branch_routes.
-        returnsTo=list(continuations),
-        convergesAt=None,  # needs the whole trace -- see _analyze_branch_routes
+
+    targetId: str
+    returnFrom: str
+    branchRequirements: tuple[BranchRequirement, ...] = ()
+    exitKind: MethodExitKind | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ExitRoute:
+    """A concrete active frontier leaving one inlined method instance."""
+
+    sourceId: str
+    kind: MethodExitKind
+    branchRequirements: tuple[BranchRequirement, ...] = ()
+    inferred: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class InlineResult:
+    entryId: str
+    exits: tuple[ExitRoute, ...] = ()
+
+
+def _requirement_map(
+    requirements: tuple[BranchRequirement, ...] | list[BranchRequirement],
+) -> dict[str, str]:
+    return {requirement.groupId: requirement.armLabel for requirement in requirements}
+
+
+def _requirements_compatible(
+    left: tuple[BranchRequirement, ...] | list[BranchRequirement],
+    right: tuple[BranchRequirement, ...] | list[BranchRequirement],
+) -> bool:
+    left_by_group = _requirement_map(left)
+    right_by_group = _requirement_map(right)
+    return all(
+        left_by_group[group_id] == right_by_group[group_id]
+        for group_id in left_by_group.keys() & right_by_group.keys()
     )
+
+
+def _merge_requirements(
+    *sets: tuple[BranchRequirement, ...] | list[BranchRequirement],
+) -> tuple[BranchRequirement, ...]:
+    merged: dict[str, BranchRequirement] = {}
+    for requirements in sets:
+        for requirement in requirements:
+            existing = merged.get(requirement.groupId)
+            if existing is not None and existing.armLabel != requirement.armLabel:
+                raise ValueError(
+                    f"Conflicting arms for {requirement.groupId!r}: "
+                    f"{existing.armLabel!r} and {requirement.armLabel!r}"
+                )
+            merged[requirement.groupId] = requirement
+    return tuple(merged.values())
 
 
 def flatten_cfg(cfg: Graph) -> Graph:
     """
     Inlines every internally-traversed callee at its own call site into
-    one continuous trace rooted at cfg.entryPoint. Ported unchanged in
-    logic from processor.flatten_intermethod_cfg (raw-dict version,
-    DESIGN.md #8 / PHASING_RULES.md), translated to Graph/Node/Edge --
-    re-analysed for simplification first and left as-is: each mechanism
-    below is load-bearing for a specific, previously-confirmed bug (see
-    inline comments), and test_phaser.py has a dedicated fixture per
-    mechanism.
+    one continuous trace rooted at cfg.entryPoint. Traversal returns typed
+    path exits rather than deriving completion from whichever visible node
+    happened to be last.
 
     Key construction choices:
       - A call site's own "sequence" edge to whatever follows it is
@@ -68,23 +97,20 @@ def flatten_cfg(cfg: Graph) -> Graph:
         tail(s), tagged returnFrom with the original call site's id (so
         a phase-tree builder can evaluate the real call-site pair, not
         the tail).
-      - A tail node tagged deadEnd (throw-truncated) gets no return edge
-        at all -- it stays a genuine dead end.
+      - A throw reaches only a compatible catch continuation; otherwise it
+        propagates outward as a genuine dead end.
       - Every method is cloned fresh per call site, never shared.
       - A tail call propagates its pending continuation through unchanged
         rather than minting a new one.
       - A method already being inlined higher up the same chain is cut
         off as a bare stub (recursion guard).
-      - A callee whose whole inlined subtree never reaches the
-        continuation it was given falls back to wiring the callee's own
-        entry directly to it, tagged fallback=True.
+      - Explicit exit markers are authoritative. Legacy graphs without any
+        exit marker retain one narrowly-scoped inferred fallback when their
+        projected body exposes no normal completion route.
       - Each clone's `depth` is the invoke-nesting level it is created
         at, stamped from `inline`'s own recursion -- see `clone`.
       - Branch groups are cloned per instance too, `cs20` -> `cs20~7`,
-        with every id inside them re-pointed at this instance's clones --
-        see `_scope_group_to_instance`. Without it, a method inlined at
-        three call sites yields three copies of its groups all sharing
-        one id, so "render group cs20" is ambiguous.
+        with every id inside them re-pointed at this instance's clones.
     """
     nodes_by_id = {n.id: n for n in cfg.nodes}
 
@@ -114,7 +140,9 @@ def flatten_cfg(cfg: Graph) -> Graph:
     flat_edges: list[Edge] = []
     flat_groups: list[BranchGroup] = []
     flat_loops: list[LoopGroup] = []
-    seen_edges: set[tuple[str, str, str]] = set()
+    seen_edges: set[
+        tuple[str, str, str, str | None, tuple[tuple[str, str], ...]]
+    ] = set()
     id_counter = itertools.count()
 
     def emit_edge(
@@ -123,8 +151,13 @@ def flatten_cfg(cfg: Graph) -> Graph:
         edge_type: str,
         return_from: str | None = None,
         fallback: bool = False,
+        branch_requirements: tuple[BranchRequirement, ...] = (),
     ) -> None:
-        key = (from_id, to_id, edge_type)
+        requirement_key = tuple(
+            (requirement.groupId, requirement.armLabel)
+            for requirement in branch_requirements
+        )
+        key = (from_id, to_id, edge_type, return_from, requirement_key)
         if from_id == to_id or key in seen_edges:
             return
         seen_edges.add(key)
@@ -132,10 +165,11 @@ def flatten_cfg(cfg: Graph) -> Graph:
             Edge(
                 source=from_id, target=to_id, type=edge_type,
                 returnFrom=return_from, fallback=fallback,
+                branchRequirements=list(branch_requirements),
             )
         )
 
-    def clone(original_id: str, depth: int) -> str:
+    def clone(original_id: str, depth: int, *, materialize: bool = True) -> str:
         """
         `depth` is the invoke-nesting level this particular clone is
         created at, passed down `inline`'s recursion rather than derived
@@ -156,10 +190,11 @@ def flatten_cfg(cfg: Graph) -> Graph:
         (§8) found that twice on the old Python visualizer.
         """
         new_id = f"{original_id}~{next(id_counter)}"
-        flat_nodes[new_id] = dataclasses.replace(
-            nodes_by_id[original_id], id=new_id, origId=original_id, depth=depth,
-        )
-        if original_id in cfg.semanticFeatures:
+        if materialize:
+            flat_nodes[new_id] = dataclasses.replace(
+                nodes_by_id[original_id], id=new_id, origId=original_id, depth=depth,
+            )
+        if materialize and original_id in cfg.semanticFeatures:
             # Feature records contain mutable lists, so clone through the
             # serialized shape rather than sharing them between instances.
             flat_semantic_features[new_id] = NodeSemanticFeatures.from_dict(
@@ -169,31 +204,16 @@ def flatten_cfg(cfg: Graph) -> Graph:
 
     def inline(
         entry_original_id: str,
-        continuations: list[str],
-        return_from: str | None,
+        continuations: tuple[Continuation, ...],
         visited_methods: frozenset[str],
         depth: int,
         inherited_tags: tuple[BranchArmRef, ...] = (),
         inherited_loop_ids: tuple[str, ...] = (),
-    ) -> tuple[str, bool]:
+    ) -> InlineResult:
         """
-        Clones and wires ONE method's own reachable body (recursing into
-        any internally-traversed invoke targets it encounters), returning
-        (new id of its cloned entry node, whether `continuations` was ever
-        actually reached from anywhere inside this method). `continuations`
-        /`return_from` are what this method's own genuine tails (and any
-        tail-call chain rooted here) should wire "return" edges to/be
-        attributed to.
-
-        The returned bool exists for the "fallback edge" rule (see the
-        non-tail branch below): a caller that creates a NEW continuation
-        for this call needs to know whether ANYTHING inside the whole
-        recursively-inlined subtree actually used it, to decide whether a
-        fallback is needed. True if either this method's own walk
-        directly emitted a return edge using `continuations`, or a
-        tail-call chain rooted here propagated through to something that
-        did (recursively OR'd, never reset partway through a tail chain --
-        propagating unchanged IS what makes a tail call a tail call).
+        Clone and wire one method instance. Exit nodes are scoped control
+        markers, not final operations: reaching one yields an ExitRoute whose
+        source remains the deepest concrete active node.
 
         `depth` is this method's own invoke-nesting level (0 at the root).
         Every clone it makes is stamped with it -- see `clone`.
@@ -208,7 +228,11 @@ def flatten_cfg(cfg: Graph) -> Graph:
             # `at_depth` (its internal-target counterpart deepens by
             # recursing into `inline` with depth + 1 instead).
             if original_id not in local_clone:
-                local_clone[original_id] = clone(original_id, at_depth)
+                local_clone[original_id] = clone(
+                    original_id,
+                    at_depth,
+                    materialize=nodes_by_id[original_id].type != "exit",
+                )
             return local_clone[original_id]
 
         entry_new_id = get_or_clone(entry_original_id)
@@ -221,6 +245,10 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # rewrite can no longer wait until the end the way it used to.
         suffix = entry_new_id.rsplit("~", 1)[-1]
         scoped_ids = {g.id for g in groups_by_method.get(method_name, ())}
+        scoped_group_kinds = {
+            f"{group.id}~{suffix}": group.kind
+            for group in groups_by_method.get(method_name, ())
+        }
         scoped_loop_ids = {loop.id for loop in loops_by_method.get(method_name, ())}
 
         def tags_for(original_id: str) -> list[BranchArmRef]:
@@ -257,6 +285,146 @@ def flatten_cfg(cfg: Graph) -> Graph:
             )
             return list(dict.fromkeys((*inherited_loop_ids, *own)))
 
+        def requirements_for(original_id: str) -> tuple[BranchRequirement, ...]:
+            return tuple(
+                BranchRequirement(tag.groupId, tag.armLabel)
+                for tag in tags_for(original_id)
+            )
+
+        def scoped_requirement(
+            requirement: BranchRequirement,
+        ) -> BranchRequirement:
+            return BranchRequirement(
+                f"{requirement.groupId}~{suffix}"
+                if requirement.groupId in scoped_ids
+                else requirement.groupId,
+                requirement.armLabel,
+            )
+
+        def continuations_for(
+            call_new_id: str, successors: list[str]
+        ) -> tuple[Continuation, ...]:
+            result: list[Continuation] = []
+            for successor in successors:
+                successor_new_id = get_or_clone(successor)
+                successor_node = nodes_by_id[successor]
+                result.append(Continuation(
+                    targetId=successor_new_id,
+                    returnFrom=call_new_id,
+                    branchRequirements=requirements_for(successor),
+                    exitKind=(
+                        successor_node.exitKind
+                        if successor_node.type == "exit"
+                        else None
+                    ),
+                ))
+            return tuple(result)
+
+        method_exits: list[ExitRoute] = []
+        # Extraction records ArmExit frontiers as call IDs, while a flattened
+        # external/internal call completes at a leaf or deeper callee tail.
+        # Retain that relationship so method exits can be qualified by the
+        # authoritative arm route before the caller consumes them.
+        completion_sources_by_frontier: dict[str, set[str]] = {}
+        normal_completion_observed = False
+
+        def add_exit(route: ExitRoute) -> None:
+            if route not in method_exits:
+                method_exits.append(route)
+
+        def follow_continuations(
+            route: ExitRoute,
+            next_routes: tuple[Continuation, ...],
+        ) -> bool:
+            """Connect one callee exit to every compatible caller route.
+
+            A continuation that is itself an exit is collapsed by carrying
+            the same concrete source into this method's ExitRoute list.
+            """
+            nonlocal normal_completion_observed
+            matched = False
+            for continuation in next_routes:
+                if not _requirements_compatible(
+                    route.branchRequirements,
+                    continuation.branchRequirements,
+                ):
+                    continue
+                try_requirements = [
+                    requirement
+                    for requirement in continuation.branchRequirements
+                    if scoped_group_kinds.get(requirement.groupId) == "TRY"
+                ]
+                if try_requirements:
+                    # The innermost TRY requirement selects this immediate
+                    # continuation. Outer requirements remain ordinary path
+                    # constraints and are preserved by the merge below.
+                    catches_throw = try_requirements[-1].armLabel != "noCatch"
+                    if (route.kind == "throw") != catches_throw:
+                        continue
+                elif route.kind == "throw":
+                    continue
+                matched = True
+                normal_completion_observed = True
+                requirements = _merge_requirements(
+                    route.branchRequirements,
+                    continuation.branchRequirements,
+                )
+                if continuation.exitKind is not None:
+                    add_exit(ExitRoute(
+                        sourceId=route.sourceId,
+                        kind=continuation.exitKind,
+                        branchRequirements=requirements,
+                        inferred=route.inferred,
+                    ))
+                else:
+                    emit_edge(
+                        route.sourceId,
+                        continuation.targetId,
+                        "sequence",
+                        return_from=continuation.returnFrom,
+                        fallback=route.inferred,
+                        branch_requirements=requirements,
+                    )
+            if route.kind == "throw" and not matched:
+                add_exit(route)
+            return matched
+
+        def follow_local_successors(
+            source_id: str,
+            source_requirements: tuple[BranchRequirement, ...],
+            successors: list[str],
+            *,
+            return_from: str | None = None,
+            inferred: bool = False,
+        ) -> None:
+            for successor in successors:
+                target_id = get_or_clone(successor)
+                target_node = nodes_by_id[successor]
+                target_requirements = requirements_for(successor)
+                if not _requirements_compatible(
+                    source_requirements, target_requirements
+                ):
+                    continue
+                requirements = _merge_requirements(
+                    source_requirements, target_requirements
+                )
+                if target_node.type == "exit":
+                    add_exit(ExitRoute(
+                        sourceId=source_id,
+                        kind=target_node.exitKind or "fallthrough",
+                        branchRequirements=requirements,
+                        inferred=inferred,
+                    ))
+                else:
+                    emit_edge(
+                        source_id,
+                        target_id,
+                        "sequence",
+                        return_from=return_from,
+                        fallback=inferred,
+                        branch_requirements=requirements,
+                    )
+
         if method_name in visited_methods:
             # Recursion cutoff: no body is inlined, but the stub represents
             # all deeper recursive execution and therefore consumes the
@@ -272,14 +440,16 @@ def flatten_cfg(cfg: Graph) -> Graph:
                 flat_nodes[entry_new_id] = dataclasses.replace(
                     flat_nodes[entry_new_id], loopIds=loops_for(entry_original_id)
                 )
-            for continuation in continuations:
-                emit_edge(
-                    entry_new_id, continuation, "sequence",
-                    return_from=return_from, fallback=True,
-                )
-            return entry_new_id, bool(continuations)
+            return InlineResult(
+                entryId=entry_new_id,
+                exits=(ExitRoute(
+                    sourceId=entry_new_id,
+                    kind="fallthrough",
+                    branchRequirements=requirements_for(entry_original_id),
+                    inferred=True,
+                ),),
+            )
 
-        continuation_consumed = False
         deeper_visited = visited_methods | {method_name}
         walked: set[str] = set()
         stack: list[str] = [entry_original_id]
@@ -289,6 +459,10 @@ def flatten_cfg(cfg: Graph) -> Graph:
                 continue
             walked.add(original_id)
             this_new_id = get_or_clone(original_id)
+            original_node = nodes_by_id[original_id]
+
+            if original_node.type == "exit":
+                continue
 
             successors = sequence_out.get(original_id, [])
             invoke_targets = invoke_out.get(original_id, [])
@@ -297,6 +471,7 @@ def flatten_cfg(cfg: Graph) -> Graph:
             ]
             leaf_targets = [t for t in invoke_targets if nodes_by_id[t].type != "entry"]
 
+            leaf_new_ids: list[str] = []
             for leaf_target in leaf_targets:
                 # An external callee has no body to inline, but the call
                 # still nests -- so it deepens exactly like an internal one,
@@ -314,53 +489,22 @@ def flatten_cfg(cfg: Graph) -> Graph:
                         loopIds=leaf_loops,
                     )
                 emit_edge(this_new_id, leaf_new_id, "invoke")
+                leaf_new_ids.append(leaf_new_id)
+
+            if leaf_new_ids:
+                completion_sources_by_frontier.setdefault(original_id, set()).update(
+                    leaf_new_ids
+                )
 
             if internal_targets:
-                is_new_continuation = False
-                if nodes_by_id[original_id].deadEnd:
-                    # This call's OWN chain was throw-truncated -- e.g.
-                    # `throw new InsufficientFundsException(...)`, where
-                    # the exception class is project-owned, so this call
-                    # site ALSO has an internal invoke target. That invoke
-                    # still fires (the exception object really does get
-                    # constructed, its own body is worth showing) but
-                    # nothing it does may propagate any further
-                    # continuation: throwing never returns normally,
-                    # regardless of how many levels of construction/
-                    # delegation happen first inside the thrown object's
-                    # own constructor. Confirmed live: without this check,
-                    # InsufficientFundsException's own `super(message)`
-                    # tail was incorrectly wired to "return into" whatever
-                    # happened to follow the throw SITE in the caller --
-                    # since deadEnd-tagged nodes always have empty
-                    # `successors` by construction, this branch takes
-                    # priority over the successors check below, not just
-                    # an additional case. No fallback here either -- a
-                    # dead-end call site is a PROVEN terminus (a real
-                    # throw, not an inferred one), unlike the "callee's
-                    # WHOLE body dead-ends" case below.
-                    callee_continuations: list[str] = []
-                    callee_return_from = None
-                elif successors:
-                    # Non-tail: this call site's own next step(s) become
-                    # the callee's continuation, and THIS call site (not
-                    # whatever was passed into this `inline` call) is the
-                    # new returnFrom. `is_new_continuation` marks this as
-                    # a point where, if the callee's WHOLE inlined
-                    # subtree never reaches this continuation, a fallback
-                    # edge is warranted -- see below.
-                    is_new_continuation = True
-                    successor_clone_ids = [get_or_clone(s) for s in successors]
-                    for s in successors:
-                        if s not in walked:
-                            stack.append(s)
-                    callee_continuations = successor_clone_ids
-                    callee_return_from = this_new_id
-                else:
-                    # Tail call: propagate this method's own pending
-                    # continuation/returnFrom through unchanged.
-                    callee_continuations = continuations
-                    callee_return_from = return_from
+                local_continuations = continuations_for(this_new_id, successors)
+                # A tail call does not create a new resume point. Its callee
+                # completes directly into the continuation owned by this
+                # method's caller, potentially crossing several tail frames.
+                callee_continuations = local_continuations or continuations
+                for successor in successors:
+                    if nodes_by_id[successor].type != "exit" and successor not in walked:
+                        stack.append(successor)
                 # Polymorphic dispatch: ONE call site, more than one real
                 # implementation behind it. Nothing upstream models this as
                 # a branch -- Joern's dynamic call linker resolves through
@@ -389,8 +533,8 @@ def flatten_cfg(cfg: Graph) -> Graph:
                         callee_tags = callee_tags + [
                             BranchArmRef(dispatch_id, arm_label)
                         ]
-                    callee_entry_new, callee_consumed = inline(
-                        target, callee_continuations, callee_return_from,
+                    callee_result = inline(
+                        target, callee_continuations,
                         deeper_visited, depth + 1,
                         inherited_tags=tuple(callee_tags),
                         inherited_loop_ids=tuple(loops_for(original_id)),
@@ -404,35 +548,16 @@ def flatten_cfg(cfg: Graph) -> Graph:
                         # here.
                         dispatch_arms.append(BranchArm(
                             label=arm_label,
-                            firstCallId=callee_entry_new,
+                            firstCallId=callee_result.entryId,
                             empty=False,
                             terminus="continues",
                         ))
-                    emit_edge(this_new_id, callee_entry_new, "invoke")
-                    if is_new_continuation:
-                        if callee_consumed:
-                            continue
-                        # The callee's ENTIRE recursively-inlined subtree
-                        # never reached the continuation this call site
-                        # gave it -- every visible path inside it dead-
-                        # ended (a proven throw, a recursion cutoff, or
-                        # itself hit this same fallback and still found
-                        # nothing). Fall back to wiring the callee's OWN
-                        # entry directly to that continuation, attributed
-                        # to THIS call site (same convention as a normal
-                        # return edge). Tagged "fallback" (not a proven
-                        # edge -- this can't be fully disambiguated from a
-                        # callee that genuinely, unconditionally never
-                        # returns: a zero-call branch in the callee's real
-                        # source is invisible to this call-projected CFG
-                        # either way).
-                        for cont in callee_continuations:
-                            emit_edge(
-                                callee_entry_new, cont, "sequence",
-                                return_from=this_new_id, fallback=True,
-                            )
-                    else:
-                        continuation_consumed = continuation_consumed or callee_consumed
+                    emit_edge(this_new_id, callee_result.entryId, "invoke")
+                    completion_sources_by_frontier.setdefault(original_id, set()).update(
+                        route.sourceId for route in callee_result.exits
+                    )
+                    for exit_route in callee_result.exits:
+                        follow_continuations(exit_route, callee_continuations)
 
                 if dispatch_id is not None:
                     # convergesAt is deliberately left for
@@ -447,19 +572,139 @@ def flatten_cfg(cfg: Graph) -> Graph:
                         line=nodes_by_id[original_id].line,
                         arms=dispatch_arms,
                         branchPointIds=[this_new_id],
-                        returnsTo=list(callee_continuations),
+                        returnsTo=list(dict.fromkeys(
+                            continuation.targetId
+                            for continuation in callee_continuations
+                            if continuation.exitKind is None
+                        )),
                     ))
-            elif successors:
-                for s in successors:
-                    emit_edge(this_new_id, get_or_clone(s), "sequence")
-                    if s not in walked:
-                        stack.append(s)
-            elif not nodes_by_id[original_id].deadEnd:
-                for cont in continuations:
-                    emit_edge(this_new_id, cont, "sequence", return_from=return_from)
-                    continuation_consumed = True
-                # else: throw-truncated dead end -- no edge emitted at
-                # all, stays genuinely dead.
+            else:
+                frontiers = leaf_new_ids or [this_new_id]
+                for frontier in frontiers:
+                    follow_local_successors(
+                        frontier,
+                        requirements_for(original_id),
+                        successors,
+                        # A leaf is the concrete completion of the external
+                        # call site. Crossing from it back into this method is
+                        # a return boundary even though no body was inlined.
+                        return_from=(this_new_id if leaf_new_ids else None),
+                    )
+                for successor in successors:
+                    if nodes_by_id[successor].type != "exit" and successor not in walked:
+                        stack.append(successor)
+
+                # Compatibility for artifacts predating exit nodes. A real
+                # exit marker always takes precedence; inference is reserved
+                # for incomplete input and is explicitly marked fallback.
+                if not successors and original_node.type != "entry":
+                    legacy_kind: MethodExitKind = (
+                        "throw" if original_node.deadEnd
+                        else "return" if original_node.terminus == "return"
+                        else "fallthrough"
+                    )
+                    for frontier in frontiers:
+                        add_exit(ExitRoute(
+                            sourceId=frontier,
+                            kind=legacy_kind,
+                            branchRequirements=requirements_for(original_id),
+                            # A visible external leaf is itself a confirmed
+                            # active frontier. Only a call-only terminal in
+                            # an old artifact is genuinely unresolved.
+                            inferred=not bool(leaf_new_ids),
+                        ))
+
+        # A CFG exit node after a branch is not lexically inside either arm.
+        # Consequently the raw route that reaches it can be unqualified even
+        # though its path is the branch's empty/continuing arm. Match concrete
+        # completion sources back to authoritative ArmExit frontiers before
+        # returning these routes to the caller; otherwise the caller emits an
+        # unconditional return edge and later empty-arm routing can only add a
+        # correctly-qualified duplicate beside it.
+        authoritative_routes: list[
+            tuple[MethodExitKind, set[str], tuple[BranchRequirement, ...]]
+        ] = []
+        for group in groups_by_method.get(method_name, ()):
+            scoped_group_id = f"{group.id}~{suffix}"
+            for arm in group.arms:
+                own_requirement = BranchRequirement(scoped_group_id, arm.label)
+                for exit_ in arm.exits:
+                    frontier_ids = exit_.frontierIds or group.branchPointIds
+                    concrete_sources = {
+                        source
+                        for frontier_id in frontier_ids
+                        for source in completion_sources_by_frontier.get(
+                            frontier_id,
+                            ({local_clone[frontier_id]}
+                             if frontier_id in local_clone
+                             and local_clone[frontier_id] in flat_nodes
+                             else set()),
+                        )
+                    }
+                    if not concrete_sources:
+                        continue
+                    exit_requirements = _merge_requirements(
+                        [scoped_requirement(requirement)
+                         for requirement in exit_.branchRequirements],
+                        [own_requirement],
+                    )
+                    authoritative_routes.append((
+                        "fallthrough" if exit_.kind == "continues" else exit_.kind,
+                        concrete_sources,
+                        exit_requirements,
+                    ))
+
+        qualified_method_exits: list[ExitRoute] = []
+        for route in method_exits:
+            matches = [
+                exit_requirements
+                for kind, sources, exit_requirements in authoritative_routes
+                # ``fallthrough`` here represents ArmExit(kind="continues"):
+                # it describes leaving the arm, not necessarily leaving the
+                # method. Common code after the branch may subsequently reach
+                # an explicit return, so the same frontier can legitimately
+                # produce a method-level ``return``. It cannot produce throw.
+                if (kind == route.kind or (kind == "fallthrough" and route.kind != "throw"))
+                and route.sourceId in sources
+                and _requirements_compatible(
+                    route.branchRequirements, exit_requirements
+                )
+            ]
+            candidates = (
+                [dataclasses.replace(
+                    route,
+                    branchRequirements=_merge_requirements(
+                        route.branchRequirements, exit_requirements
+                    ),
+                ) for exit_requirements in matches]
+                if matches else [route]
+            )
+            for candidate in candidates:
+                if candidate not in qualified_method_exits:
+                    qualified_method_exits.append(candidate)
+        method_exits = qualified_method_exits
+
+        # Compatibility for pre-exit artifacts only. If their projected body
+        # exposes no normal route at all, the old format cannot distinguish
+        # "all paths throw" from a filtered zero-call continuing path. Keep
+        # that uncertainty explicit as one inferred entry fallback. A graph
+        # containing any exit marker never uses this recovery path.
+        has_authoritative_exit = any(
+            nodes_by_id[original_id].type == "exit"
+            for original_id in local_clone
+        )
+        if (
+            continuations
+            and not has_authoritative_exit
+            and not normal_completion_observed
+            and not any(route.kind != "throw" for route in method_exits)
+        ):
+            add_exit(ExitRoute(
+                sourceId=entry_new_id,
+                kind="fallthrough",
+                branchRequirements=requirements_for(entry_original_id),
+                inferred=True,
+            ))
 
         # "data" edges are wired in a SEPARATE pass, after this instance's
         # own reachable body is fully walked -- NEVER by eagerly cloning a
@@ -476,7 +721,11 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # of one signal in a rare case, not a dangling node.
         for original_id, this_new_id in local_clone.items():
             for data_target in data_out.get(original_id, []):
-                if data_target in local_clone:
+                if (
+                    data_target in local_clone
+                    and this_new_id in flat_nodes
+                    and local_clone[data_target] in flat_nodes
+                ):
                     emit_edge(this_new_id, local_clone[data_target], "data")
 
         # This instance's own copy of its method's branch groups. The
@@ -484,9 +733,98 @@ def flatten_cfg(cfg: Graph) -> Graph:
         # identifies the instance the way no single node id can (every
         # node gets its own counter value).
         for group in groups_by_method.get(method_name, ()):
-            flat_groups.append(
-                _scope_group_to_instance(group, suffix, local_clone, continuations)
-            )
+            arms: list[BranchArm] = []
+            for arm in group.arms:
+                own_requirement = BranchRequirement(
+                    f"{group.id}~{suffix}", arm.label
+                )
+                scoped_exits = []
+                for exit_ in arm.exits:
+                    exit_requirements = _merge_requirements(
+                        [scoped_requirement(requirement)
+                         for requirement in exit_.branchRequirements],
+                        [own_requirement],
+                    )
+                    route_kind: MethodExitKind = (
+                        "fallthrough" if exit_.kind == "continues" else exit_.kind
+                    )
+                    resolved_routes = [
+                        route for route in method_exits
+                        if route.kind == route_kind
+                        and _requirements_compatible(
+                            route.branchRequirements, exit_requirements
+                        )
+                        and own_requirement in route.branchRequirements
+                    ]
+                    if resolved_routes:
+                        # Keep each route intact. Combining its source with
+                        # another route's requirements or targets would
+                        # recreate the invalid many-to-many cross product
+                        # that authoritative exits are intended to prevent.
+                        for route in resolved_routes:
+                            route_requirements = _merge_requirements(
+                                route.branchRequirements, exit_requirements
+                            )
+                            targets = [] if route.kind == "throw" else [
+                                continuation.targetId
+                                for continuation in continuations
+                                if continuation.exitKind is None
+                                and _requirements_compatible(
+                                    route_requirements,
+                                    continuation.branchRequirements,
+                                )
+                            ]
+                            scoped_exits.append(dataclasses.replace(
+                                exit_,
+                                frontierIds=[route.sourceId],
+                                targetIds=list(dict.fromkeys(targets)),
+                                branchRequirements=list(route_requirements),
+                            ))
+                    else:
+                        # A continuing arm may end at an in-method merge and
+                        # therefore not appear in this method's exit routes.
+                        # Preserve its scoped extraction frontier for routing
+                        # to resolve after the complete flat graph exists.
+                        scoped_exits.append(dataclasses.replace(
+                            exit_,
+                            frontierIds=[
+                                local_clone[frontier]
+                                for frontier in exit_.frontierIds
+                                if frontier in local_clone
+                                and local_clone[frontier] in flat_nodes
+                            ],
+                            targetIds=[],
+                            branchRequirements=list(exit_requirements),
+                        ))
+                arms.append(dataclasses.replace(
+                    arm,
+                    firstCallId=(
+                        local_clone.get(arm.firstCallId)
+                        if arm.firstCallId else None
+                    ),
+                    empty=(
+                        local_clone.get(arm.firstCallId) not in flat_nodes
+                        if arm.firstCallId else True
+                    ),
+                    exits=scoped_exits,
+                    targetIds=None,
+                ))
+            flat_groups.append(dataclasses.replace(
+                group,
+                id=f"{group.id}~{suffix}",
+                arms=arms,
+                branchPointIds=[
+                    local_clone[point]
+                    for point in group.branchPointIds
+                    if point in local_clone and local_clone[point] in flat_nodes
+                ],
+                returnsTo=list(dict.fromkeys(
+                    continuation.targetId
+                    for continuation in continuations
+                    if continuation.exitKind is None
+                )),
+                convergesAt=None,
+            ))
 
         for loop in loops_by_method.get(method_name, ()):
             flat_loops.append(scope_loop_to_instance(loop, suffix))
@@ -501,17 +839,18 @@ def flatten_cfg(cfg: Graph) -> Graph:
         for original_id, new_id in local_clone.items():
             tags = tags_for(original_id)
             loop_ids = loops_for(original_id)
-            if tags or loop_ids:
+            if new_id in flat_nodes and (tags or loop_ids):
                 flat_nodes[new_id] = dataclasses.replace(
                     flat_nodes[new_id], branchArms=tags, loopIds=loop_ids
                 )
 
-        return entry_new_id, continuation_consumed
+        return InlineResult(entryId=entry_new_id, exits=tuple(method_exits))
 
     # Root has no outer continuation ([]) -- nothing to fall back to, so
     # its own "consumed" status is moot and discarded -- and sits at
     # nesting level 0, the origin every other depth counts up from.
-    root_new_id, _ = inline(root_original_id, [], None, frozenset(), 0)
+    root_result = inline(root_original_id, (), frozenset(), 0)
+    root_new_id = root_result.entryId
 
     nodes = list(flat_nodes.values())
     # A group with no `method` can't be attributed to an instance, so it

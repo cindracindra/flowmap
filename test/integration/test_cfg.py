@@ -123,6 +123,24 @@ class FullCfgPipelineTests(unittest.TestCase):
     def test_cpg_file_was_created(self):
         self.assertTrue(CPG_PATH.exists(), "CPG file was not created.")
 
+    def test_method_exit_nodes_are_retained(self):
+        exits = [node for node in self.graph.nodes if node.type == "exit"]
+        self.assertTrue(any(node.exitKind == "return" for node in exits))
+        self.assertTrue(any(node.exitKind == "throw" for node in exits))
+        self.assertTrue(any(node.exitKind == "fallthrough" for node in exits))
+
+        exit_ids = {node.id for node in exits}
+        self.assertTrue(any(
+            edge.type == "sequence" and edge.target in exit_ids
+            for edge in self.graph.edges
+        ))
+
+    def test_branch_arms_carry_path_level_exits_and_legacy_terminus(self):
+        arms = [arm for group in self.graph.branchGroups for arm in group.arms]
+        returning = next(arm for arm in arms if arm.terminus == "return")
+        self.assertTrue(returning.exits)
+        self.assertIn("return", {exit_.kind for exit_ in returning.exits})
+
     def test_roots_are_the_uncalled_methods(self):
         self.assertEqual(self._entry_names(self.graph.roots), {"doA", "doProcessTwo", "main"})
 

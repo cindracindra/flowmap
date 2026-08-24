@@ -1,9 +1,69 @@
 import dataclasses
 from collections import Counter
+from dataclasses import dataclass
 
 from domain.cfg_branching import _BranchTopology
 from domain.cfg_traversal import _adjacency_out, _reachable_non_members, _walk_order
-from model import BranchArm, BranchGroup, BranchRequirement, Edge, Node
+from model import (
+    BranchArm,
+    BranchGroup,
+    BranchRequirement,
+    Edge,
+    Node,
+    arm_exit_kinds,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class BranchResume:
+    """One physical execution site for a logical branch point."""
+
+    sourceId: str
+    branchPointId: str
+    targetId: str | None
+    returnFrom: str | None
+    branchRequirements: tuple[BranchRequirement, ...]
+
+
+def branch_resume_sites(
+    group: BranchGroup, edges: list[Edge]
+) -> list[BranchResume]:
+    """Resolve branch anchors without discarding route-specific metadata.
+
+    An inlined condition resumes from each concrete callee frontier recorded
+    by a ``returnFrom`` edge. A direct condition resumes at the logical branch
+    point. Complete edges are retained so nested-route requirements cannot be
+    cross-combined later.
+    """
+    resumes: list[BranchResume] = []
+    for point in group.branchPointIds:
+        returned = [
+            BranchResume(
+                sourceId=edge.source,
+                branchPointId=point,
+                targetId=edge.target,
+                returnFrom=edge.returnFrom,
+                branchRequirements=tuple(edge.branchRequirements),
+            )
+            for edge in edges
+            if edge.type == "sequence" and edge.returnFrom == point
+        ]
+        if returned:
+            resumes.extend(returned)
+            continue
+        direct = [
+            BranchResume(
+                sourceId=point,
+                branchPointId=point,
+                targetId=edge.target,
+                returnFrom=None,
+                branchRequirements=tuple(edge.branchRequirements),
+            )
+            for edge in edges
+            if edge.type == "sequence" and edge.source == point
+        ]
+        resumes.extend(direct or [BranchResume(point, point, None, None, ())])
+    return resumes
 
 
 def analyze_branch_routes(
@@ -39,10 +99,8 @@ def analyze_branch_routes(
     """
     topology = _BranchTopology.build(nodes, groups)
     sequence_out = _adjacency_out([e for e in edges if e.type == "sequence"])
-    entry_ids = {n.id for n in nodes if n.type == "entry"}
     flow_out = _adjacency_out([
-        e for e in edges
-        if e.type == "sequence" or (e.type == "invoke" and e.target in entry_ids)
+        e for e in edges if e.type in {"sequence", "invoke"}
     ])
 
     # Where each call site's own flow RESUMES. A call whose callee was
@@ -67,7 +125,12 @@ def analyze_branch_routes(
         for arm in group.arms
         if arm.label != "noCatch" and arm.firstCallId is not None
     }
-    requirements: list[list[BranchRequirement]] = [[] for _ in edges]
+    # Flattening already attaches path requirements while resolving exit
+    # routes. Branch analysis may add the current group's requirement, but
+    # must not erase nested/enclosing requirements carried by those routes.
+    requirements: list[list[BranchRequirement]] = [
+        list(edge.branchRequirements) for edge in edges
+    ]
 
     def with_arm_targets(
         group: BranchGroup,
@@ -76,9 +139,10 @@ def analyze_branch_routes(
     ) -> BranchGroup:
         arms: list[BranchArm] = []
         for arm in group.arms:
-            if arm.terminus == "throw":
+            kinds = arm_exit_kinds(arm)
+            if kinds == {"throw"}:
                 target_ids: list[str] = []
-            elif arm.terminus == "return":
+            elif kinds == {"return"}:
                 target_ids = list(group.returnsTo)
             elif group.kind != "TRY" and arm.empty and implicit_targets:
                 # The empty arm is represented by these direct route edges.
@@ -131,7 +195,7 @@ def analyze_branch_routes(
                     if not matching_empty and edge.target in shared_later_heads:
                         matching_empty = [
                             arm for arm in empty_arms
-                            if arm.terminus == "continues"
+                            if arm_exit_kinds(arm) == {"continues"}
                         ]
                     if len(matching_empty) != 1:
                         continue
@@ -154,7 +218,7 @@ def analyze_branch_routes(
                 group_members, flow_out,
             )
             for arm in group.arms
-            if arm.firstCallId is not None and arm.terminus != "throw"
+            if arm.firstCallId is not None and arm_exit_kinds(arm) != {"throw"}
         ]
         # Whatever the fork reaches without entering an arm: the implicit
         # else, or the normal continuation past a try.
@@ -216,7 +280,10 @@ def analyze_branch_routes(
         # further path drags the answer a frame too high. Confirmed on the
         # same fee chain -- without this it resolves to the caller's
         # `report.recordSuccess(...)` instead of `from.withdraw(amount + fee)`.
-        if any(arm.empty and arm.terminus == "continues" for arm in group.arms):
+        if any(
+            arm.empty and arm_exit_kinds(arm) == {"continues"}
+            for arm in group.arms
+        ):
             if group.returnsTo and implicit_continuations == 0:
                 implicit_targets.extend(group.returnsTo)
                 paths.append(set(group.returnsTo))
@@ -299,7 +366,7 @@ def materialize_empty_arm_routes(
             if any(ref.groupId == group.id for ref in node.branchArms)
         }
         for arm in group.arms:
-            if not arm.empty or arm.terminus != "continues":
+            if not arm.empty or arm_exit_kinds(arm) != {"continues"}:
                 continue
 
             arm_requirement = BranchRequirement(group.id, arm.label)
@@ -317,45 +384,18 @@ def materialize_empty_arm_routes(
                 # An internally-inlined condition resumes from its callee
                 # tails.  A direct/external condition resumes at the call
                 # site itself.
-                resume_sites: list[
-                    tuple[str, str | None, tuple[BranchRequirement, ...]]
-                ] = []
-                for point in group.branchPointIds:
-                    returned = [
-                        (
-                            edge.source,
-                            point,
-                            tuple(
-                                requirement for requirement in edge.branchRequirements
-                                if requirement.groupId != group.id
-                            ),
-                        )
-                        for edge in materialized
-                        if edge.type == "sequence"
-                        and edge.returnFrom == point
-                        and any(
-                            requirement.groupId == group.id
-                            for requirement in edge.branchRequirements
-                        )
-                    ]
-                    direct_templates = [
-                        tuple(
-                            requirement for requirement in edge.branchRequirements
-                            if requirement.groupId != group.id
-                        )
-                        for edge in materialized
-                        if edge.type == "sequence"
-                        and edge.source == point
-                        and any(
-                            requirement.groupId == group.id
-                            for requirement in edge.branchRequirements
-                        )
-                    ]
-                    resume_sites.extend(
-                        returned
-                        or [(point, None, requirements) for requirements in direct_templates]
-                        or [(point, None, ())]
+                resolved_sites = branch_resume_sites(group, materialized)
+                routed_sites = [
+                    site for site in resolved_sites
+                    if any(
+                        requirement.groupId == group.id
+                        for requirement in site.branchRequirements
                     )
+                ]
+                resume_sites = routed_sites or [
+                    BranchResume(point, point, None, None, ())
+                    for point in group.branchPointIds
+                ]
 
                 # If the empty arm falls out of its method, concrete arm
                 # exits to the same target reveal the enclosing call site
@@ -372,11 +412,19 @@ def materialize_empty_arm_routes(
                     None,
                 )
 
-                for source, condition_return_from, outer_requirements in dict.fromkeys(resume_sites):
+                for site in dict.fromkeys(resume_sites):
+                    source = site.sourceId
                     if source not in nodes_by_id or target not in nodes_by_id:
                         continue
-                    return_from = condition_return_from or target_return_from
-                    requirements = [*outer_requirements, arm_requirement]
+                    return_from = site.returnFrom or target_return_from
+                    requirements = [
+                        *(
+                            requirement
+                            for requirement in site.branchRequirements
+                            if requirement.groupId != group.id
+                        ),
+                        arm_requirement,
+                    ]
                     key = (
                         source, target, "sequence", return_from,
                         requirement_key(requirements),
@@ -393,5 +441,3 @@ def materialize_empty_arm_routes(
                     existing.add(key)
 
     return materialized
-
-

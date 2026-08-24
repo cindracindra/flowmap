@@ -8,6 +8,14 @@
       "line": 25
     },
     {
+      "id": "f124554051584",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 32
+    },
+    {
       "id": "c30064771072",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doA:void()",
@@ -89,6 +97,29 @@
       "line": 34
     },
     {
+      "id": "r141733920768",
+      "type": "exit",
+      "exitKind": "return",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "return;",
+      "line": 37,
+      "branchArms": [
+        {
+          "groupId": "cs47244640256",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "f124554051585",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 40
+    },
+    {
       "id": "c30064771079",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.earlyReturn:void(boolean)",
@@ -129,6 +160,29 @@
       "line": 42
     },
     {
+      "id": "r141733920769",
+      "type": "exit",
+      "exitKind": "return",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "return;",
+      "line": 45,
+      "branchArms": [
+        {
+          "groupId": "cs47244640257",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "f124554051586",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 48
+    },
+    {
       "id": "c30064771082",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.callConditionReturn:void()",
@@ -162,6 +216,29 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "line": 50
+    },
+    {
+      "id": "r141733920770",
+      "type": "exit",
+      "exitKind": "return",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "return;",
+      "line": 53,
+      "branchArms": [
+        {
+          "groupId": "cs47244640258",
+          "armLabel": "if"
+        }
+      ]
+    },
+    {
+      "id": "f124554051587",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.shortCircuitCallConditionReturn:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 56
     },
     {
       "id": "c30064771085",
@@ -222,6 +299,23 @@
       "line": 58
     },
     {
+      "id": "r141733920771",
+      "type": "exit",
+      "exitKind": "return",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "return true;",
+      "line": 59
+    },
+    {
+      "id": "f124554051588",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.hasRole:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 60
+    },
+    {
       "id": "m107374182405",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
@@ -229,11 +323,36 @@
       "line": 62
     },
     {
+      "id": "r141733920772",
+      "type": "exit",
+      "exitKind": "return",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "return true;",
+      "line": 63
+    },
+    {
+      "id": "f124554051589",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.isOwner:boolean()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 64
+    },
+    {
       "id": "m107374182406",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "line": 66
+    },
+    {
+      "id": "f124554051590",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doProcessTwo:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 69
     },
     {
       "id": "c30064771090",
@@ -262,6 +381,14 @@
       "line": 71
     },
     {
+      "id": "f124554051591",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 73
+    },
+    {
       "id": "c30064771092",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doHelper:void()",
@@ -277,6 +404,14 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doInner:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "line": 75
+    },
+    {
+      "id": "f124554051592",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doInner:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 77
     },
     {
       "id": "c30064771093",
@@ -315,6 +450,14 @@
       "line": 79
     },
     {
+      "id": "f124554051593",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doX:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 81
+    },
+    {
       "id": "c30064771095",
       "type": "call",
       "callerMethod": "com.flowmap.fixture.OperationalChains.doX:void()",
@@ -339,6 +482,23 @@
       "calleeFullName": "com.flowmap.fixture.OperationalChains.doY:void()",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "line": 83
+    },
+    {
+      "id": "f124554051594",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 85
+    },
+    {
+      "id": "t30064771097",
+      "type": "exit",
+      "exitKind": "throw",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.doY:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "code": "throw new IllegalArgumentException(\"doY\");",
+      "line": 84
     },
     {
       "id": "c30064771097",
@@ -406,11 +566,27 @@
       "line": 87
     },
     {
+      "id": "f124554051595",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.unusedMethod:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 90
+    },
+    {
       "id": "m107374182412",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "line": 92
+    },
+    {
+      "id": "f124554051596",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.main:void(java.lang.String[])",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 97
     },
     {
       "id": "c30064771101",
@@ -454,9 +630,25 @@
       "implicitConstructor": true
     },
     {
+      "id": "f124554051597",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.<init>:void()",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 23
+    },
+    {
       "id": "m107374182414",
       "type": "entry",
       "calleeFullName": "com.flowmap.fixture.OperationalChains.<lambda>0:void(java.lang.Object)",
+      "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
+      "line": 31
+    },
+    {
+      "id": "f124554051598",
+      "type": "exit",
+      "exitKind": "fallthrough",
+      "callerMethod": "com.flowmap.fixture.OperationalChains.<lambda>0:void(java.lang.Object)",
       "sourceFile": "src/com/flowmap/fixture/OperationalChains.java",
       "line": 31
     },
@@ -579,6 +771,11 @@
     },
     {
       "from": "c30064771080",
+      "to": "r141733920768",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771080",
       "to": "m107374182418",
       "type": "invoke"
     },
@@ -609,6 +806,11 @@
     },
     {
       "from": "c30064771083",
+      "to": "r141733920769",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771083",
       "to": "m107374182404",
       "type": "invoke"
     },
@@ -635,6 +837,11 @@
     {
       "from": "c30064771086",
       "to": "c30064771089",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771086",
+      "to": "r141733920770",
       "type": "sequence"
     },
     {
@@ -686,6 +893,16 @@
       "from": "c30064771088",
       "to": "m107374182405",
       "type": "invoke"
+    },
+    {
+      "from": "m107374182404",
+      "to": "r141733920771",
+      "type": "sequence"
+    },
+    {
+      "from": "m107374182405",
+      "to": "r141733920772",
+      "type": "sequence"
     },
     {
       "from": "m107374182406",
@@ -760,6 +977,11 @@
     {
       "from": "m107374182410",
       "to": "c30064771099",
+      "type": "sequence"
+    },
+    {
+      "from": "c30064771097",
+      "to": "t30064771097",
       "type": "sequence"
     },
     {
@@ -867,12 +1089,35 @@
           "label": "if",
           "empty": true,
           "terminus": "return",
+          "exits": [
+            {
+              "kind": "return",
+              "frontierIds": [],
+              "branchRequirements": [
+                {
+                  "groupId": "cs47244640256",
+                  "armLabel": "if"
+                }
+              ]
+            }
+          ],
           "conditionCode": "!authenticated"
         },
         {
           "label": "else",
           "empty": true,
-          "terminus": "continues"
+          "terminus": "continues",
+          "exits": [
+            {
+              "kind": "continues",
+              "branchRequirements": [
+                {
+                  "groupId": "cs47244640256",
+                  "armLabel": "else"
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -889,12 +1134,35 @@
           "label": "if",
           "empty": true,
           "terminus": "return",
+          "exits": [
+            {
+              "kind": "return",
+              "frontierIds": [],
+              "branchRequirements": [
+                {
+                  "groupId": "cs47244640257",
+                  "armLabel": "if"
+                }
+              ]
+            }
+          ],
           "conditionCode": "this.hasRole()"
         },
         {
           "label": "else",
           "empty": true,
-          "terminus": "continues"
+          "terminus": "continues",
+          "exits": [
+            {
+              "kind": "continues",
+              "branchRequirements": [
+                {
+                  "groupId": "cs47244640257",
+                  "armLabel": "else"
+                }
+              ]
+            }
+          ]
         }
       ]
     },
@@ -911,12 +1179,35 @@
           "label": "if",
           "empty": true,
           "terminus": "return",
+          "exits": [
+            {
+              "kind": "return",
+              "frontierIds": [],
+              "branchRequirements": [
+                {
+                  "groupId": "cs47244640258",
+                  "armLabel": "if"
+                }
+              ]
+            }
+          ],
           "conditionCode": "hasRole() || isOwner()"
         },
         {
           "label": "else",
           "empty": true,
-          "terminus": "continues"
+          "terminus": "continues",
+          "exits": [
+            {
+              "kind": "continues",
+              "branchRequirements": [
+                {
+                  "groupId": "cs47244640258",
+                  "armLabel": "else"
+                }
+              ]
+            }
+          ]
         }
       ]
     }

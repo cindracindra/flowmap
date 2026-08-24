@@ -1,4 +1,4 @@
 {
-  "sourceDir": "../flowmap_eval_data/project_b/spring-petclinic/src/main/java",
-  "outputDir": "../flowmap_eval_data/project_b/output"
+  "sourceDir": "../project_a/src/main",
+  "outputDir": "../generated/project_a/output"
 }

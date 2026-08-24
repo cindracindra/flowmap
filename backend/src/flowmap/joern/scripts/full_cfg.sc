@@ -8,7 +8,9 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   val loopGroups = mutable.ArrayBuffer[ujson.Obj]()
   val semanticFeatures = ujson.Obj()
 
-  // (groupId, armLabel) pairs per call id.
+  // (groupId, armLabel) pairs per retained CFG-node id. Calls use these for
+  // operation membership; RETURN/throw exits use them as authoritative route
+  // requirements even when an arm contains no calls.
   type ArmTags = mutable.Map[Long, mutable.ArrayBuffer[(String, String)]]
   type LoopTags = mutable.Map[Long, mutable.ArrayBuffer[String]]
 
@@ -114,6 +116,27 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val direct = method.filename
     if (direct.nonEmpty && direct != "<empty>") direct
     else method.typeDecl.filename.headOption.getOrElse(direct)
+  }
+
+  // Return only the globally nearest call layer. Joern's repeat/until stops
+  // each CFG path independently, so a short-circuit path that bypasses an
+  // intermediate call can otherwise contribute much deeper calls as
+  // additional successors of the original source. Once any call is found at
+  // a BFS depth, no path is projected beyond that depth.
+  def nearestCalls(
+    startPoints: List[CfgNode],
+    next: CfgNode => List[CfgNode]
+  ): List[Call] = {
+    val seen = mutable.Set[Long]()
+    var layer = startPoints.distinctBy(_.id)
+    while (layer.nonEmpty) {
+      val fresh = layer.filterNot(node => seen.contains(node.id))
+      fresh.foreach(node => seen += node.id)
+      val calls = fresh.collect { case call: Call => call }.distinctBy(_.id)
+      if (calls.nonEmpty) return calls
+      layer = fresh.flatMap(next).distinctBy(_.id)
+    }
+    Nil
   }
 
   // List all internal methods for purpose of resolving lambdas. 
@@ -237,14 +260,24 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     armRoot: AstNode, arms: ujson.Arr, armTags: ArmTags
   ): Unit = {
     val armCalls = armRoot.ast.isCall.l
+    val armReturns = armRoot.ast.collectAll[Return].l
     armCalls.foreach { c =>
       armTags.getOrElseUpdate(c.id, mutable.ArrayBuffer()) += ((groupId, label))
+    }
+    armReturns.foreach { ret =>
+      armTags.getOrElseUpdate(ret.id, mutable.ArrayBuffer()) += ((groupId, label))
+    }
+    val exits = armExits(armRoot, armCalls)
+    exits.arr.foreach { exit =>
+      exit.obj("branchRequirements") = ujson.Arr(ujson.Obj(
+        "groupId" -> ujson.Str(groupId), "armLabel" -> ujson.Str(label)
+      ))
     }
     val armObj = ujson.Obj(
       "label" -> label,
       "empty" -> ujson.Bool(armCalls.isEmpty),
       "terminus" -> armTerminus(armRoot, armCalls),
-      "exits" -> armExits(armRoot, armCalls)
+      "exits" -> exits
     )
     conditionCode.foreach { cc => armObj("conditionCode") = ujson.Str(cc) }
     armCalls.headOption.foreach { c => armObj("firstCallId") = ujson.Str(s"c${c.id}") }
@@ -252,12 +285,17 @@ def buildFullCodebaseCfg(): ujson.Obj = {
   }
 
   // Add explicit empty arm for `if` with no `else`.
-  def addImplicitElse(arms: ujson.Arr): Unit = {
+  def addImplicitElse(groupId: String, arms: ujson.Arr): Unit = {
     arms.arr.addOne(ujson.Obj(
       "label" -> "else",
       "empty" -> ujson.Bool(true),
       "terminus" -> ujson.Str("continues"),
-      "exits" -> ujson.Arr(ujson.Obj("kind" -> ujson.Str("continues")))
+      "exits" -> ujson.Arr(ujson.Obj(
+        "kind" -> ujson.Str("continues"),
+        "branchRequirements" -> ujson.Arr(ujson.Obj(
+          "groupId" -> ujson.Str(groupId), "armLabel" -> ujson.Str("else")
+        ))
+      ))
     ))
   }
 
@@ -286,7 +324,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           if (chainEndsWithElse) {
             addArm(groupId, "else", None, armRoots.last, arms, armTags)
           } else {
-            addImplicitElse(arms)
+            addImplicitElse(groupId, arms)
           }
           walking = false
       }
@@ -301,7 +339,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
         .filterNot(_.methodFullName.startsWith("<operator>."))
     )
     val precedingCalls = head.condition.headOption.toList.flatMap(
-      condition => condition.start.repeat(_.cfgPrev)(_.until(_.isCall)).isCall.l
+      condition => nearestCalls(condition.start.cfgPrev.l, _.start.cfgPrev.l)
     ).distinctBy(_.id)
     val branchPointIds =
       if (visibleConditionCalls.nonEmpty) List(s"c${visibleConditionCalls.last.id}")
@@ -347,7 +385,12 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       "label" -> "noCatch",
       "empty" -> ujson.Bool(true),
       "terminus" -> ujson.Str("continues"),
-      "exits" -> ujson.Arr(ujson.Obj("kind" -> ujson.Str("continues")))
+      "exits" -> ujson.Arr(ujson.Obj(
+        "kind" -> ujson.Str("continues"),
+        "branchRequirements" -> ujson.Arr(ujson.Obj(
+          "groupId" -> ujson.Str(groupId), "armLabel" -> ujson.Str("noCatch")
+        ))
+      ))
     ))
     branchGroups += ujson.Obj(
       "id" -> groupId, "kind" -> "TRY",
@@ -459,7 +502,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     }
 
     val nextCallsById: Map[Long, List[Call]] =
-      methodCalls.map(c => c.id -> c.start.repeat(_.cfgNext)(_.until(_.isCall)).isCall.l).toMap
+      methodCalls.map(c => c.id -> nearestCalls(c.start.cfgNext.l, _.start.cfgNext.l)).toMap
 
     val terminusById: Map[Long, String] = methodCalls.flatMap { c =>
       val nextCalls = nextCallsById(c.id)
@@ -491,8 +534,23 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       emitLoopGroup(cs, method.fullName, loopTags)
     }
 
+    // Branch capture is complete now, so explicit return nodes can carry
+    // every enclosing arm (outermost through innermost). This is the only
+    // reliable route evidence for a zero-call return.
+    explicitReturns.foreach { ret =>
+      armTags.get(ret.id).foreach { tags =>
+        val tagArr = ujson.Arr()
+        tags.distinct.foreach { case (groupId, label) =>
+          tagArr.arr.addOne(ujson.Obj(
+            "groupId" -> ujson.Str(groupId), "armLabel" -> ujson.Str(label)
+          ))
+        }
+        nodes(s"r${ret.id}")("branchArms") = tagArr
+      }
+    }
+
     // first call(s) reached from method entry, skipping non-call nodes
-    method.start.repeat(_.cfgNext)(_.until(_.isCall)).isCall.l.foreach { fc =>
+    nearestCalls(method.start.cfgNext.l, _.start.cfgNext.l).foreach { fc =>
       edges += ujson.Obj("from" -> entryId, "to" -> s"c${fc.id}", "type" -> "sequence")
     }
     directExitIds(method.start.cfgNext.l).foreach { exitId =>
@@ -508,12 +566,22 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       }
       if (call.methodFullName == "<operator>.throw") {
         val throwExitId = s"t${call.id}"
-        addNode(throwExitId, ujson.Obj(
+        val throwExit = ujson.Obj(
           "id" -> throwExitId, "type" -> "exit", "exitKind" -> "throw",
           "callerMethod" -> method.fullName,
           "sourceFile" -> methodSourceFile(method),
           "code" -> call.code, "line" -> call.lineNumber.getOrElse(-1)
-        ))
+        )
+        armTags.get(call.id).foreach { tags =>
+          val tagArr = ujson.Arr()
+          tags.distinct.foreach { case (groupId, label) =>
+            tagArr.arr.addOne(ujson.Obj(
+              "groupId" -> ujson.Str(groupId), "armLabel" -> ujson.Str(label)
+            ))
+          }
+          throwExit("branchArms") = tagArr
+        }
+        addNode(throwExitId, throwExit)
         edges += ujson.Obj("from" -> callId, "to" -> throwExitId, "type" -> "sequence")
       } else {
         directExitIds(call.start.cfgNext.l).foreach { exitId =>

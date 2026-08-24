@@ -23,7 +23,14 @@
 // (DESIGN.md §6), so a dispatch panel's bounds will not line up with phase
 // boxes.
 
-import type { ArmTerminus, BranchGroup, FlowEdge, FlowGraph, FlowNode } from "../types/flowmap";
+import type {
+  ArmTerminus,
+  BranchGroup,
+  BranchRequirement,
+  FlowEdge,
+  FlowGraph,
+  FlowNode,
+} from "../types/flowmap";
 import { indexNodesById, shortClassName, shortLabel } from "./graph";
 import { computeWalkOrder } from "./layout";
 
@@ -46,6 +53,12 @@ export type ArmRole = "alternative";
 //                convergesAt resolves for guard clauses too, but still
 //                real for a branch that runs off the end of the trace.
 export type ArmExitKind = "converges" | "returns" | "throws" | "open";
+
+function armExitKinds(arm: BranchGroup["arms"][number]): Set<string> {
+  return arm.exits?.length
+    ? new Set(arm.exits.map((exit) => exit.kind))
+    : new Set([arm.terminus ?? "continues"]);
+}
 
 export interface PanelArm {
   // The backend's arm label: "if" / "elseif1" / "else" / "catch1" /
@@ -87,6 +100,7 @@ export interface BranchPanel {
   // ids and lines -- but it does mean the anchor cannot order sibling
   // panels. Order by `line`; buildBranchPanels does.
   branchPointIds: string[];
+  resumeSites: BranchResume[];
   convergesAt?: string;
   arms: PanelArm[];
   // Which arm the switcher starts on. TRY defaults to its empty noCatch arm;
@@ -95,6 +109,46 @@ export interface BranchPanel {
   // IF/SWITCH/DISPATCH fork before their arms; a TRY's switcher belongs
   // after the try body, which has already run by the time it can throw.
   switcherPosition: "before" | "after";
+}
+
+export interface BranchResume {
+  sourceId: string;
+  branchPointId: string;
+  targetId?: string;
+  returnFrom?: string;
+  branchRequirements: BranchRequirement[];
+}
+
+/** Physical resume edges for logical branch anchors, kept route-complete. */
+export function branchResumeSites(group: BranchGroup, edges: FlowEdge[]): BranchResume[] {
+  const resumes: BranchResume[] = [];
+  for (const point of group.branchPointIds ?? []) {
+    const returned: BranchResume[] = edges
+      .filter((edge) => edge.type === "sequence" && edge.returnFrom === point)
+      .map((edge) => ({
+        sourceId: edge.from,
+        branchPointId: point,
+        targetId: edge.to,
+        returnFrom: edge.returnFrom,
+        branchRequirements: edge.branchRequirements ?? [],
+      }));
+    if (returned.length > 0) {
+      resumes.push(...returned);
+      continue;
+    }
+    const direct: BranchResume[] = edges
+      .filter((edge) => edge.type === "sequence" && edge.from === point)
+      .map((edge) => ({
+        sourceId: point,
+        branchPointId: point,
+        targetId: edge.to,
+        branchRequirements: edge.branchRequirements ?? [],
+      }));
+    resumes.push(...(direct.length > 0
+      ? direct
+      : [{ sourceId: point, branchPointId: point, branchRequirements: [] }]));
+  }
+  return resumes;
 }
 
 export type BranchSelection = Map<string, string>;
@@ -135,8 +189,30 @@ function armLabel(
 }
 
 function armExit(
-  arm: { terminus?: ArmTerminus; targetIds?: string[] },
+  arm: BranchGroup["arms"][number],
 ): { exitTargetId?: string; exitTargetIds: string[]; exitKind: ArmExitKind } {
+  if (arm.exits?.length) {
+    const kinds = armExitKinds(arm);
+    const targets = [...new Set(arm.exits.flatMap((exit) => exit.targetIds ?? []))];
+    const target = targets[0];
+    if (kinds.size === 1 && kinds.has("throw")) {
+      return { exitTargetIds: [], exitKind: "throws" };
+    }
+    if (kinds.size === 1 && kinds.has("return")) {
+      return target
+        ? { exitTargetId: target, exitTargetIds: targets, exitKind: "returns" }
+        : { exitTargetIds: [], exitKind: "open" };
+    }
+    if (kinds.size === 1 && kinds.has("continues")) {
+      return target
+        ? { exitTargetId: target, exitTargetIds: targets, exitKind: "converges" }
+        : { exitTargetIds: [], exitKind: "open" };
+    }
+    // A mixed arm cannot be summarized as wholly terminating.
+    return target
+      ? { exitTargetId: target, exitTargetIds: targets, exitKind: "converges" }
+      : { exitTargetIds: [], exitKind: "open" };
+  }
   const terminus = arm.terminus ?? "continues";
   if (terminus === "throw") return { exitTargetIds: [], exitKind: "throws" };
   const targets = arm.targetIds ?? [];
@@ -167,7 +243,7 @@ function panelTitle(
     };
   }
   return {
-    title: structure === "TRY" ? "try / catch" : "if / else",
+    title: structure === "TRY" ? "try / catch" : "condition",
     subtitle: group.method ? shortLabel(group.method) : undefined,
   };
 }
@@ -214,7 +290,10 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
     // leave the method while the other continues to the next call.
     if (
       group.arms.every((arm) => arm.empty) &&
-      group.arms.every((arm) => (arm.terminus ?? "continues") === "continues")
+      group.arms.every((arm) => {
+        const kinds = armExitKinds(arm);
+        return kinds.size === 1 && kinds.has("continues");
+      })
     ) continue;
 
     const structure = structureOf(group);
@@ -253,6 +332,7 @@ export function buildBranchPanels(graph: FlowGraph, rootId: string): BranchPanel
       method: group.method,
       line: group.line,
       branchPointIds: group.branchPointIds,
+      resumeSites: branchResumeSites(group, graph.edges),
       convergesAt: group.convergesAt,
       arms,
       defaultArmId: defaultAlternative.id,

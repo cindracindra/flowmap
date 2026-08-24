@@ -84,6 +84,46 @@ def test_replays_two_instances_of_one_method_with_distinct_clone_ids() -> None:
     )
 
 
+def test_external_leaf_return_does_not_stop_caller_phase_overlay() -> None:
+    graph = Graph.from_dict({
+        "entryPoint": "main",
+        "roots": ["main_entry"],
+        "nodes": [
+            {"id": "main_entry", "type": "entry", "calleeFullName": "main"},
+            {"id": "first", "type": "call", "callerMethod": "main"},
+            {"id": "second", "type": "call", "callerMethod": "main"},
+            {"id": "first_leaf", "type": "leaf"},
+            {"id": "second_leaf", "type": "leaf"},
+        ],
+        "edges": [
+            {"from": "main_entry", "to": "first", "type": "sequence"},
+            {"from": "first", "to": "second", "type": "sequence"},
+            {"from": "first", "to": "first_leaf", "type": "invoke"},
+            {"from": "second", "to": "second_leaf", "type": "invoke"},
+        ],
+        "semanticFeatures": {
+            "first": _features("order"),
+            "second": _features("order"),
+        },
+    })
+    analysis = analyse(graph)
+    flattened = flatten_cfg(graph)
+
+    first_clone = next(node for node in flattened.nodes if node.origId == "first")
+    first_leaf = next(node for node in flattened.nodes if node.origId == "first_leaf")
+    second_clone = next(node for node in flattened.nodes if node.origId == "second")
+    return_edge = next(
+        edge for edge in flattened.edges
+        if edge.source == first_leaf.id and edge.target == second_clone.id
+    )
+    assert return_edge.returnFrom == first_clone.id
+
+    phases = overlay_phases(analysis, flattened)
+    assert [_originals(flattened, phase.nodes) for phase in phases] == [[
+        "first", "second"
+    ]]
+
+
 def test_retained_call_site_is_unphased_and_callee_phases_are_spliced() -> None:
     graph = Graph.from_dict({
         "entryPoint": "main",

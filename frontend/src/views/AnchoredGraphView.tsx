@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { createContext, useContext, useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo } from "react";
 import {
   Box,
   Flex,
@@ -636,6 +636,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
     ? GRAPH.nodes.find((node) => node.type === "entry" && node.calleeFullName === focusMethodFullName)?.id ?? null
     : null;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
   const [pendingRevealId, setPendingRevealId] = useState<string | null>(null);
   const [armSelection, setArmSelection] = useState<BranchSelection>(() => {
     const selection = defaultSelection(PANELS);
@@ -661,6 +662,14 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
 
   const selectedNode = selectedId ? (NODES_BY_ID.get(selectedId) ?? null) : null;
   const selectedLocation = selectedNode ? sourceLocation(selectedNode) : undefined;
+  const selectedPanel = selectedPanelId
+    ? (PANELS.find((panel) => panel.id === selectedPanelId) ?? null)
+    : null;
+  const selectedPanelArm = selectedPanel
+    ? selectedPanel.arms.find((arm) =>
+        arm.id === (armSelection.get(selectedPanel.id) ?? selectedPanel.defaultArmId)
+      ) ?? null
+    : null;
   const filteredProjectTree = useMemo(
     () => filterProjectTree(PROJECT_TREE, exploreQuery),
     [PROJECT_TREE, exploreQuery],
@@ -732,6 +741,11 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
       // noCatch panel must wait until this complete subtree has finished.
       const invokedSubtreeIds = (panel: BranchPanel, toId: string): string[] => {
         const points = new Set(panel.branchPointIds);
+        const resumeEdges = new Set(
+          panel.resumeSites
+            .filter((site) => site.returnFrom !== undefined && site.targetId !== undefined)
+            .map((site) => `${site.sourceId}\u0000${site.targetId}`),
+        );
         const stack = visibleEdges
           .filter((edge) => edge.type === "invoke" && points.has(edge.from))
           .map((edge) => edge.to);
@@ -742,7 +756,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
           found.add(id);
           for (const edge of outgoing.get(id) ?? []) {
             if (edge.to === toId) continue;
-            if (edge.returnFrom != null && points.has(edge.returnFrom)) continue;
+            if (resumeEdges.has(`${edge.from}\u0000${edge.to}`)) continue;
             stack.push(edge.to);
           }
         }
@@ -767,8 +781,9 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
           const routeEdge = visibleEdges.find((edge) =>
             targetIds.includes(edge.to)
             && edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence")
-            && (panel.branchPointIds.includes(edge.from)
-              || (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))),
+            && panel.resumeSites.some((site) =>
+              site.sourceId === edge.from
+              && (site.targetId === undefined || site.targetId === edge.to)),
           );
           const toId = routeEdge?.to ?? targetIds.find((id) => visibleIds.has(id));
           if (!fromId || !toId || !visibleIds.has(fromId)) continue;
@@ -790,7 +805,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
         // Route targets are entry nodes for non-empty arms. They must not be
         // reused as the arm's continuation: doing so creates backwards row-gap
         // constraints (especially for throw arms) and stretches every pass.
-        if (arm.terminus === "throw") continue;
+        if (arm.exitKind === "throws") continue;
         const toId = arm.exitTargetId;
         if (!toId || !visibleIds.has(toId)) continue;
 
@@ -881,6 +896,29 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
       height: maxY - minY + PAD * 2,
     };
   }, [NODES_BY_ID, panelGeometry, panelLabelWidths, positions]);
+
+  // Opening the branch detail row reduces the graph viewport height. Empty
+  // panels often sit directly against their continuation near the bottom of
+  // that viewport, so the resize could clip the panel that was just clicked.
+  // Keep the selected rectangle visible without changing graph selection or
+  // branch geometry.
+  useLayoutEffect(() => {
+    if (!selectedPanelId) return;
+    const viewport = scrollRef.current;
+    const geometry = panelGeometry.find((item) => item.panel.id === selectedPanelId);
+    if (!viewport || !geometry) return;
+
+    const top = (geometry.y + graphBounds.offsetY) * zoom;
+    const bottom = (geometry.y + geometry.height + graphBounds.offsetY) * zoom;
+    const visibleTop = viewport.scrollTop;
+    const visibleBottom = visibleTop + viewport.clientHeight;
+    const margin = 20;
+    if (bottom + margin > visibleBottom) {
+      viewport.scrollTo({ top: bottom + margin - viewport.clientHeight });
+    } else if (top - margin < visibleTop) {
+      viewport.scrollTo({ top: Math.max(0, top - margin) });
+    }
+  }, [graphBounds.offsetY, panelGeometry, selectedPanelId, zoom]);
 
   const canvasWidth = Math.ceil(graphBounds.width * zoom);
   const canvasHeight = Math.ceil(graphBounds.height * zoom);
@@ -974,10 +1012,17 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
   }, [selectedId, visibleEdges]);
 
   const handleNodeClick = useCallback((id: string) => {
+    setSelectedPanelId(null);
     setSelectedId((prev) => prev === id ? null : id);
   }, []);
 
+  const handlePanelClick = useCallback((panelId: string) => {
+    setSelectedId(null);
+    setSelectedPanelId((previous) => previous === panelId ? null : panelId);
+  }, []);
+
   const handleSelectFromPanel = useCallback((id: string) => {
+    setSelectedPanelId(null);
     if (selectedId === id) {
       setSelectedId(null);
       setPendingRevealId(null);
@@ -1201,7 +1246,12 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
             <g transform={`scale(${zoom}) translate(${graphBounds.offsetX}, ${graphBounds.offsetY})`}>
               {/* Branch regions go behind everything: they are the ground
                   the nodes sit on, not an annotation over them. */}
-              <BranchRegions geometries={panelGeometry} activeId={hoveredPanelId} />
+              <BranchRegions
+                geometries={panelGeometry}
+                activeId={hoveredPanelId ?? selectedPanelId}
+                onSelect={handlePanelClick}
+                onHover={setHoveredPanelId}
+              />
 
               {/* Edges */}
               {visibleEdges.map((edge, i) => {
@@ -1330,7 +1380,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
               <BranchSwitchers
                 geometries={panelGeometry}
                 selection={armSelection}
-                activeId={hoveredPanelId}
+                activeId={hoveredPanelId ?? selectedPanelId}
                 onSelect={handleArmSelect}
                 onHover={setHoveredPanelId}
               />
@@ -1482,6 +1532,36 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
           <Separator orientation="vertical" size="1" />
           <Text size="1" color="gray" style={{ fontFamily: MONO }}>
             {selectedLocation ?? "—"}
+          </Text>
+        </Flex>
+      )}
+      {selectedPanel && (
+        <Flex
+          align="center"
+          gap="3"
+          px="4"
+          py="2"
+          flexShrink="0"
+          wrap="wrap"
+          style={{
+            borderTop: "1px solid var(--gray-a6)",
+            background: "var(--gray-a2)",
+          }}
+        >
+          <Text size="1" weight="bold" style={{ fontFamily: MONO }}>
+            {selectedPanel.kind === "conditional" ? "Condition" : "Dispatch"}
+          </Text>
+          <Separator orientation="vertical" size="1" />
+          <Text size="1" style={{ fontFamily: MONO, overflowWrap: "anywhere", flex: "1 1 360px" }}>
+            {selectedPanelArm?.conditionCode ?? selectedPanelArm?.label ?? "—"}
+          </Text>
+          <Separator orientation="vertical" size="1" />
+          <Text size="1" color="gray" style={{ fontFamily: MONO }}>
+            {selectedPanel.method ?? "—"}{selectedPanel.line !== undefined ? `:${selectedPanel.line}` : ""}
+          </Text>
+          <Separator orientation="vertical" size="1" />
+          <Text size="1" color="gray" style={{ fontFamily: MONO }}>
+            {selectedPanel.arms.length} branches
           </Text>
         </Flex>
       )}

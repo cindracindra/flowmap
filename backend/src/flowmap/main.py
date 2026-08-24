@@ -28,7 +28,7 @@ from domain.topic_modelling import (
 )
 from domain.cfg_slicing import filter_and_classify_roots_and_orphans, slice_from_root
 from domain.cfg_filtering import filter_noise_cfg
-from domain.opseq_orchestration import prepare_operation_cfg
+from domain.opseq_orchestration import has_operation_body, prepare_operation_cfg
 from domain.phase_orchestration import analyse_codebase_phases, discover_phases
 from domain.phase_segmentation import Analysis
 from service.phase import label_phase, resolve_phase_gate_batch
@@ -43,6 +43,16 @@ with (PROJECT_ROOT / "flowmap.config.json").open() as config_file:
 
 SOURCE_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["sourceDir"]).resolve()
 OUTPUT_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["outputDir"]).resolve()
+
+
+@dataclass(frozen=True, slots=True)
+class OpseqVisualisation:
+    """All graph stages for one operation, ready for export or an API response."""
+
+    operation_cfg: Graph
+    filtered_cfg: Graph
+    flattened_cfg: Graph
+    phase_tree: dict
 
 
 def export_to_json(output_path: Path, content: Any) -> None:
@@ -107,16 +117,6 @@ def root_method_full_names(graph: Graph) -> dict[str, str]:
     return names
 
 
-@dataclass(frozen=True, slots=True)
-class OpseqVisualisation:
-    """All graph stages for one operation, ready for export or an API response."""
-
-    operation_cfg: Graph
-    filtered_cfg: Graph
-    flattened_cfg: Graph
-    phase_tree: dict
-
-
 def build_opseq_visualisation(
     full_cfg: Graph,
     root_id: str,
@@ -159,6 +159,9 @@ def build_all_opseq_visualisations(
         )
     payloads: dict[str, dict] = {}
     for root_id, method_full_name in root_method_full_names(full_cfg).items():
+        candidate = prepare_operation_cfg(full_cfg, root_id)
+        if not has_operation_body(candidate.filtered):
+            continue
         visualisation = build_opseq_visualisation(
             full_cfg,
             root_id,
@@ -283,11 +286,16 @@ if __name__ == "__main__":
             clusters_by_label = {cluster.label: cluster for cluster in topic_clusters}
 
             full_cfg = filter_and_classify_roots_and_orphans(full_cfg)
-            root_methods = root_method_full_names(full_cfg)
+            all_root_methods = root_method_full_names(full_cfg)
 
-            opseqs = {
-                root_id: filter_noise_cfg(slice_from_root(full_cfg, root_id))
-                for root_id in full_cfg.roots
+            opseqs = {}
+            for root_id in full_cfg.roots:
+                opseq = filter_noise_cfg(slice_from_root(full_cfg, root_id))
+                if has_operation_body(opseq):
+                    opseqs[root_id] = opseq
+            root_methods = {
+                root_id: all_root_methods[root_id]
+                for root_id in opseqs
             }
             opseq_topic_assignment = assign_operation_topics_batch(
                 opseqs,

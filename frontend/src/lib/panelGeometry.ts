@@ -32,6 +32,7 @@ export interface PanelGeometry {
 const REGION_PAD = 26;
 const EMPTY_PANEL_HEIGHT = 46;
 const EMPTY_PANEL_TOP_GAP = (ROW_HEIGHT - EMPTY_PANEL_HEIGHT) / 2;
+const EMPTY_PANEL_STACK_GAP = 8;
 const LABEL_HEIGHT = 16;
 const LABEL_CLEARANCE = 10;
 const NESTED_PANEL_GAP = 18;
@@ -67,6 +68,11 @@ function invokedSubtreeBottom(
   visibleEdges: FlowEdge[],
 ): number | undefined {
   const points = new Set(panel.branchPointIds);
+  const resumeEdges = new Set(
+    panel.resumeSites
+      .filter((site) => site.returnFrom !== undefined && site.targetId !== undefined)
+      .map((site) => `${site.sourceId}\u0000${site.targetId}`),
+  );
   const outgoing = new Map<string, FlowEdge[]>();
   for (const edge of visibleEdges) {
     const edges = outgoing.get(edge.from);
@@ -87,7 +93,7 @@ function invokedSubtreeBottom(
     for (const edge of outgoing.get(id) ?? []) {
       // A return/fallback attributed to the TRY tail has left the protected
       // call. Nested returns remain part of that call's visible subtree.
-      if (edge.returnFrom != null && points.has(edge.returnFrom)) continue;
+      if (resumeEdges.has(`${edge.from}\u0000${edge.to}`)) continue;
       stack.push(edge.to);
     }
   }
@@ -102,6 +108,13 @@ export function computePanelGeometry(
   visibleEdges: FlowEdge[] = [],
 ): PanelGeometry[] {
   const geometries: PanelGeometry[] = [];
+
+  // Empty alternatives have no member nodes from which to derive a stable
+  // bounding box. Anchor them to their branch point instead of to the
+  // currently visible continuation edge: filtering and relayout can change
+  // (or remove) that edge, while the branch point is the panel's semantic
+  // anchor. Stack the uncommon case where several panels share one point.
+  const emptyForkSlots = new Map<string, number>();
 
   // Several sequential conditions can share one visible edge when their
   // condition nodes were stripped from the graph. Their empty arms are still
@@ -119,8 +132,9 @@ export function computePanelGeometry(
     const routeEdge = visibleEdges.find((edge) =>
       routeTargetIds.includes(edge.to)
       && edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence")
-      && (panel.branchPointIds.includes(edge.from)
-        || (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))),
+      && panel.resumeSites.some((site) =>
+        site.sourceId === edge.from
+        && (site.targetId === undefined || site.targetId === edge.to)),
     );
     if (!routeEdge) continue;
     const from = positions.get(routeEdge.from);
@@ -186,8 +200,9 @@ export function computePanelGeometry(
     const routeEdge = visibleEdges.find((edge) =>
           routeTargetIds.includes(edge.to) &&
           edge.type === (panel.structure === "DISPATCH" ? "invoke" : "sequence") &&
-          (panel.branchPointIds.includes(edge.from) ||
-            (edge.returnFrom != null && panel.branchPointIds.includes(edge.returnFrom))),
+          panel.resumeSites.some((site) =>
+            site.sourceId === edge.from
+            && (site.targetId === undefined || site.targetId === edge.to)),
         );
     const emptyPlacement = emptyRoutePlacements.get(panel.id);
     const routeFrom = emptyPlacement?.from ?? (routeEdge ? positions.get(routeEdge.from) : undefined);
@@ -196,13 +211,26 @@ export function computePanelGeometry(
     const subtreeBottom = panel.switcherPosition === "after"
       ? invokedSubtreeBottom(panel, positions, visibleEdges)
       : undefined;
+    const emptyForkSlot = isFallbackBox && fork && panel.switcherPosition !== "after"
+      ? emptyForkSlots.get(panel.branchPointIds[0]) ?? 0
+      : 0;
+    if (isFallbackBox && fork && panel.switcherPosition !== "after") {
+      emptyForkSlots.set(panel.branchPointIds[0], emptyForkSlot + 1);
+    }
     const box = memberBox
       // Nothing to wrap: an empty arm, or one whose nodes are all hidden by
-      // an enclosing panel. Put an empty arm directly on its selected route
-      // edge. returnFrom-aware matching is important when the branch point
-      // invokes a method: the visible edge starts at that callee's return
-      // node, not at the original call-site node.
-      ?? (routeFrom && routeTo
+      // an enclosing panel. Ordinary branches stay directly below their
+      // branch point. Post-call selectors retain route-aware placement so a
+      // TRY outcome appears after the protected work it describes.
+      ?? (fork && panel.switcherPosition !== "after"
+        ? {
+            x: fork.x - REGION_PAD,
+            y: fork.y + EMPTY_PANEL_TOP_GAP
+              + emptyForkSlot * (EMPTY_PANEL_HEIGHT + EMPTY_PANEL_STACK_GAP),
+            width: 260,
+            height: EMPTY_PANEL_HEIGHT,
+          }
+        : routeFrom && routeTo
         ? {
             x: routeFrom.x + (routeTo.x - routeFrom.x) * routePosition - 130,
             y: routeFrom.y + (routeTo.y - routeFrom.y) * routePosition
@@ -227,7 +255,7 @@ export function computePanelGeometry(
 
     // An empty arm must not obscure the fork's label or any later label.
     // It stays compact and moves down by whole graph rows only when needed.
-    if (isFallbackBox && !(routeFrom && routeTo)) {
+    if (isFallbackBox && panel.switcherPosition === "after" && !(routeFrom && routeTo)) {
       let attempts = 0;
       while (overlapsLabel(box, positions, labelWidths) && attempts++ < 100) {
         box.y += ROW_HEIGHT;
