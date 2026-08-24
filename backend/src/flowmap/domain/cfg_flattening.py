@@ -8,7 +8,6 @@ from model import (
     BranchArm,
     BranchArmRef,
     BranchGroup,
-    BranchRequirement,
     Edge,
     Graph,
     LoopGroup,

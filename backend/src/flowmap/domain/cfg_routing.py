@@ -3,7 +3,7 @@ from collections import Counter
 
 from domain.cfg_branching import _BranchTopology
 from domain.cfg_traversal import _adjacency_out, _reachable_non_members, _walk_order
-from model import BranchGroup, BranchRequirement, Edge, Node
+from model import BranchArm, BranchGroup, BranchRequirement, Edge, Node
 
 
 def analyze_branch_routes(

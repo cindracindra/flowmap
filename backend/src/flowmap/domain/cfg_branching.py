@@ -1,7 +1,7 @@
 import dataclasses
 
 from domain.cfg_traversal import _adjacency_out, _walk_order
-from model import BranchGroup, BranchArm, Edge, Node
+from model import BranchGroup, BranchArm, Edge, Node, arm_exit_kinds
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -109,27 +109,16 @@ def _recompute_branch_geometry(
     nodes: list[Node], edges: list[Edge], groups: list[BranchGroup]
 ) -> list[BranchGroup]:
     """
-    Re-derives what a branch group's shape depends on which nodes actually
-    survived: each arm's `empty`/`firstCallId`, and the group's
-    `branchPointIds`.
+    Re-derives branch group's shape post filtering: each arm's `empty`/
+    `firstCallId`, and the group's `branchPointIds`. Update `firstCallId`
+    from AST to CFG-based. 
 
     Arm membership needs no inference -- full_cfg.sc tags every call in an
     arm, so an arm's surviving content is just the nodes carrying its tag.
     Only the ORDER has to be recovered from the graph (see
     _walk_order).
-
-    Runs even when nothing was filtered out: extraction's `firstCallId` is
-    AST-first, which is the wrong node for a CFG view regardless of
-    whether any noise was stripped.
-
-    `convergesAt` is deliberately NOT computed here. Sequence edges don't
-    cross methods at this stage, so a branch that is the last thing in its
-    method -- a guard clause, an if/else ending a method -- converges on
-    the CALLER's next call, which no edge reaches until flatten_cfg
-    synthesizes the returnFrom edge. It is also per-call-site by nature: a
-    method inlined twice converges in two different places, which one
-    pre-clone value cannot express. It belongs to the flatten stage.
     """
+
     if not groups:
         return groups
 
@@ -203,24 +192,25 @@ def _recompute_branch_geometry(
             )
 
         # The try body and finally are ordinary flow outside this group.
-        # With no surviving catch work, only the empty noCatch arm remains,
-        # so TRY is transparent and should not leave behind a panel.
+        # With no surviving catch work or terminating catch route, only the
+        # empty noCatch arm remains, so TRY is transparent. A zero-call catch
+        # that returns or throws is still observable and must retain the group.
         if group.kind == "TRY" and not any(
-            arm.label != "noCatch" and not arm.empty for arm in arms
+            arm.label != "noCatch"
+            and (not arm.empty or arm_exit_kinds(arm) != {"continues"})
+            for arm in arms
         ):
             continue
 
-        # Filtering can erase every operation in an IF while leaving the
-        # extracted control-structure metadata behind.  When every arm then
-        # continues normally, the branch is transparent in the projected
-        # graph: retaining it would manufacture duplicate routes from the
-        # preceding visible call in addition to that call's inlined return
-        # route.  Do retain zero-call guards whose arms return or throw --
-        # their different termini still encode observable control flow.
+        # Remove branchGroup when every arm has no operation and exit kind
+        # is continue.
         if (
             group.kind == "IF"
             and arms
-            and all(arm.empty and arm.terminus == "continues" for arm in arms)
+            and all(
+                arm.empty and arm_exit_kinds(arm) == {"continues"}
+                for arm in arms
+            )
         ):
             continue
 
