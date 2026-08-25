@@ -10,20 +10,21 @@ import {
 import {
   ALLOCATED_OPSEQ_COUNT,
   OPERATIONS_BY_TOPIC,
-  OPSEQ_VISUALISATIONS,
   TOPICS,
 } from "../data/graph";
+import { GRAPH_BUNDLE } from "../data/filteredGraph";
+import { opseqLabel } from "../data/operationLabels";
 import type { TopicCluster, TopicOperation } from "../types/topics";
 import { topicLabel, isUnnamed } from "../lib/topics";
 import { MONO } from "../lib/ui";
-import AnchoredGraphView from "./AnchoredGraphView";
+import FilteredGraphView from "./FilteredGraphView";
 
 // ── Topic discovery view ─────────────────────────────────────────────────
 // Mode 1 output, read top-down: the clusters the corpus falls into, what
 // each one contains, and (on a double click) one cluster on its own. The
 // The topic and operation pickers stay full-width. Once an opseq is chosen,
-// AnchoredGraphView supplies the same Explore/Operation panel as it does in
-// the standalone anchored flow.
+// FilteredGraphView supplies the same expandable workspace and panels as the
+// standalone expandable graph tab.
 
 // ── Topic list ───────────────────────────────────────────────────────────
 
@@ -50,6 +51,7 @@ function TopicRow({
         boxSizing: "border-box",
         display: "block",
         width: "100%",
+        minHeight: 58,
         padding: "10px 12px",
         borderRadius: 6,
         cursor: "pointer",
@@ -84,14 +86,6 @@ function TopicRow({
           {operations.length}
         </Badge>
       </Flex>
-      <Text
-        size="1"
-        color="gray"
-        truncate
-        style={{ display: "block", fontFamily: MONO, marginTop: 4, paddingLeft: 21 }}
-      >
-        {operations.map((operation) => operation.label).join(" · ") || "No operation sequences"}
-      </Text>
     </button>
   );
 }
@@ -105,14 +99,14 @@ function TopicList({
 }) {
   return (
     <ScrollArea style={{ height: "100%" }}>
-      <Box p="4" style={{ maxWidth: 720, margin: "0 auto" }}>
+      <Box p="4" style={{ maxWidth: 1100, margin: "0 auto" }}>
         <Heading size="3">Topics</Heading>
         <Text as="p" size="1" color="gray" mt="1">
           {ALLOCATED_OPSEQ_COUNT} operation sequences across{" "}
           {TOPICS.length} topics. Click a topic to see
           its assigned operation sequences.
         </Text>
-        <Flex direction="column" gap="2" mt="3">
+        <Box mt="3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
           {TOPICS.map((topic) => (
             <TopicRow
               key={topic.label}
@@ -126,7 +120,7 @@ function TopicList({
               No topics in this run.
             </Text>
           )}
-        </Flex>
+        </Box>
       </Box>
     </ScrollArea>
   );
@@ -175,7 +169,7 @@ function TopicDetailView({
       </Flex>
 
       <ScrollArea style={{ flex: 1 }}>
-        <Box p="4" style={{ maxWidth: 720, margin: "0 auto" }}>
+        <Box p="4" style={{ maxWidth: 1100, margin: "0 auto" }}>
           <Heading size="5">{topicLabel(topic)}</Heading>
           <Text as="p" size="1" color="gray" mt="1">
             {operations.length} assigned {operations.length === 1 ? "operation" : "operations"}
@@ -186,7 +180,7 @@ function TopicDetailView({
           <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
             Operations
           </Text>
-          <Flex direction="column" gap="2" mt="2">
+          <Box mt="2" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
             {operations.map((operation) => (
               <button
                 key={operation.id}
@@ -200,6 +194,7 @@ function TopicDetailView({
                   width: "100%",
                   cursor: "pointer",
                   padding: "8px 12px",
+                  minHeight: 58,
                   border: "1px solid var(--canvas-border)",
                   borderRadius: 6,
                   background: "var(--canvas-card)",
@@ -211,9 +206,6 @@ function TopicDetailView({
                     {operation.label}
                   </Text>
                 </Flex>
-                <Text size="1" color="gray" mt="1" style={{ display: "block", fontFamily: MONO, paddingLeft: 21 }}>
-                  {operation.id}
-                </Text>
               </button>
             ))}
             {operations.length === 0 && (
@@ -221,7 +213,7 @@ function TopicDetailView({
                 No operations were assigned to this topic.
               </Text>
             )}
-          </Flex>
+          </Box>
 
           {topic.readme_paths.length > 0 && (
             <>
@@ -335,17 +327,14 @@ export default function TopicDiscoveryView() {
                 <Text size="1" weight="medium">{displayedOperationLabel ?? selectedOperation.label}</Text>
               </Flex>
               <Box flexGrow="1" height="100%" style={{ minHeight: 0 }}>
-                {OPSEQ_VISUALISATIONS[selectedOperation.id] ? (
-                  <AnchoredGraphView
-                    {...OPSEQ_VISUALISATIONS[selectedOperation.id]}
-                    initialPanelTab="operation"
-                    onOpseqChange={(choice) => setDisplayedOperationLabel(choice.label)}
-                  />
-                ) : (
-                  <Flex align="center" justify="center" height="100%">
-                    <Text size="1" color="gray">No static graph is available for this operation.</Text>
-                  </Flex>
-                )}
+                <FilteredGraphView
+                  key={selectedOperation.id}
+                  initialOperationId={selectedOperation.id}
+                  onOperationChange={(operationId) => {
+                    const operation = GRAPH_BUNDLE.operationsById[operationId];
+                    setDisplayedOperationLabel(opseqLabel(operationId) ?? operation?.label ?? operationId);
+                  }}
+                />
               </Box>
             </Flex>
           ) : selectedTopic ? (

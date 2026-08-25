@@ -1,10 +1,10 @@
 import dataclasses
+from collections.abc import Iterable
 
 from domain.cfg_branching import _recompute_branch_geometry
 from domain.cfg_semantics import scoped_semantic_features
-from domain.cfg_traversal import _adjacency_out
 from domain.util import is_jdk_call_site_strip, is_lambda_method, is_noise
-from model import ArmExit, BranchArm, BranchGroup, Edge, Graph, Node
+from model import ArmExit, BranchArm, BranchGroup, BranchRequirement, Edge, Graph, Node
 
 
 def _tag_dead_ends(nodes: list[Node]) -> list[Node]:
@@ -17,33 +17,82 @@ def _tag_dead_ends(nodes: list[Node]) -> list[Node]:
     ]
 
 
-def _resolve_kept_targets(
+@dataclasses.dataclass(frozen=True)
+class _ResolvedRoute:
+    target: str
+    branch_requirements: tuple[BranchRequirement, ...] = ()
+    return_from: str | None = None
+    fallback: bool = False
+    loop_back: bool = False
+
+
+def _merge_route_requirements(
+    *requirement_lists: Iterable[BranchRequirement],
+) -> tuple[BranchRequirement, ...] | None:
+    """Union route guards, rejecting a path that requires two arms of one group."""
+    selected: dict[str, str] = {}
+    merged: list[BranchRequirement] = []
+    for requirements in requirement_lists:
+        for requirement in requirements:
+            previous = selected.get(requirement.groupId)
+            if previous is not None and previous != requirement.armLabel:
+                return None
+            if previous is None:
+                selected[requirement.groupId] = requirement.armLabel
+                merged.append(requirement)
+    return tuple(merged)
+
+
+def _route_key(route: _ResolvedRoute) -> tuple[object, ...]:
+    return (
+        route.target,
+        tuple((item.groupId, item.armLabel) for item in route.branch_requirements),
+        route.return_from,
+        route.fallback,
+        route.loop_back,
+    )
+
+
+def _resolve_kept_routes(
     node_id: str,
     excluded_ids: set[str],
-    adjacency_out: dict[str, list[str]],
-    memo: dict[str, list[str]],
+    adjacency_out: dict[str, list[Edge]],
+    memo: dict[str, list[_ResolvedRoute]],
     visiting: frozenset[str],
-) -> tuple[list[str], bool]:
+) -> tuple[list[_ResolvedRoute], bool]:
     """
     Follows outgoing edges until reaching kept node(s) -- or nothing, if
     the chain dead-ends entirely inside excluded territory.
     """
 
     if node_id not in excluded_ids:
-        return [node_id], False
+        return [_ResolvedRoute(target=node_id)], False
     if node_id in memo:
         return memo[node_id], False
     if node_id in visiting:
         return [], True
 
-    resolved: list[str] = []
+    resolved: list[_ResolvedRoute] = []
     truncated = False
-    for successor in adjacency_out.get(node_id, []):
-        sub_resolved, sub_truncated = _resolve_kept_targets(
-            successor, excluded_ids, adjacency_out, memo, visiting | {node_id}
+    for edge in adjacency_out.get(node_id, []):
+        sub_resolved, sub_truncated = _resolve_kept_routes(
+            edge.target, excluded_ids, adjacency_out, memo, visiting | {node_id}
         )
-        resolved.extend(sub_resolved)
+        for suffix in sub_resolved:
+            requirements = _merge_route_requirements(
+                edge.branchRequirements, suffix.branch_requirements
+            )
+            if requirements is None:
+                continue
+            resolved.append(_ResolvedRoute(
+                target=suffix.target,
+                branch_requirements=requirements,
+                return_from=edge.returnFrom or suffix.return_from,
+                fallback=edge.fallback or suffix.fallback,
+                loop_back=edge.loopBack or suffix.loop_back,
+            ))
         truncated = truncated or sub_truncated
+    resolved = list({_route_key(route): route for route in resolved}.values())
     if not truncated:
         memo[node_id] = resolved
     return resolved, truncated
@@ -55,24 +104,88 @@ def _bridge_edges(typed_edges: list[Edge], excluded_ids: set[str]) -> list[Edge]
     edge whose source is a kept node, its target is resolved to the nearest
     kept descendant(s).
     """
-    adjacency_out = _adjacency_out(typed_edges)
+    adjacency_out: dict[str, list[Edge]] = {}
+    for edge in typed_edges:
+        adjacency_out.setdefault(edge.source, []).append(edge)
 
-    memo: dict[str, list[str]] = {}
-    seen_pairs: set[tuple[str, str]] = set()
+    memo: dict[str, list[_ResolvedRoute]] = {}
+    seen_routes: set[tuple[object, ...]] = set()
     bridged: list[Edge] = []
     for edge in typed_edges:
         if edge.source in excluded_ids:
             continue
-        targets, _ = _resolve_kept_targets(
+        suffixes, _ = _resolve_kept_routes(
             edge.target, excluded_ids, adjacency_out, memo, frozenset()
         )
-        for target in targets:
-            pair = (edge.source, target)
-            if pair in seen_pairs or pair[0] == pair[1]: # e.g. case A → excludedNode → A
+        for suffix in suffixes:
+            requirements = _merge_route_requirements(
+                edge.branchRequirements, suffix.branch_requirements
+            )
+            if requirements is None or edge.source == suffix.target:
                 continue
-            seen_pairs.add(pair)
-            bridged.append(Edge(source=pair[0], target=pair[1], type=edge.type))
+            route = _ResolvedRoute(
+                target=suffix.target,
+                branch_requirements=requirements,
+                return_from=edge.returnFrom or suffix.return_from,
+                fallback=edge.fallback or suffix.fallback,
+                loop_back=edge.loopBack or suffix.loop_back,
+            )
+            key = (edge.source, edge.type, *_route_key(route))
+            if key in seen_routes:
+                continue
+            seen_routes.add(key)
+            bridged.append(Edge(
+                source=edge.source,
+                target=route.target,
+                type=edge.type,
+                returnFrom=route.return_from,
+                fallback=route.fallback,
+                loopBack=route.loop_back,
+                branchRequirements=list(route.branch_requirements),
+            ))
     return bridged
+
+
+def _annotate_filtered_method_routes(graph: Graph) -> Graph:
+    """Put the executable branch contract on the filtered graph itself."""
+    # Imports stay local to keep cfg filtering independent during module startup.
+    from domain.method_branch_routing import prepare_all_method_branch_routes
+    from domain.method_scoping import build_method_definitions
+
+    methods = prepare_all_method_branch_routes(build_method_definitions(graph))
+    if not methods:
+        return graph
+
+    owned_sequence_keys: set[tuple[str, str]] = set()
+    routed_edges: list[Edge] = []
+    routed_groups: list[BranchGroup] = []
+    routed_group_ids: set[str] = set()
+    for method in methods.values():
+        member_ids = {method.entryId, *(node.id for node in method.nodes)}
+        owned_sequence_keys.update(
+            (edge.source, edge.target)
+            for edge in graph.edges
+            if edge.type == "sequence"
+            and edge.source in member_ids
+            and edge.target in member_ids
+        )
+        routed_edges.extend(method.sequenceEdges)
+        routed_groups.extend(method.branchGroups)
+        routed_group_ids.update(group.id for group in method.branchGroups)
+
+    retained_edges = [
+        edge for edge in graph.edges
+        if edge.type != "sequence"
+        or (edge.source, edge.target) not in owned_sequence_keys
+    ]
+    retained_groups = [
+        group for group in graph.branchGroups if group.id not in routed_group_ids
+    ]
+    return dataclasses.replace(
+        graph,
+        edges=[*retained_edges, *routed_edges],
+        branchGroups=[*retained_groups, *routed_groups],
+    )
 
 
 def _nearest_surviving_frontiers(
@@ -224,7 +337,7 @@ def filter_noise_cfg(cfg: Graph, *, preserve_all_entries: bool = False) -> Graph
         groups, cfg.nodes, cfg.edges, kept_nodes
     )
 
-    return dataclasses.replace(
+    filtered = dataclasses.replace(
         cfg,
         nodes=kept_nodes,
         edges=kept_edges,
@@ -233,3 +346,4 @@ def filter_noise_cfg(cfg: Graph, *, preserve_all_entries: bool = False) -> Graph
             cfg.semanticFeatures, {node.id for node in kept_nodes}, kept_edges
         ),
     )
+    return _annotate_filtered_method_routes(filtered)

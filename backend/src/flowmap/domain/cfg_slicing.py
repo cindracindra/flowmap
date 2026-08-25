@@ -20,7 +20,13 @@ def classify_roots_and_orphans(graph: Graph) -> Graph:
         source_node = nodes_by_id.get(e.source)
         if source_node is not None:
             if source_node.type == "entry":
-                entries_with_executable_flow.add(source_node.id)
+                target_node = nodes_by_id.get(e.target)
+                # Exit markers describe how a method ends; they are not an
+                # executable operation by themselves. In particular, an
+                # entry -> fallthrough edge must not turn an otherwise empty,
+                # uncalled method into a root instead of an orphan.
+                if target_node is None or target_node.type != "exit":
+                    entries_with_executable_flow.add(source_node.id)
             elif source_node.callerMethod is not None:
                 owner_id = entry_id_by_fullname.get(source_node.callerMethod)
                 if owner_id is not None:

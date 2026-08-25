@@ -23,7 +23,8 @@ from domain.phase_structure import (
     Structure,
     build_method_structures,
 )
-from model import Graph, Phase
+from domain.method_scoping import build_method_definitions
+from model import Graph, MethodDefinition, Phase
 
 
 GateKind = Literal[
@@ -117,10 +118,22 @@ class Analysis:
         self.counts.clear()
 
 
-def _callee_entries(graph: Graph) -> dict[str, tuple[str, ...]]:
+def _callee_entries(
+    graph: Graph,
+    method_definitions: dict[str, MethodDefinition] | None = None,
+) -> dict[str, tuple[str, ...]]:
     nodes = {node.id: node for node in graph.nodes}
     found: dict[str, list[str]] = defaultdict(list)
-    for edge in graph.edges:
+    edges = (
+        graph.edges
+        if method_definitions is None
+        else [
+            edge
+            for method in method_definitions.values()
+            for edge in method.invokeEdges
+        ]
+    )
+    for edge in edges:
         target = nodes.get(edge.target)
         if edge.type == "invoke" and target is not None and target.type == "entry":
             found[edge.source].append(edge.target)
@@ -601,16 +614,19 @@ def _collapse_regions(analysis: Analysis, entry_id: str) -> None:
 def analyse(
     graph: Graph,
     excluded: dict[str, ExclusionReason] | None = None,
+    method_definitions: dict[str, MethodDefinition] | None = None,
 ) -> Analysis:
     """Analyse every method with callees resolved before their callers."""
     excluded = excluded or {}
-    structures = build_method_structures(graph, excluded)
+    if method_definitions is None:
+        method_definitions = build_method_definitions(graph)
+    structures = build_method_structures(graph, excluded, method_definitions)
     analysis = Analysis(
         graph=graph,
         excluded=excluded,
         structures=structures,
         methods={},
-        calleeEntries=_callee_entries(graph),
+        calleeEntries=_callee_entries(graph, method_definitions),
     )
     def resolve(entry_id: str) -> MethodAnalysis | None:
         if entry_id in analysis.methods:

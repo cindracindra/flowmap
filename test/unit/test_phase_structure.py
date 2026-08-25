@@ -11,6 +11,7 @@ from domain.phase_structure import (  # noqa: E402
     LinearStructure,
     build_method_structures,
 )
+from domain.method_scoping import build_method_definitions  # noqa: E402
 from model import Graph  # noqa: E402
 
 
@@ -156,3 +157,61 @@ def test_methods_are_kept_separate() -> None:
 
     assert structures["caller"].structures == (LinearStructure(("call",)),)
     assert structures["callee"].structures == (LinearStructure(("inside",)),)
+
+
+def test_prebuilt_method_definitions_preserve_structure_output() -> None:
+    graph = _nested_branch_graph()
+
+    legacy_call = build_method_structures(graph)
+    canonical_call = build_method_structures(
+        graph,
+        method_definitions=build_method_definitions(graph),
+    )
+
+    assert canonical_call == legacy_call
+
+
+def test_explicitly_owned_disconnected_call_is_not_dropped() -> None:
+    graph = Graph.from_dict({
+        "nodes": [
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
+            {"id": "connected", "type": "call", "callerMethod": "run"},
+            {"id": "detached", "type": "call", "callerMethod": "run"},
+        ],
+        "edges": [
+            {"from": "entry", "to": "connected", "type": "sequence"},
+        ],
+    })
+
+    method = build_method_structures(graph)["entry"]
+
+    assert method.structures == (
+        LinearStructure(("connected",)),
+        LinearStructure(("detached",)),
+    )
+
+
+def test_synthesized_return_edge_does_not_order_method_calls() -> None:
+    graph = Graph.from_dict({
+        "nodes": [
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
+            {"id": "first", "type": "call", "callerMethod": "run"},
+            {"id": "second", "type": "call", "callerMethod": "run"},
+        ],
+        "edges": [
+            {"from": "entry", "to": "first", "type": "sequence"},
+            {
+                "from": "first",
+                "to": "second",
+                "type": "sequence",
+                "returnFrom": "some-caller",
+            },
+        ],
+    })
+
+    method = build_method_structures(graph)["entry"]
+
+    assert method.structures == (
+        LinearStructure(("first",)),
+        LinearStructure(("second",)),
+    )

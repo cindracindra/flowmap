@@ -122,6 +122,7 @@ def _recompute_branch_geometry(
     if not groups:
         return groups
 
+    nodes_by_id = {node.id: node for node in nodes}
     sequence_edges = [e for e in edges if e.type == "sequence"]
     order = _walk_order(
         _adjacency_out(sequence_edges),
@@ -141,7 +142,14 @@ def _recompute_branch_geometry(
     for group in groups:
         arms: list[BranchArm] = []
         for arm in group.arms:
-            surviving = topology.arm_members(group.id, arm.label)
+            # Structural return/throw exit markers retain arm membership but
+            # do not make an arm operationally non-empty. `empty` and
+            # `firstCallId` describe surviving call work only.
+            surviving = {
+                node_id
+                for node_id in topology.arm_members(group.id, arm.label)
+                if nodes_by_id[node_id].type == "call"
+            }
             head = min(surviving, key=rank) if surviving else None
             arms.append(
                 dataclasses.replace(

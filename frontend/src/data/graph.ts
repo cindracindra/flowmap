@@ -20,6 +20,7 @@ import type { TopicCluster, TopicOperation } from "../types/topics";
 import { sortTopics } from "../lib/topics";
 
 export const FULL_GRAPH = fullGraphRaw as unknown as FlowGraph;
+export { GRAPH_BUNDLE, FILTERED_GRAPH_DATA } from "./filteredGraph";
 
 const GENERATED_TOPICS = topicClusterRaw as unknown as TopicCluster[];
 

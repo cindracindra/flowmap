@@ -76,6 +76,10 @@ class Phase:
     # current ordinal-only output.
     id: str | None = None
     label: str | None = None
+    # Stable method-phase id whose precomputed label was propagated here.
+    # Overlay phase ids are operation-instance-local; this preserves label
+    # provenance without requiring an instance-id lookup or another LLM pass.
+    labelSourcePhaseId: str | None = None
     structuralAnchors: list[str] = field(default_factory=list)
 
     # Why this phase's first node split off from whatever preceded it.
@@ -92,6 +96,7 @@ class Phase:
             nodes=list(data.get("nodes", [])),
             id=data.get("id"),
             label=data.get("label"),
+            labelSourcePhaseId=data.get("labelSourcePhaseId"),
             structuralAnchors=list(data.get("structuralAnchors", [])),
             opened_by=Transition.from_dict(opened_by) if opened_by else None,
             transitions=[Transition.from_dict(t) for t in data.get("transitions", [])],
@@ -107,6 +112,8 @@ class Phase:
             result["id"] = self.id
         if self.label is not None:
             result["label"] = self.label
+        if self.labelSourcePhaseId is not None:
+            result["labelSourcePhaseId"] = self.labelSourcePhaseId
         if self.structuralAnchors:
             result["structuralAnchors"] = list(self.structuralAnchors)
         return result

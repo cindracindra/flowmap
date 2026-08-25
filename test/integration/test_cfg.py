@@ -50,6 +50,8 @@ from backend.src.flowmap.domain.cfg_pipeline import (
     filter_noise_cfg,
     flatten_cfg
 )
+from backend.src.flowmap.domain.method_branch_routing import prepare_method_branch_routes
+from backend.src.flowmap.domain.method_scoping import build_method_definitions
 from backend.src.flowmap.model import Graph
 
 def _simple_name(full_name: str) -> str:
@@ -90,8 +92,13 @@ class FullCfgPipelineTests(unittest.TestCase):
             full_cfg_output_path = Path(OUTPUT_DIR) / "full_cfg.json"
             with full_cfg_output_path.open("w") as f:
                 json.dump(raw, f, indent=2)
+            pre_filtered_output_path = Path(OUTPUT_DIR) / "pre_filtered_cfg.json"
+            with pre_filtered_output_path.open("w") as f:
+                json.dump(raw, f, indent=2)
 
             filtered = filter_noise_cfg(cls.graph)
+            cls.filtered = filtered
+            cls.filtered_by_id = {node.id: node for node in filtered.nodes}
             filtered_cfg_output_path = Path(OUTPUT_DIR) / "filtered_cfg.json"
             with filtered_cfg_output_path.open("w") as f:
                 json.dump(filtered.to_dict(), f, indent=2)
@@ -134,6 +141,454 @@ class FullCfgPipelineTests(unittest.TestCase):
             edge.type == "sequence" and edge.target in exit_ids
             for edge in self.graph.edges
         ))
+
+    def _method_nodes(self, method_name: str):
+        return [
+            node for node in self.graph.nodes
+            if _simple_name(node.callerMethod or "") == method_name
+        ]
+
+    def _method_sequence_pairs(self, method_name: str):
+        nodes = self._method_nodes(method_name)
+        ids = {node.id for node in nodes}
+        return [
+            (self.by_id[edge.source], self.by_id[edge.target])
+            for edge in self.graph.edges
+            if edge.type == "sequence"
+            and edge.source in ids
+            and edge.target in ids
+        ]
+
+    def _branch_groups(self, method_name: str):
+        return [
+            group for group in self.graph.branchGroups
+            if _simple_name(group.method or "") == method_name
+        ]
+
+    def _method_entry(self, method_name: str):
+        return next(
+            node for node in self.graph.nodes
+            if node.type == "entry"
+            and _simple_name(node.calleeFullName or "") == method_name
+        )
+
+    def _sequence_reachable_without_terminals(
+        self,
+        method_name: str,
+        target_id: str,
+    ) -> bool:
+        entry = self._method_entry(method_name)
+        method_ids = {entry.id, *(node.id for node in self._method_nodes(method_name))}
+        outgoing: dict[str, list[str]] = {}
+        for edge in self.graph.edges:
+            if (
+                edge.type == "sequence"
+                and edge.source in method_ids
+                and edge.target in method_ids
+            ):
+                outgoing.setdefault(edge.source, []).append(edge.target)
+        reached: set[str] = set()
+        pending = [entry.id]
+        while pending:
+            node_id = pending.pop()
+            if node_id in reached:
+                continue
+            reached.add(node_id)
+            if node_id == target_id:
+                return True
+            node = self.by_id[node_id]
+            if node.exitKind in {"return", "throw"}:
+                continue
+            if node.type == "call" and node.calleeFullName == "<operator>.throw":
+                continue
+            pending.extend(outgoing.get(node_id, ()))
+        return False
+
+    def _arm_nodes(self, group_id: str, arm_label: str):
+        return [
+            node for node in self.graph.nodes
+            if any(
+                ref.groupId == group_id and ref.armLabel == arm_label
+                for ref in node.branchArms
+            )
+        ]
+
+    def _arm_call_names(self, group_id: str, arm_label: str):
+        return {
+            _simple_name(node.calleeFullName or "")
+            for node in self._arm_nodes(group_id, arm_label)
+            if node.type == "call"
+        }
+
+    def test_if_arms_with_calls_keep_independent_members_and_local_convergence(self):
+        group, = self._branch_groups("branchWithCalls")
+        self.assertEqual(
+            {arm.label: arm.terminus for arm in group.arms},
+            {"if": "continues", "else": "continues"},
+        )
+        self.assertEqual(self._arm_call_names(group.id, "if"), {"doX"})
+        self.assertEqual(self._arm_call_names(group.id, "else"), {"doInner"})
+
+        helper = next(
+            node for node in self._method_nodes("branchWithCalls")
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doHelper"
+        )
+        arm_tails = {
+            node.id
+            for label in ("if", "else")
+            for node in self._arm_nodes(group.id, label)
+            if node.type == "call"
+        }
+        self.assertTrue(all(any(
+            edge.type == "sequence"
+            and edge.source == tail_id
+            and edge.target == helper.id
+            for edge in self.graph.edges
+        ) for tail_id in arm_tails))
+
+    def test_empty_if_arm_continues_to_the_local_body(self):
+        group, = self._branch_groups("emptyContinuingArm")
+        empty_arm = next(arm for arm in group.arms if arm.label == "else")
+        self.assertTrue(empty_arm.empty)
+        self.assertEqual(empty_arm.terminus, "continues")
+        self.assertEqual(self._arm_call_names(group.id, "else"), set())
+        method_calls = {
+            _simple_name(node.calleeFullName or "")
+            for node in self._method_nodes("emptyContinuingArm")
+            if node.type == "call"
+        }
+        self.assertIn("doHelper", method_calls)
+
+    def test_zero_operation_return_arm_ends_at_explicit_exit(self):
+        group, = self._branch_groups("emptyReturnArm")
+        returning = next(arm for arm in group.arms if arm.terminus == "return")
+        members = self._arm_nodes(group.id, returning.label)
+        self.assertFalse(any(node.type == "call" for node in members))
+        exits = [node for node in members if node.type == "exit"]
+        self.assertTrue(exits)
+        self.assertEqual({node.exitKind for node in exits}, {"return"})
+
+        helper_ids = {
+            node.id for node in self._method_nodes("emptyReturnArm")
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doHelper"
+        }
+        self.assertFalse(any(
+            edge.type == "sequence"
+            and edge.source in {node.id for node in exits}
+            and edge.target in helper_ids
+            for edge in self.graph.edges
+        ))
+
+    def test_zero_operation_throw_arm_ends_at_dead_end(self):
+        group, = self._branch_groups("emptyThrowArm")
+        throwing = next(arm for arm in group.arms if arm.terminus == "throw")
+        members = self._arm_nodes(group.id, throwing.label)
+        self.assertFalse(any(
+            node.type == "call"
+            and not (node.calleeFullName or "").startswith("<operator>.")
+            for node in members
+        ))
+        exits = [node for node in members if node.type == "exit"]
+        self.assertTrue(exits)
+        self.assertEqual({node.exitKind for node in exits}, {"throw"})
+
+        helper_ids = {
+            node.id for node in self._method_nodes("emptyThrowArm")
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doHelper"
+        }
+        self.assertFalse(any(
+            edge.type == "sequence"
+            and edge.source in {node.id for node in exits}
+            and edge.target in helper_ids
+            for edge in self.graph.edges
+        ))
+
+    def test_nested_empty_branch_retains_nested_instance_membership(self):
+        groups = self._branch_groups("nestedEmptyBranch")
+        self.assertEqual(len(groups), 2)
+        returning_group = next(
+            group for group in groups
+            if any(arm.terminus == "return" for arm in group.arms)
+        )
+        returning = next(
+            arm for arm in returning_group.arms if arm.terminus == "return"
+        )
+        exits = [
+            node for node in self._arm_nodes(returning_group.id, returning.label)
+            if node.type == "exit"
+        ]
+        self.assertTrue(exits)
+        self.assertTrue(all(len(node.branchArms) == 2 for node in exits))
+
+        helper = next(
+            node for node in self._method_nodes("nestedEmptyBranch")
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doHelper"
+        )
+        self.assertFalse(helper.branchArms)
+
+    def test_branch_at_method_end_has_local_exits_but_no_call_continuation(self):
+        group, = self._branch_groups("branchAtMethodEnd")
+        self.assertEqual({arm.terminus for arm in group.arms}, {"continues"})
+        self.assertEqual(
+            self._arm_call_names(group.id, "if")
+            | self._arm_call_names(group.id, "else"),
+            {"doX", "doInner"},
+        )
+        method_nodes = self._method_nodes("branchAtMethodEnd")
+        self.assertTrue(any(
+            node.type == "exit" and node.exitKind == "fallthrough"
+            for node in method_nodes
+        ))
+        self.assertFalse(any(
+            node.type == "call" and not node.branchArms
+            for node in method_nodes
+        ))
+
+    def test_consecutive_throw_guards_keep_the_second_guard_on_the_normal_path(self):
+        groups = sorted(
+            self._branch_groups("consecutiveThrowGuards"),
+            key=lambda group: group.line or -1,
+        )
+        self.assertEqual(len(groups), 2)
+        second_head = next(
+            arm.firstCallId
+            for arm in groups[1].arms
+            if arm.label == "if"
+        )
+        self.assertIsNotNone(second_head)
+        self.assertTrue(groups[1].branchPointIds)
+        self.assertTrue(all(
+            self.by_id[point].calleeFullName != "<operator>.throw"
+            for point in groups[1].branchPointIds
+        ), "a later guard must never be anchored on an earlier terminal throw")
+        self.assertTrue(
+            self._sequence_reachable_without_terminals(
+                "consecutiveThrowGuards", second_head,
+            ),
+            "the second guard must be reachable without traversing the first throw",
+        )
+
+    def test_consecutive_throw_guards_keep_the_common_continuation(self):
+        helper = next(
+            node for node in self._method_nodes("consecutiveThrowGuards")
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doHelper"
+        )
+        self.assertTrue(
+            self._sequence_reachable_without_terminals(
+                "consecutiveThrowGuards", helper.id,
+            )
+        )
+        method_ids = {
+            node.id for node in self._method_nodes("consecutiveThrowGuards")
+        }
+        terminal_ids = {
+            node_id for node_id in method_ids
+            if self.by_id[node_id].exitKind == "throw"
+            or (
+                self.by_id[node_id].type == "call"
+                and self.by_id[node_id].calleeFullName == "<operator>.throw"
+            )
+        }
+        self.assertFalse(any(
+            edge.type == "sequence"
+            and edge.source in terminal_ids
+            and edge.target == helper.id
+            for edge in self.graph.edges
+        ))
+
+    def test_unequal_distance_branch_keeps_each_path_nearest_call(self):
+        group, = self._branch_groups("unequalDistanceBranch")
+        self.assertEqual(self._arm_call_names(group.id, "if") & {"doX"}, {"doX"})
+        self.assertEqual(self._arm_call_names(group.id, "else") & {"doY"}, {"doY"})
+        for name in ("doX", "doY"):
+            node = next(
+                node for node in self._method_nodes("unequalDistanceBranch")
+                if node.type == "call"
+                and _simple_name(node.calleeFullName or "") == name
+            )
+            self.assertTrue(
+                self._sequence_reachable_without_terminals(
+                    "unequalDistanceBranch", node.id,
+                ),
+                f"the {name} arm was lost at a different CFG depth",
+            )
+
+    def test_throw_guard_keeps_assignment_only_normal_path_to_next_call(self):
+        helper = next(
+            node for node in self._method_nodes("normalPathAfterThrowGuard")
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doHelper"
+        )
+        self.assertTrue(
+            self._sequence_reachable_without_terminals(
+                "normalPathAfterThrowGuard", helper.id,
+            )
+        )
+
+    def test_consecutive_empty_throw_and_return_branches_survive_filtering(self):
+        method_name = "consecutiveEmptyTerminalBranches"
+        raw_groups = sorted(
+            self._branch_groups(method_name),
+            key=lambda group: group.line or -1,
+        )
+        self.assertEqual(len(raw_groups), 2)
+        first_throw = next(
+            arm for arm in raw_groups[0].arms if arm.terminus == "throw"
+        )
+        second_return = next(
+            arm for arm in raw_groups[1].arms if arm.terminus == "return"
+        )
+        self.assertFalse(any(
+            node.type == "call"
+            and not (node.calleeFullName or "").startswith("<operator>.")
+            for node in self._arm_nodes(raw_groups[0].id, first_throw.label)
+        ))
+        self.assertFalse(any(
+            node.type == "call"
+            for node in self._arm_nodes(raw_groups[1].id, second_return.label)
+        ))
+
+        filtered_groups = sorted(
+            (
+                group for group in self.filtered.branchGroups
+                if _simple_name(group.method or "") == method_name
+            ),
+            key=lambda group: group.line or -1,
+        )
+        self.assertEqual(len(filtered_groups), 2)
+        filtered_throw = next(
+            arm for arm in filtered_groups[0].arms if arm.terminus == "throw"
+        )
+        filtered_return = next(
+            arm for arm in filtered_groups[1].arms if arm.terminus == "return"
+        )
+        self.assertTrue(filtered_throw.empty)
+        self.assertIsNone(filtered_throw.firstCallId)
+        self.assertTrue(filtered_return.empty)
+        self.assertIsNone(filtered_return.firstCallId)
+        self.assertTrue(filtered_groups[1].branchPointIds)
+
+        definition = next(
+            method
+            for method in build_method_definitions(self.filtered).values()
+            if _simple_name(method.methodFullName) == method_name
+        )
+        routed = prepare_method_branch_routes(definition)
+        routed_groups = sorted(routed.branchGroups, key=lambda group: group.line or -1)
+        self.assertTrue(next(
+            arm for arm in routed_groups[0].arms if arm.terminus == "throw"
+        ).empty)
+        self.assertTrue(next(
+            arm for arm in routed_groups[1].arms if arm.terminus == "return"
+        ).empty)
+
+        requirements_by_target = {
+            edge.target: {
+                (requirement.groupId, requirement.armLabel)
+                for requirement in edge.branchRequirements
+            }
+            for edge in routed.sequenceEdges
+            if edge.source == routed.entryId
+        }
+        return_id = next(
+            node.id for node in routed.nodes if node.exitKind == "return"
+        )
+        helper_id = next(
+            node.id for node in routed.nodes
+            if _simple_name(node.calleeFullName or "") == "doHelper"
+        )
+        self.assertEqual(requirements_by_target[return_id], {
+            (routed_groups[0].id, "else"),
+            (routed_groups[1].id, "if"),
+        })
+        self.assertEqual(requirements_by_target[helper_id], {
+            (routed_groups[0].id, "else"),
+            (routed_groups[1].id, "else"),
+        })
+
+    def test_consecutive_empty_terminals_keep_only_the_normal_common_route(self):
+        method_name = "consecutiveEmptyTerminalBranches"
+        groups = sorted(
+            self._branch_groups(method_name),
+            key=lambda group: group.line or -1,
+        )
+        return_exit = next(
+            node for node in self._method_nodes(method_name)
+            if node.type == "exit"
+            and node.exitKind == "return"
+        )
+        helper = next(
+            node for node in self._method_nodes(method_name)
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doHelper"
+        )
+        self.assertTrue(
+            self._sequence_reachable_without_terminals(method_name, return_exit.id)
+        )
+        self.assertTrue(
+            self._sequence_reachable_without_terminals(method_name, helper.id)
+        )
+        throw_members = {
+            node.id for node in self._arm_nodes(groups[0].id, "if")
+            if node.exitKind == "throw"
+            or node.calleeFullName == "<operator>.throw"
+        }
+        self.assertFalse(any(
+            edge.type == "sequence"
+            and edge.source in throw_members
+            and edge.target in {return_exit.id, helper.id}
+            for edge in self.graph.edges
+        ))
+
+    def test_return_helper_flows_from_call_to_explicit_return(self):
+        pairs = self._method_sequence_pairs("returnHelper")
+        self.assertTrue(any(
+            _simple_name(source.calleeFullName or "") == "helper"
+            and target.type == "exit"
+            and target.exitKind == "return"
+            for source, target in pairs
+        ))
+
+    def test_conditional_return_keeps_both_call_arms_and_no_fallthrough(self):
+        nodes = self._method_nodes("returnConditional")
+        calls = {
+            _simple_name(node.calleeFullName or "")
+            for node in nodes if node.type == "call"
+        }
+        exits = [node for node in nodes if node.type == "exit"]
+        self.assertTrue({"helperA", "helperB"} <= calls)
+        self.assertTrue(exits)
+        self.assertEqual({node.exitKind for node in exits}, {"return"})
+
+    def test_nested_return_preserves_argument_before_wrapper_order(self):
+        pairs = self._method_sequence_pairs("returnWrapper")
+        readable = {
+            (
+                _simple_name(source.calleeFullName or "") if source.type == "call" else source.type,
+                _simple_name(target.calleeFullName or "") if target.type == "call" else target.exitKind,
+            )
+            for source, target in pairs
+        }
+        self.assertIn(("helper", "wrapper"), readable)
+        self.assertIn(("wrapper", "return"), readable)
+
+    def test_call_then_bare_return_has_no_fallthrough_exit(self):
+        pairs = self._method_sequence_pairs("helperThenReturn")
+        self.assertTrue(any(
+            _simple_name(source.calleeFullName or "") == "helper"
+            and target.type == "exit"
+            and target.exitKind == "return"
+            for source, target in pairs
+        ))
+        self.assertNotIn(
+            "fallthrough",
+            {node.exitKind for node in self._method_nodes("helperThenReturn")},
+        )
 
     def test_branch_arms_carry_path_level_exits_and_legacy_terminus(self):
         arms = [arm for group in self.graph.branchGroups for arm in group.arms]
@@ -181,10 +636,38 @@ class FullCfgPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
-        self.assertTrue(all(arm.empty for arm in group.arms))
+        self.assertTrue(all(
+            not self._arm_call_names(group.id, arm.label)
+            for arm in group.arms
+        ))
+        returning_arm = next(arm for arm in group.arms if arm.terminus == "return")
+        self.assertTrue(any(
+            node.type == "exit" and node.exitKind == "return"
+            for node in self._arm_nodes(group.id, returning_arm.label)
+        ))
         self.assertEqual(len(group.branchPointIds), 1)
         anchor = self.by_id[group.branchPointIds[0]]
         self.assertEqual(_simple_name(anchor.calleeFullName or ""), "doInner")
+
+        method_nodes = self._method_nodes("earlyReturn")
+        return_ids = {
+            node.id
+            for node in method_nodes
+            if node.type == "exit" and node.exitKind == "return"
+        }
+        subsequent_ids = {
+            node.id
+            for node in method_nodes
+            if node.type == "call"
+            and _simple_name(node.calleeFullName or "") == "doX"
+        }
+        self.assertTrue(return_ids)
+        self.assertFalse(any(
+            edge.type == "sequence"
+            and edge.source in return_ids
+            and edge.target in subsequent_ids
+            for edge in self.graph.edges
+        ))
 
     def test_zero_call_return_branch_anchors_on_its_condition_call(self):
         group = next(
@@ -193,7 +676,10 @@ class FullCfgPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
-        self.assertTrue(all(arm.empty for arm in group.arms))
+        self.assertTrue(all(
+            not self._arm_call_names(group.id, arm.label)
+            for arm in group.arms
+        ))
         self.assertEqual(len(group.branchPointIds), 1)
         anchor = self.by_id[group.branchPointIds[0]]
         self.assertEqual(_simple_name(anchor.calleeFullName or ""), "hasRole")
@@ -205,10 +691,57 @@ class FullCfgPipelineTests(unittest.TestCase):
         )
 
         self.assertEqual([arm.terminus for arm in group.arms], ["return", "continues"])
-        self.assertTrue(all(arm.empty for arm in group.arms))
+        self.assertTrue(all(
+            not self._arm_call_names(group.id, arm.label)
+            for arm in group.arms
+        ))
         self.assertEqual(len(group.branchPointIds), 1)
         anchor = self.by_id[group.branchPointIds[0]]
         self.assertEqual(_simple_name(anchor.calleeFullName or ""), "isOwner")
+        has_role = next(
+            node for node in self._method_nodes("shortCircuitCallConditionReturn")
+            if _simple_name(node.calleeFullName or "") == "hasRole"
+        )
+        is_owner = next(
+            node for node in self._method_nodes("shortCircuitCallConditionReturn")
+            if _simple_name(node.calleeFullName or "") == "isOwner"
+        )
+        self.assertTrue(any(
+            edge.type == "sequence"
+            and edge.source == has_role.id
+            and edge.target == is_owner.id
+            for edge in self.graph.edges
+        ), "the false short-circuit path must reach the second condition call")
+
+    def test_asymmetric_if_retains_the_first_call_from_each_arm(self):
+        group = next(
+            group for group in self.graph.branchGroups
+            if _simple_name(group.method or "") == "asymmetricBranch"
+        )
+        heads = {
+            arm.label: self.by_id[arm.firstCallId]
+            for arm in group.arms
+            if arm.firstCallId is not None
+        }
+
+        self.assertEqual(_simple_name(heads["if"].calleeFullName or ""), "doX")
+        self.assertEqual(_simple_name(heads["else"].calleeFullName or ""), "valueOf")
+        branch_edges = {
+            (edge.source, edge.target)
+            for edge in self.graph.edges
+            if edge.type == "sequence"
+        }
+        for point in group.branchPointIds:
+            self.assertIn((point, heads["if"].id), branch_edges)
+            self.assertIn((point, heads["else"].id), branch_edges)
+
+        root_id = next(
+            node.id for node in self.graph.nodes
+            if node.type == "entry" and _simple_name(node.calleeFullName or "") == "doA"
+        )
+        sliced = slice_from_root(self.graph, root_id)
+        sliced_ids = {node.id for node in sliced.nodes}
+        self.assertIn(heads["else"].id, sliced_ids)
 
     def test_doHelper_is_invoked_from_both_doA_and_doProcessTwo(self):
         helper_id = next(
@@ -220,7 +753,7 @@ class FullCfgPipelineTests(unittest.TestCase):
             for e in self.graph.edges
             if e.type == "invoke" and e.target == helper_id
         }
-        self.assertEqual(callers, {"doA", "doProcessTwo"})
+        self.assertTrue({"doA", "doProcessTwo"} <= callers)
 
     def test_lambda_is_linked_to_its_enclosing_flow(self):
         lambda_entry = next(

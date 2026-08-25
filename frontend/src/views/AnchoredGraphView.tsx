@@ -64,6 +64,7 @@ import {
 } from "../lib/displayHierarchy";
 import { BranchRegions, BranchSwitchers } from "../components/BranchOverlay";
 import { MONO } from "../lib/ui";
+import { EDGE_STYLES as EDGE_STYLE, NODE_STYLES, NODE_TYPES, type EdgeClass } from "../lib/nodeStyles";
 import {
   shortLabel,
   ownerClassOf,
@@ -75,12 +76,7 @@ import {
   type ProjectExplorerItem,
 } from "../lib/graph";
 
-const NODE_RADIUS: Record<NodeType, number> = { entry: 13, call: 10, leaf: 8 };
-const NODE_COLORS: Record<NodeType, { fill: string; stroke: string; label: string }> = {
-  entry: { fill: "var(--node-entry-fill)", stroke: "var(--node-entry-stroke)", label: "Entry" },
-  call: { fill: "var(--node-call-fill)", stroke: "var(--node-call-stroke)", label: "Call" },
-  leaf: { fill: "var(--node-leaf-fill)", stroke: "var(--node-leaf-stroke)", label: "External / leaf" },
-};
+const NODE_RADIUS = Object.fromEntries(NODE_TYPES.map((type) => [type, NODE_STYLES[type].radius])) as Record<NodeType, number>;
 const PHASE_COLORS = ["var(--phase-1)", "var(--phase-2)", "var(--phase-3)", "var(--phase-4)", "var(--phase-5)"];
 
 interface GraphViewData extends GraphVisualisation {
@@ -156,19 +152,6 @@ function getNodeIcon(type: NodeType) {
 // (measured: 34 of 34 return edges go to a shallower depth), and drawn as a
 // plain forward step it reads as an unexplained jump backwards. "data" is
 // not control flow at all and was also inheriting the sequence colour.
-type EdgeClass = "sequence" | "invoke" | "return" | "fallback";
-
-const EDGE_STYLE: Record<EdgeClass, { color: string; dash?: string; label: string }> = {
-  sequence: { color: "var(--edge-sequence)", label: "next statement" },
-  invoke: { color: "var(--edge-invoke)", dash: "4 3", label: "calls into" },
-  return: { color: "var(--edge-return)", dash: "6 3", label: "returns to caller" },
-  fallback: {
-    color: "var(--edge-fallback)",
-    dash: "2 3",
-    label: "inferred fallback return — the callee never reached this continuation directly",
-  },
-};
-
 // Callers must pass FLOW_EDGES, never GRAPH.edges: "data" has no class here.
 function classifyEdge(edge: FlowEdge): EdgeClass {
   if (edge.type === "invoke") return "invoke";
@@ -406,12 +389,6 @@ function sourceLocation(node: FlowNode): string | undefined {
   return file ? `${file}${node.line ? `:${node.line}` : ""}` : undefined;
 }
 
-const NODE_EXPLANATIONS: Record<NodeType, string> = {
-  entry: "Starts execution inside a method.",
-  call: "Invokes another operation from this method.",
-  leaf: "Ends at an external or unresolved operation.",
-};
-
 const EDGE_LEGEND_LABEL: Record<EdgeClass, string> = {
   sequence: "seq",
   invoke: "invoke",
@@ -420,7 +397,7 @@ const EDGE_LEGEND_LABEL: Record<EdgeClass, string> = {
 };
 
 function LegendNodeShape({ type }: { type: NodeType }) {
-  const colors = NODE_COLORS[type];
+  const colors = NODE_STYLES[type];
   return (
     <svg width="22" height="22" viewBox="0 0 22 22" style={{ flexShrink: 0 }} aria-hidden="true">
       {type === "entry" ? (
@@ -454,12 +431,12 @@ export function GraphLegend() {
         Node types
       </Text>
       <Flex direction="column" gap="2" mt="2">
-        {(Object.keys(NODE_COLORS) as NodeType[]).map((type) => (
+        {NODE_TYPES.map((type) => (
           <Flex key={type} align="center" gap="2">
             <LegendNodeShape type={type} />
             <Box>
-              <Text size="1" weight="bold" as="div">{NODE_COLORS[type].label}</Text>
-              <Text size="1" color="gray" as="div">{NODE_EXPLANATIONS[type]}</Text>
+              <Text size="1" weight="bold" as="div">{NODE_STYLES[type].label}</Text>
+              <Text size="1" color="gray" as="div">{NODE_STYLES[type].explanation}</Text>
             </Box>
           </Flex>
         ))}
@@ -504,10 +481,13 @@ export function GraphLegend() {
           </Box>
         </Flex>
         <Flex align="center" gap="2">
-          <RotateCcw size={16} color="var(--purple-9)" style={{ flexShrink: 0, margin: 3 }} />
+          <svg width="22" height="22" viewBox="0 0 22 22" style={{ flexShrink: 0 }} aria-hidden="true">
+            <circle cx="11" cy="11" r="7" fill={NODE_STYLES.call.fill} stroke={NODE_STYLES.call.stroke} />
+            <text x="11" y="14.5" textAnchor="middle" fontSize="12" fill={NODE_STYLES.call.stroke}>↻</text>
+          </svg>
           <Box>
-            <Text size="1" weight="bold" as="div">Recurse</Text>
-            <Text size="1" color="gray" as="div">Calls the current method recursively.</Text>
+            <Text size="1" weight="bold" as="div">Recursive cutoff</Text>
+            <Text size="1" color="gray" as="div">A call back into the active method.</Text>
           </Box>
         </Flex>
       </Flex>
@@ -1284,7 +1264,7 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
               {GRAPH.nodes.map((node) => {
                 const pos = positions.get(node.id);
                 if (!pos) return null;
-                const colors = NODE_COLORS[node.type];
+                const colors = NODE_STYLES[node.type];
                 const r = NODE_RADIUS[node.type];
                 const isSelected = node.id === selectedId;
                 const isHovered = node.id === hoveredId;

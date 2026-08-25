@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Flex, Text, Button } from "@radix-ui/themes";
-import { GitBranch, Info, Compass, Waypoints } from "lucide-react";
+import { GitBranch, Info, Compass, Waypoints, Workflow } from "lucide-react";
 
 import AnchoredGraphView, { GraphLegend } from "./views/AnchoredGraphView";
 import TopicDiscoveryView from "./views/TopicDiscoveryView";
+import FilteredGraphView from "./views/FilteredGraphView";
 
 // ── App shell ────────────────────────────────────────────────────────────
 // Header identifies the trace; the sub-header switches between the two
@@ -11,11 +12,12 @@ import TopicDiscoveryView from "./views/TopicDiscoveryView";
 // its own side panels and status bar -- they answer different questions and
 // share no canvas state.
 
-type View = "topics" | "anchored";
+type View = "topics" | "anchored" | "filtered";
 
 const VIEWS: { id: View; label: string; icon: typeof Compass; hint: string }[] = [
   { id: "topics", label: "Topic discovery", icon: Compass, hint: "what this trace is about" },
   { id: "anchored", label: "Anchored graph", icon: Waypoints, hint: "the flattened control flow" },
+  { id: "filtered", label: "Expandable graph", icon: Workflow, hint: "caller-local flow with attached method bodies" },
 ];
 
 function ViewTab({
@@ -133,13 +135,18 @@ export default function App() {
         </Flex>
       </Flex>
 
-      {/* Active view. Both are mounted-on-demand: the graph view holds pan,
-          zoom and arm selection, and remounting it resets those, so switch
-          away and back deliberately. */}
+      {/* Keep each view mounted while it is hidden so tab switches preserve
+          graph selection, expansion, scrolling and panel state. */}
       <Flex direction="column" flexGrow="1" style={{ minHeight: 0 }}>
-        {view === "anchored" ? (
+        <Flex direction="column" flexGrow="1" style={{ minHeight: 0, display: view === "topics" ? "flex" : "none" }}>
+          <TopicDiscoveryView />
+        </Flex>
+        <Flex direction="column" flexGrow="1" style={{ minHeight: 0, display: view === "anchored" ? "flex" : "none" }}>
           <AnchoredGraphView />
-        ) : <TopicDiscoveryView />}
+        </Flex>
+        <Flex direction="column" flexGrow="1" style={{ minHeight: 0, display: view === "filtered" ? "flex" : "none" }}>
+          <FilteredGraphView />
+        </Flex>
       </Flex>
     </Flex>
   );

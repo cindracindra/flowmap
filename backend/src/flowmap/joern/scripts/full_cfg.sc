@@ -122,25 +122,29 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     else method.typeDecl.filename.headOption.getOrElse(direct)
   }
 
-  // Return only the globally nearest call layer. Joern's repeat/until stops
-  // each CFG path independently, so a short-circuit path that bypasses an
-  // intermediate call can otherwise contribute much deeper calls as
-  // additional successors of the original source. Once any call is found at
-  // a BFS depth, no path is projected beyond that depth.
+  // Return the nearest call independently on every CFG path. Reaching a call
+  // stops only that path; sibling paths keep walking until they reach their
+  // own first call or terminate. A global "first BFS layer containing any
+  // call" loses the normal continuation whenever a shorter throw arm reaches
+  // a constructor before the surviving arm reaches its next condition/call.
   def nearestCalls(
     startPoints: List[CfgNode],
     next: CfgNode => List[CfgNode]
   ): List[Call] = {
     val seen = mutable.Set[Long]()
-    var layer = startPoints.distinctBy(_.id)
-    while (layer.nonEmpty) {
-      val fresh = layer.filterNot(node => seen.contains(node.id))
-      fresh.foreach(node => seen += node.id)
-      val calls = fresh.collect { case call: Call => call }.distinctBy(_.id)
-      if (calls.nonEmpty) return calls
-      layer = fresh.flatMap(next).distinctBy(_.id)
+    val found = mutable.LinkedHashMap[Long, Call]()
+    val pending = mutable.Queue.from(startPoints.distinctBy(_.id))
+    while (pending.nonEmpty) {
+      val node = pending.dequeue()
+      if (!seen.contains(node.id)) {
+        seen += node.id
+        node match {
+          case call: Call => found.getOrElseUpdate(call.id, call)
+          case _ => next(node).foreach(pending.enqueue(_))
+        }
+      }
     }
-    Nil
+    found.values.toList
   }
 
   // List all internal methods for purpose of resolving lambdas. 
@@ -350,21 +354,34 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       }
     }
 
-    // Identify branch point for this control structure. Priority is:
-    // 1. Last visible call inside the condition
-    // 2. Nearest preceding call(s) before the condition - for consecutive branch group
-    // 3. Method entry
+    // Keep the raw condition's physical CFG exit call for route edges,
+    // including operator calls. Operators are removed later by noise
+    // filtering, whose edge bridge projects the fork onto surviving calls.
+    // The group's public branchPointIds remain presentation-facing visible
+    // anchors, so condition operators do not leak into existing consumers.
+    val conditionExitCalls = head.condition.headOption.toList.flatMap { condition =>
+      val conditionNodes = condition.start.ast.l.collect { case node: CfgNode => node }
+      val conditionIds = conditionNodes.map(_.id).toSet
+      val boundaryCalls = conditionNodes.collect { case call: Call => call }
+        .filter(call => call.start.cfgNext.l.exists(next => !conditionIds.contains(next.id)))
+        .distinctBy(_.id)
+      if (boundaryCalls.nonEmpty) boundaryCalls
+      else condition.start.ast.isCall.l.lastOption.toList
+    }
+    val precedingCalls = head.condition.headOption.toList.flatMap(
+      condition => nearestCalls(condition.start.cfgPrev.l, _.start.cfgPrev.l)
+    ).filterNot(_.methodFullName == "<operator>.throw").distinctBy(_.id)
     val visibleConditionCalls = head.condition.headOption.toList.flatMap(
       condition => condition.start.ast.isCall.l
         .filterNot(_.methodFullName.startsWith("<operator>."))
     )
-    val precedingCalls = head.condition.headOption.toList.flatMap(
-      condition => nearestCalls(condition.start.cfgPrev.l, _.start.cfgPrev.l)
-    ).distinctBy(_.id)
     val branchPointIds =
       if (visibleConditionCalls.nonEmpty) List(s"c${visibleConditionCalls.last.id}")
       else if (precedingCalls.nonEmpty) precedingCalls.map(c => s"c${c.id}")
       else List(entryId)
+    val routePointIds =
+      if (conditionExitCalls.nonEmpty) conditionExitCalls.map(c => s"c${c.id}")
+      else branchPointIds
 
     branchGroups += ujson.Obj(
       "id" -> groupId, "kind" -> "IF",
@@ -380,7 +397,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       case (`groupId`, headId) => headId
     }.toList
     branchEntryEdges.filterInPlace(_._1 != groupId)
-    branchPointIds.foreach { pointId =>
+    routePointIds.foreach { pointId =>
       groupHeads.foreach(headId => branchEntryEdges += ((pointId, headId)))
     }
   }
@@ -492,6 +509,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val explicitReturns = method.ast.collectAll[Return].l
     val methodReturn = Option(method.methodReturn)
     val returnIds = explicitReturns.map(_.id).toSet
+    val fallthroughExitId = methodReturn.map(ret => s"f${ret.id}")
 
     explicitReturns.foreach { ret =>
       val exitId = s"r${ret.id}"
@@ -502,30 +520,28 @@ def buildFullCodebaseCfg(): ujson.Obj = {
         "code" -> ret.code, "line" -> ret.lineNumber.getOrElse(-1)
       ))
     }
-    methodReturn.foreach { ret =>
-      val exitId = s"f${ret.id}"
-      addNode(exitId, ujson.Obj(
-        "id" -> exitId, "type" -> "exit", "exitKind" -> "fallthrough",
-        "callerMethod" -> method.fullName,
-        "sourceFile" -> methodSourceFile(method),
-        "line" -> method.lineNumberEnd.getOrElse(method.lineNumber.getOrElse(-1))
-      ))
-    }
-
     // Starting immediately after an active node, find method exits reached
     // before another call.
     def directExitIds(startPoints: List[CfgNode]): List[String] = {
       val found = mutable.ArrayBuffer[String]()
       val seen = mutable.Set[Long]()
       var frontier = startPoints
+      if (frontier.isEmpty) fallthroughExitId.foreach(found += _)
       while (frontier.nonEmpty) {
         val node = frontier.head
         frontier = frontier.tail
         if (!seen.contains(node.id)) {
           seen += node.id
           if (returnIds.contains(node.id)) found += s"r${node.id}"
+          else if (node.isInstanceOf[Call] && node.asInstanceOf[Call].methodFullName == "<operator>.throw") {
+            found += s"t${node.id}"
+          }
           else if (methodReturn.exists(_.id == node.id)) found += s"f${node.id}"
-          else if (!node.isInstanceOf[Call]) frontier = frontier ++ node.start.cfgNext.l
+          else if (!node.isInstanceOf[Call]) {
+            val next = node.start.cfgNext.l
+            if (next.isEmpty) fallthroughExitId.foreach(found += _)
+            else frontier = frontier ++ next
+          }
         }
       }
       found.distinct.toList
@@ -590,9 +606,13 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     methodCalls.foreach { call =>
       val callId = s"c${call.id}"
 
-      // intra-method sequence: next call(s) after this one
-      nextCallsById(call.id).foreach { nc =>
-        edges += ujson.Obj("from" -> callId, "to" -> s"c${nc.id}", "type" -> "sequence")
+      // intra-method sequence: next call(s) after this one. A throw operator
+      // is terminal even if Joern's syntactic CFG exposes later statements;
+      // it owns only the structural throw-exit edge emitted below.
+      if (call.methodFullName != "<operator>.throw") {
+        nextCallsById(call.id).foreach { nc =>
+          edges += ujson.Obj("from" -> callId, "to" -> s"c${nc.id}", "type" -> "sequence")
+        }
       }
       if (call.methodFullName == "<operator>.throw") {
         val throwExitId = s"t${call.id}"
@@ -677,6 +697,26 @@ def buildFullCodebaseCfg(): ujson.Obj = {
           "to" -> s"m${implementation.id}",
           "type" -> "invoke"
         )
+      }
+    }
+
+    // Joern creates a synthetic METHOD_RETURN for every method. It represents
+    // a genuine fallthrough only when the projected CFG reaches it without
+    // first crossing an explicit return or throw. Add the presentation node
+    // only when directExitIds emitted an edge to that endpoint.
+    fallthroughExitId.foreach { exitId =>
+      val isUsed = edges.exists { edge =>
+        edge.obj.get("to").exists(_.str == exitId)
+      }
+      if (isUsed) {
+        methodReturn.foreach { ret =>
+          addNode(exitId, ujson.Obj(
+            "id" -> exitId, "type" -> "exit", "exitKind" -> "fallthrough",
+            "callerMethod" -> method.fullName,
+            "sourceFile" -> methodSourceFile(method),
+            "line" -> method.lineNumberEnd.getOrElse(method.lineNumber.getOrElse(-1))
+          ))
+        }
       }
     }
   }

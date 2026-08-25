@@ -1,6 +1,7 @@
 declare module "node:fs" {
   const fs: {
     readFileSync(path: string, encoding: "utf8"): string;
+    existsSync(path: string): boolean;
   };
   export default fs;
 }

@@ -13,17 +13,19 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# Pinned to __file__, not cwd -- works regardless of where the test
-# runner is invoked from. Repo root (not backend/src) is what's needed
-# here because backend/src/flowmap/service/cpg.py's own internal import
-# (`from backend.src.flowmap.joern.util import ...`) assumes the same.
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+# Pinned to __file__, not cwd -- works regardless of where the test runner is
+# invoked from. The backend currently mixes package-qualified imports
+# (`backend.src.flowmap...`) with flowmap-root imports (`domain...`,
+# `joern...`), so integration tests need both import roots until that backend
+# convention is unified.
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_FLOWMAP_SRC = _REPO_ROOT / "backend" / "src" / "flowmap"
+sys.path.insert(0, str(_REPO_ROOT))
+sys.path.insert(0, str(_FLOWMAP_SRC))
 
 from backend.src.flowmap.joern.joern_session import JoernSession  # noqa: E402
 from backend.src.flowmap.service.cpg import parse_project  # noqa: E402
 
-# test/integration/pipeline.py -> repo root is three .parent hops up.
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 SOURCE_DIR = _REPO_ROOT / "test_code" / "full_fixture"
 OUTPUT_DIR = Path(__file__).resolve().parent / "test_output"
 CPG_PATH = OUTPUT_DIR / "cpg.bin"

@@ -92,8 +92,27 @@ _PHASE_GATE_SYSTEM_PROMPT = (
 
 _LABEL_PHASE_SYSTEM_PROMPT = (
     "Name this already-grouped phase of a Java operation with a specific "
-    "2-4 word subprocess label. Describe what the operations collectively "
+    "2-6 word subprocess label. Describe what the operations collectively "
     "accomplish. Do not discuss or change phase membership. Return exactly "
-    "one line containing only the 2-4 word label: no sentence, explanation, "
-    "quotes, JSON, Markdown fence, or trailing punctuation."
+    "one line containing only the 2-6 word label: no sentence, explanation, "
+    "quotes, JSON, Markdown fence, or trailing punctuation. Ampersand (&), "
+    "slash (/), apostrophes, and hyphens are allowed within the label."
+)
+
+
+_LABEL_METHOD_PHASES_SYSTEM_PROMPT = (
+    "Label each already-grouped Java method-phase subject with a specific "
+    "2-6 word subprocess label. Each subject is an independent question. "
+    "Use every phaseEvidence item within that subject together; multiple "
+    "items mean the backend has determined that those method phases must "
+    "share one label. Treat operations, code, fields, domain types, and "
+    "method terms as the primary semantic evidence. Method identity provides "
+    "scope. phaseIndex and localPhaseCount provide weak ordering context only: "
+    "they may help distinguish setup, intermediate work, and finalization, "
+    "but must never override the operation evidence or invent unsupported "
+    "behaviour. Do not use unrelated subjects as evidence for one another. "
+    "Return one result for every subject ID as valid JSON exactly shaped as "
+    '{"labels":[{"id":"subject-id","label":"2-6 word label"}]}. '
+    "Labels may contain ampersand (&), slash (/), apostrophes, and hyphens. "
+    "Return no explanation, Markdown, or additional keys."
 )

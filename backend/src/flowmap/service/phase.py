@@ -9,11 +9,15 @@ from llm.client import LLMClient, LLMError
 from domain.phase_resolution import GateAnswer, GateQuestion
 from llm.prompt import _LABEL_PHASE_SYSTEM_PROMPT, _PHASE_GATE_SYSTEM_PROMPT
 from model import Graph
+from service.phase_label_format import normalise_phase_label, valid_phase_label
 
 
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-_LABEL_WORD = r"[^\W_]+(?:['’\-\u2010-\u2015][^\W_]+)*"
-_PHASE_LABEL_RE = re.compile(rf"^{_LABEL_WORD}(?: {_LABEL_WORD}){{1,7}}$")
+_LABEL_RETRY_SYSTEM_PROMPT = (
+    _LABEL_PHASE_SYSTEM_PROMPT
+    + " Your previous response was blank or invalid. Use 2-6 words and return "
+      "only the corrected label."
+)
 
 
 def _phase_label_issue(
@@ -45,6 +49,13 @@ def _node_evidence(graph: Graph, node_id: str) -> dict:
         "domainTypes": list(features.domainTypes) if features else [],
         "methodTerms": list(features.methodTerms) if features else [],
     }
+
+
+def _has_semantic_evidence(operation: dict) -> bool:
+    return any(operation.get(field) for field in (
+        "callee", "code", "receiver", "arguments", "inputs", "fieldsRead",
+        "fieldsWritten", "domainTypes", "methodTerms",
+    ))
 
 
 def _batch_gate_prompt(
@@ -150,29 +161,59 @@ def label_phase(
     phase_index: int,
 ) -> str | None:
     """Name one already-final phase without reconsidering its membership."""
-    payload = {
-        "phaseIndex": phase_index + 1,
-        "operations": [_node_evidence(graph, node_id) for node_id in node_ids],
-    }
-    try:
-        response = client.complete(
-            role="small",
-            system=_LABEL_PHASE_SYSTEM_PROMPT,
-            user=json.dumps(payload, ensure_ascii=False),
-            max_tokens=64,
-        ).strip()
-    except LLMError as exc:
-        _phase_label_issue(graph, phase_index, f"provider error: {exc}")
+    if not node_ids:
+        _phase_label_issue(graph, phase_index, "invalid input: phase has no members")
         return None
-    if not response:
-        _phase_label_issue(graph, phase_index, "blank response", response=response)
-        return None
-    if not _PHASE_LABEL_RE.fullmatch(response):
+    graph_node_ids = {node.id for node in graph.nodes}
+    missing_node_ids = [node_id for node_id in node_ids if node_id not in graph_node_ids]
+    operations = [_node_evidence(graph, node_id) for node_id in node_ids]
+    evidence_count = sum(_has_semantic_evidence(operation) for operation in operations)
+    if missing_node_ids:
         _phase_label_issue(
             graph,
             phase_index,
-            "invalid format (expected a single 2-8 word label)",
-            response=response,
+            f"missing graph nodes ({len(missing_node_ids)}/{len(node_ids)}): "
+            + ", ".join(missing_node_ids[:5]),
+        )
+    if evidence_count == 0:
+        _phase_label_issue(
+            graph,
+            phase_index,
+            f"invalid input: no semantic evidence for {len(node_ids)} members",
         )
         return None
-    return response
+    payload = {
+        "phaseIndex": phase_index + 1,
+        "operations": operations,
+    }
+    user_prompt = json.dumps(payload, ensure_ascii=False)
+    for attempt in range(2):
+        try:
+            raw_response = client.complete(
+                role="small",
+                system=(
+                    _LABEL_PHASE_SYSTEM_PROMPT
+                    if attempt == 0 else _LABEL_RETRY_SYSTEM_PROMPT
+                ),
+                user=user_prompt,
+                max_tokens=64,
+            )
+        except LLMError as exc:
+            _phase_label_issue(graph, phase_index, f"provider error: {exc}")
+            return None
+        response = normalise_phase_label(raw_response)
+        if response and valid_phase_label(response):
+            return response
+        issue = "blank response" if not response else "invalid format"
+        if attempt == 0:
+            _phase_label_issue(
+                graph, phase_index, f"{issue}; retrying once", response=response,
+            )
+            continue
+        _phase_label_issue(
+            graph,
+            phase_index,
+            f"{issue} after retry (expected a single 2-6 word label)",
+            response=response,
+        )
+    return None

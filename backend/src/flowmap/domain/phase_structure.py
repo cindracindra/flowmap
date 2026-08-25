@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import TypeAlias
 
 from domain.phase_exclusion import ExclusionReason
-from model import Graph
+from domain.method_scoping import build_method_definitions
+from model import Graph, MethodDefinition
 
 
 ArmPath = tuple[tuple[str, str], ...]
@@ -35,14 +36,6 @@ Structure: TypeAlias = LinearStructure | BranchStructure
 class MethodStructure:
     methodEntryId: str
     structures: tuple[Structure, ...]
-
-
-def _plain_sequence_edges(graph: Graph) -> list[tuple[str, str]]:
-    return [
-        (edge.source, edge.target)
-        for edge in graph.edges
-        if edge.type == "sequence" and edge.returnFrom is None
-    ]
 
 
 def _paths(
@@ -135,6 +128,7 @@ def _execution_order(
 def build_method_structures(
     graph: Graph,
     excluded: dict[str, ExclusionReason] | None = None,
+    method_definitions: dict[str, MethodDefinition] | None = None,
 ) -> dict[str, MethodStructure]:
     """Build a nested structure tree for every method containing calls.
 
@@ -143,38 +137,38 @@ def build_method_structures(
     edges and tags still preserve the shape and ordering of the filtered CFG.
     """
     excluded = excluded or {}
+    method_definitions = method_definitions or build_method_definitions(graph)
     rank = {node.id: index for index, node in enumerate(graph.nodes)}
-    entry_by_method = {
-        node.calleeFullName: node.id
-        for node in graph.nodes
-        if node.type == "entry" and node.calleeFullName is not None
-    }
 
     calls_by_entry: dict[str, set[str]] = defaultdict(set)
     paths_by_node: dict[str, ArmPath] = {}
     arm_labels: dict[tuple[str, ArmPath, str], set[str]] = defaultdict(set)
 
-    for node in graph.nodes:
-        if node.type != "call":
-            continue
-        entry_id = entry_by_method.get(node.callerMethod)
-        if entry_id is None:
-            continue
-        calls_by_entry[entry_id].add(node.id)
-        arm_path = tuple((tag.groupId, tag.armLabel) for tag in node.branchArms)
-        paths_by_node[node.id] = arm_path
-        prefix: ArmPath = ()
-        for group_id, arm_label in arm_path:
-            arm_labels[(entry_id, prefix, group_id)].add(arm_label)
-            prefix = (*prefix, (group_id, arm_label))
+    for entry_id, method in method_definitions.items():
+        for node in method.nodes:
+            if node.type != "call":
+                continue
+            calls_by_entry[entry_id].add(node.id)
+            arm_path = tuple((tag.groupId, tag.armLabel) for tag in node.branchArms)
+            paths_by_node[node.id] = arm_path
+            prefix: ArmPath = ()
+            for group_id, arm_label in arm_path:
+                arm_labels[(entry_id, prefix, group_id)].add(arm_label)
+                prefix = (*prefix, (group_id, arm_label))
 
     outgoing: dict[str, list[str]] = defaultdict(list)
     incoming: dict[str, list[str]] = defaultdict(list)
     call_ids = set(paths_by_node)
-    for source, target in _plain_sequence_edges(graph):
-        if source in call_ids and target in call_ids:
-            outgoing[source].append(target)
-            incoming[target].append(source)
+    for method in method_definitions.values():
+        for edge in method.sequenceEdges:
+            source, target = edge.source, edge.target
+            if (
+                edge.returnFrom is None
+                and source in call_ids
+                and target in call_ids
+            ):
+                outgoing[source].append(target)
+                incoming[target].append(source)
     for adjacency in (outgoing, incoming):
         for neighbours in adjacency.values():
             neighbours.sort(key=lambda node_id: rank[node_id])

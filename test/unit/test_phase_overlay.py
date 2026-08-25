@@ -154,12 +154,31 @@ def test_retained_call_site_is_unphased_and_callee_phases_are_spliced() -> None:
         },
     })
     analysis = analyse(graph)
+    labels = {
+        "main_entry": ["Prepare Transfer", "Send Notification"],
+        "helper_entry": ["Reserve Stock", "Take Payment"],
+    }
+    for entry_id, phase_labels in labels.items():
+        for index, (phase, label) in enumerate(
+            zip(analysis.methods[entry_id].phases, phase_labels), start=1
+        ):
+            phase.id = f"{entry_id}:phase:{index}"
+            phase.label = label
     flattened = flatten_cfg(graph)
 
     phases = overlay_phases(analysis, flattened)
 
     assert [_originals(flattened, phase.nodes) for phase in phases] == [
         ["pre"], ["first"], ["second"], ["after"]
+    ]
+    assert [phase.label for phase in phases] == [
+        "Prepare Transfer", "Reserve Stock", "Take Payment", "Send Notification"
+    ]
+    assert [phase.labelSourcePhaseId for phase in phases] == [
+        "main_entry:phase:1",
+        "helper_entry:phase:1",
+        "helper_entry:phase:2",
+        "main_entry:phase:2",
     ]
     assigned = {node_id for phase in phases for node_id in phase.nodes}
     retained_clone = next(
@@ -205,6 +224,12 @@ def test_lapsed_retention_overlays_single_phase_callee_into_caller() -> None:
         },
     )
     assert recheck_lapsed_retentions(analysis) == 1
+    caller_phase = analysis.methods["main_entry"].phases[0]
+    caller_phase.id = "main_entry:phase:1"
+    caller_phase.label = "Complete Order"
+    helper_phase = analysis.methods["helper_entry"].phases[0]
+    helper_phase.id = "helper_entry:phase:1"
+    helper_phase.label = "Helper Internals"
     flattened = flatten_cfg(graph)
 
     phases = overlay_phases(analysis, flattened)
@@ -212,6 +237,8 @@ def test_lapsed_retention_overlays_single_phase_callee_into_caller() -> None:
     assert [_originals(flattened, phase.nodes) for phase in phases] == [[
         "pre", "call_helper", "first", "second", "after"
     ]]
+    assert phases[0].label == "Complete Order"
+    assert phases[0].labelSourcePhaseId == "main_entry:phase:1"
 
 
 def test_excluded_call_suppresses_its_flattened_callee_instance() -> None:

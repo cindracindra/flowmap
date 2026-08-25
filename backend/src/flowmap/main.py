@@ -1,7 +1,6 @@
 import json
 import functools
 import argparse
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from dotenv import load_dotenv
@@ -27,14 +26,18 @@ from domain.topic_modelling import (
     extract_readme_documents,
 )
 from domain.cfg_slicing import filter_and_classify_roots_and_orphans, slice_from_root
-from domain.cfg_filtering import filter_noise_cfg
-from domain.opseq_orchestration import has_operation_body, prepare_operation_cfg
+from domain.cfg_flattening import flatten_cfg
+from domain.opseq_orchestration import has_operation_body
 from domain.phase_orchestration import analyse_codebase_phases, discover_phases
-from domain.phase_segmentation import Analysis
-from service.phase import label_phase, resolve_phase_gate_batch
+from domain.method_phase_label import label_method_analysis
+from domain.method_branch_routing import prepare_all_method_branch_routes
+from domain.method_scoping import build_method_definitions
+from service.phase import resolve_phase_gate_batch
+from service.method_phase_label import label_method_phases as label_method_phase_batch
 from domain.opseq_clustering import assign_operation_topics_batch
 from domain.display_hierarchy import build_display_hierarchy
 from model import Graph
+from presentation import build_graph_bundle, serialize_graph_bundle
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -43,16 +46,6 @@ with (PROJECT_ROOT / "flowmap.config.json").open() as config_file:
 
 SOURCE_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["sourceDir"]).resolve()
 OUTPUT_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["outputDir"]).resolve()
-
-
-@dataclass(frozen=True, slots=True)
-class OpseqVisualisation:
-    """All graph stages for one operation, ready for export or an API response."""
-
-    operation_cfg: Graph
-    filtered_cfg: Graph
-    flattened_cfg: Graph
-    phase_tree: dict
 
 
 def export_to_json(output_path: Path, content: Any) -> None:
@@ -117,110 +110,18 @@ def root_method_full_names(graph: Graph) -> dict[str, str]:
     return names
 
 
-def build_opseq_visualisation(
-    full_cfg: Graph,
-    root_id: str,
-    phase_analysis: Analysis,
-    *,
-    phase_labeler=None,
-) -> OpseqVisualisation:
-    """Build the graph and phase data consumed by one operation visualisation.
-
-    ``root_id`` is one classified opseq root. The frontend chooses among the
-    complete result set, so no separate backend anchor is generated.
-    """
-    cfg = prepare_operation_cfg(
-        full_cfg,
-        root_id,
-    )
-    operation_cfg = cfg.sliced
-    filtered_cfg = cfg.filtered
-    flattened_cfg = cfg.flattened
-    phase_tree = discover_phases(
-        phase_analysis,
-        flattened_cfg,
-        labeler=phase_labeler,
-    )
-    return OpseqVisualisation(
-        operation_cfg=operation_cfg,
-        filtered_cfg=filtered_cfg,
-        flattened_cfg=flattened_cfg,
-        phase_tree=phase_tree,
-    )
-
-
-def build_all_opseq_visualisations(
-    full_cfg: Graph, *, phase_gate_resolver=None, phase_labeler=None
-) -> dict[str, dict]:
-    """Precompute the frontend payload for every classified operation root."""
-    with timed("Whole-codebase phase analysis"):
-        phase_analysis = analyse_codebase_phases(
-            full_cfg, phase_gate_resolver
-        )
-    payloads: dict[str, dict] = {}
-    for root_id, method_full_name in root_method_full_names(full_cfg).items():
-        candidate = prepare_operation_cfg(full_cfg, root_id)
-        if not has_operation_body(candidate.filtered):
-            continue
-        visualisation = build_opseq_visualisation(
-            full_cfg,
-            root_id,
-            phase_analysis,
-            phase_labeler=phase_labeler,
-        )
-        payloads[root_id] = {
-            "rootMethodFullName": method_full_name,
-            "memberMethodFullNames": sorted({
-                node.calleeFullName
-                for node in visualisation.operation_cfg.nodes
-                if node.type == "entry" and node.calleeFullName is not None
-            }),
-            "graph": visualisation.flattened_cfg.to_dict(),
-            "displayHierarchy": build_display_hierarchy(visualisation.flattened_cfg),
-            "phaseTree": visualisation.phase_tree,
-        }
-    return payloads
-
-
-def export_cfg_visualisations(
-    full_cfg: Graph,
-    output_dir: Path,
-    *,
-    phase_gate_resolver=None,
-    phase_labeler=None,
-) -> None:
-    """Export the whole CFG and complete operation-visualisation collection."""
-    full_cfg = filter_and_classify_roots_and_orphans(full_cfg)
-    export_to_json(output_dir / "full_cfg.json", full_cfg.to_dict())
-    export_to_json(
-        output_dir / "opseq_visualisations.json",
-        build_all_opseq_visualisations(
-            full_cfg,
-            phase_gate_resolver=phase_gate_resolver,
-            phase_labeler=phase_labeler,
-        ),
-    )
-
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate FlowMap analysis artifacts.")
-    parser.add_argument(
-        "--mode",
-        choices=("cfg", "topics", "all"),
-        default="all",
-        help=(
-            "cfg generates CFGs and resolves/labels phases; topics generates "
-            "topic/opseq labels; all runs both."
-        ),
-    )
     parser.add_argument(
         "--provider",
         choices=PROVIDERS,
         default="groq",
-        help=(
-            "LLM provider for every model call in this run. groq reads "
-            "GROQ_API_KEY; together reads TOGETHERAI_API_KEY."
-        ),
+        help="LLM provider used for all model calls (default: groq).",
+    )
+    parser.add_argument(
+        "--force-cpg",
+        action="store_true",
+        help="Re-extract cpg.bin even when a cached artifact already exists.",
     )
     return parser.parse_args()
 
@@ -240,115 +141,161 @@ def timed(label: str):
 if __name__ == "__main__":
     load_dotenv()
     args = parse_args()
+    client = get_client(args.provider)
 
-    with timed("CPG parsing"):
+    # 1. Reuse the cached CPG unless the caller explicitly invalidates it.
+    with timed("CPG preparation"):
         cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
-        if not cpg_output_path.exists():
+        if args.force_cpg or not cpg_output_path.exists():
             parse_project(SOURCE_DIR, cpg_output_path)
 
+    # 2–4. Joern is needed only for document and raw CFG extraction.
     session = JoernSession(port=8080)
-    
-    with timed("Joern session and CPG loading"):
+    with timed("Joern extraction"):
         try:
             session.start()
             session.load_cpg(cpg_output_path)
-            if args.mode in ("topics", "all"):
-                class_docs, method_docs = extract_class_and_method_documents(session)
-            full_cfg = extract_full_cfg(session, SOURCE_DIR)
+            class_docs, method_docs = extract_class_and_method_documents(session)
+            raw_cfg = extract_full_cfg(session, SOURCE_DIR)
         finally:
             session.stop()
 
-    if args.mode in ("topics", "all"):
-        # MODE 1 TOPIC CLUSTERING
-        with timed("Topic clustering"):
-            client = get_client(args.provider)
-            readme_docs = extract_readme_documents(SOURCE_DIR, class_docs)
-            class_by_full_name = {c.fullName: c for c in class_docs}
-
-            label_fn = functools.partial(
+    # 5. Topics describe the codebase documents and do not depend on CFG slices.
+    with timed("Topic clustering"):
+        readme_docs = extract_readme_documents(SOURCE_DIR, class_docs)
+        class_by_full_name = {document.fullName: document for document in class_docs}
+        topic_discovery = discover_topics_with_centroids(
+            class_docs,
+            readme_docs,
+            label_fn=functools.partial(
                 label_cluster, client, class_by_full_name=class_by_full_name
-            )
-            whole_corpus_fn = functools.partial(discover_topics_whole_corpus, client)
+            ),
+            whole_corpus_fn=functools.partial(discover_topics_whole_corpus, client),
+        )
+        topic_clusters = topic_discovery.clusters
 
-            topic_discovery = discover_topics_with_centroids(
-                class_docs, readme_docs,
-                label_fn=label_fn,
-                whole_corpus_fn=whole_corpus_fn,
-            )
-            topic_clusters = topic_discovery.clusters
+    # 6. This is the one authoritative whole-codebase filtering pass.
+    with timed("Whole-codebase CFG filtering and root classification"):
+        filtered_cfg = filter_and_classify_roots_and_orphans(raw_cfg)
 
-        # OPSEQ TOPIC ASSIGNMENT & LABELING
-        with timed("Opseq topic assignment & labeling"):
-            classify_fn = functools.partial(classify_operation, client) # assign opseq to a cluster
-            opseq_label_fn = functools.partial(label_opseq, client) # label opseq with a human-readable phrase
+    # 7. Build reusable method topology once for graph-bundle export.
+    with timed("Method definition construction"):
+        methods_by_entry_id = prepare_all_method_branch_routes(
+            build_method_definitions(filtered_cfg)
+        )
 
-            formed_by_llm = not any(cluster.statistical_terms for cluster in topic_clusters)
-            clusters_by_label = {cluster.label: cluster for cluster in topic_clusters}
+    # 8–9. Method analysis and method labelling are independent operations.
+    with timed("Method-level phase analysis"):
+        phase_gate_resolver = functools.partial(resolve_phase_gate_batch, client)
+        phase_analysis = analyse_codebase_phases(
+            filtered_cfg,
+            phase_gate_resolver,
+            methods_by_entry_id,
+        )
 
-            full_cfg = filter_and_classify_roots_and_orphans(full_cfg)
-            all_root_methods = root_method_full_names(full_cfg)
+    with timed("Method-level phase labelling"):
+        method_phase_labeler = functools.partial(label_method_phase_batch, client)
+        label_method_analysis(phase_analysis, method_phase_labeler)
 
-            opseqs = {}
-            for root_id in full_cfg.roots:
-                opseq = filter_noise_cfg(slice_from_root(full_cfg, root_id))
-                if has_operation_body(opseq):
-                    opseqs[root_id] = opseq
-            root_methods = {
-                root_id: all_root_methods[root_id]
-                for root_id in opseqs
-            }
-            opseq_topic_assignment = assign_operation_topics_batch(
-                opseqs,
-                topic_clusters,
-                method_docs,
-                topic_discovery.centroids,
-                formed_by_llm=formed_by_llm,
-                classify_fn=classify_fn,
-            )
-            opseq_labels = {}
-            for root_id, opseq in opseqs.items():
-                topic_assignment = opseq_topic_assignment[root_id]
-                assigned_cluster = (
-                    clusters_by_label.get(topic_assignment[0].label) if topic_assignment else None
+    # 10. A final classified root must produce an executable operation slice.
+    # Slicing the already-filtered graph must not run noise filtering again.
+    with timed("Operation sequence discovery"):
+        root_methods = root_method_full_names(filtered_cfg)
+        opseqs: dict[str, Graph] = {}
+        for root_id in filtered_cfg.roots:
+            opseq = slice_from_root(filtered_cfg, root_id)
+            if not has_operation_body(opseq):
+                raise ValueError(
+                    f"classified root {root_id!r} has no executable operation body"
                 )
-                try:
-                    opseq_labels[root_id] = opseq_label_fn(opseq, assigned_cluster, method_docs)
-                except RuntimeError as exc:
-                    print(f"label_opseq failed for {root_id!r}: {exc!r}")
-                    opseq_labels[root_id] = None
+            opseqs[root_id] = opseq
 
-        with timed("Outputting topic results"):
-            topic_cluster_path = Path(OUTPUT_DIR) / "topic_cluster.json"
-            export_to_json(topic_cluster_path, [topic.to_dict() for topic in topic_clusters])
-            
-            opseq_topic_assignment_path = Path(OUTPUT_DIR) / "opseq_topic_assignment.json"
-            export_to_json(
-                opseq_topic_assignment_path,
-                {
-                    root_id: [assignment.to_dict() for assignment in assignments]
-                    for root_id, assignments in opseq_topic_assignment.items()
-                },
+    # 11–12. Assign every operation to topics and generate its display name.
+    with timed("Operation topic assignment and naming"):
+        formed_by_llm = not any(
+            cluster.statistical_terms for cluster in topic_clusters
+        )
+        opseq_topic_assignment = assign_operation_topics_batch(
+            opseqs,
+            topic_clusters,
+            method_docs,
+            topic_discovery.centroids,
+            formed_by_llm=formed_by_llm,
+            classify_fn=functools.partial(classify_operation, client),
+        )
+        clusters_by_label = {cluster.label: cluster for cluster in topic_clusters}
+        opseq_labeler = functools.partial(label_opseq, client)
+        opseq_labels: dict[str, str | None] = {}
+        for root_id, opseq in opseqs.items():
+            assignments = opseq_topic_assignment[root_id]
+            assigned_cluster = (
+                clusters_by_label.get(assignments[0].label)
+                if assignments else None
             )
-            
-            opseq_labels_path = Path(OUTPUT_DIR) / "opseq_labels.json"
-            export_to_json(opseq_labels_path, opseq_labels)
+            try:
+                opseq_labels[root_id] = opseq_labeler(
+                    opseq, assigned_cluster, method_docs
+                )
+            except RuntimeError as exc:
+                print(f"label_opseq failed for {root_id!r}: {exc!r}")
+                opseq_labels[root_id] = None
 
-            topic_operations_path = Path(OUTPUT_DIR) / "topic_operations.json"
-            export_to_json(
-                topic_operations_path,
-                combine_topic_operations(opseq_topic_assignment, opseq_labels, root_methods),
-            )
+    # 13–15. Flatten each filtered slice and deterministically propagate the
+    # precomputed method-phase labels through the overlay. Non-retained
+    # callees inherit their enclosing phase; retained callees remain separate.
+    with timed("Operation flattening and deterministic phase overlay"):
+        opseq_visualisations: dict[str, dict] = {}
+        for root_id, opseq in opseqs.items():
+            flattened_cfg = flatten_cfg(opseq)
+            phase_tree = discover_phases(phase_analysis, flattened_cfg)
+            opseq_visualisations[root_id] = {
+                "rootMethodFullName": root_methods[root_id],
+                "memberMethodFullNames": sorted({
+                    node.calleeFullName
+                    for node in opseq.nodes
+                    if node.type == "entry" and node.calleeFullName is not None
+                }),
+                "graph": flattened_cfg.to_dict(),
+                "displayHierarchy": build_display_hierarchy(flattened_cfg),
+                "phaseTree": phase_tree,
+            }
 
-    if args.mode in ("cfg", "all"):
-        with timed("CFG visualisation export"):
-            phase_client = client if args.mode == "all" else get_client(args.provider)
-            phase_gate_resolver = functools.partial(
-                resolve_phase_gate_batch, phase_client
-            )
-            phase_labeler = functools.partial(label_phase, phase_client)
-            export_cfg_visualisations(
-                full_cfg,
-                OUTPUT_DIR,
-                phase_gate_resolver=phase_gate_resolver,
-                phase_labeler=phase_labeler,
-            )
+    # 16. Build and export every artifact only after all analysis is complete.
+    with timed("Artifact construction and export"):
+        graph_bundle = build_graph_bundle(
+            filtered_cfg,
+            phase_analysis,
+            methods_by_entry_id,
+        )
+        export_to_json(Path(OUTPUT_DIR) / "raw_cfg.json", raw_cfg.to_dict())
+        # Keep full_cfg.json as the established frontend-compatible name for
+        # the authoritative filtered whole-codebase graph.
+        export_to_json(Path(OUTPUT_DIR) / "full_cfg.json", filtered_cfg.to_dict())
+        export_to_json(
+            Path(OUTPUT_DIR) / "graph_bundle.json",
+            serialize_graph_bundle(graph_bundle),
+        )
+        export_to_json(
+            Path(OUTPUT_DIR) / "opseq_visualisations.json",
+            opseq_visualisations,
+        )
+        export_to_json(
+            Path(OUTPUT_DIR) / "topic_cluster.json",
+            [topic.to_dict() for topic in topic_clusters],
+        )
+        export_to_json(
+            Path(OUTPUT_DIR) / "opseq_topic_assignment.json",
+            {
+                root_id: [assignment.to_dict() for assignment in assignments]
+                for root_id, assignments in opseq_topic_assignment.items()
+            },
+        )
+        export_to_json(Path(OUTPUT_DIR) / "opseq_labels.json", opseq_labels)
+        export_to_json(
+            Path(OUTPUT_DIR) / "topic_operations.json",
+            combine_topic_operations(
+                opseq_topic_assignment,
+                opseq_labels,
+                root_methods,
+            ),
+        )

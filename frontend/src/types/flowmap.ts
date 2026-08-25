@@ -1,6 +1,8 @@
 // Mirrors backend/src/flowmap/model/{node,edge,graph,phase,branch}.py field-for-field.
 
-export type NodeType = "entry" | "call" | "leaf";
+export type NodeType = "entry" | "call" | "leaf" | "exit";
+
+export type MethodExitKind = "return" | "throw" | "fallthrough";
 
 // Matches full_cfg.sc's classifyTerminus / model/node.py's Terminus.
 // "throw" is the only value that's a proven non-return -- it's the sole
@@ -26,6 +28,9 @@ export interface FlowNode {
   // walk found no further call. See Terminus's comment for why only
   // "throw" should be treated as a hard stop in the UI.
   terminus?: Terminus;
+  // Filtered graph only: structural method-local completion marker. The
+  // flattened graph consumes these nodes while resolving caller resumes.
+  exitKind?: MethodExitKind;
   // call only, extraction stage: every (group, arm) this call belongs to,
   // set on EVERY call inside a branch arm, not just its first. A node's
   // membership is always a direct fact here, never something to infer
@@ -236,6 +241,7 @@ export interface Phase {
   nodes: string[];
   id?: string;
   label?: string;
+  labelSourcePhaseId?: string;
   structuralAnchors?: string[];
   opened_by: Transition | null;
   transitions: Transition[];

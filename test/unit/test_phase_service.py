@@ -123,14 +123,46 @@ def test_final_phase_label_reads_evidence_from_flattened_clone_ids() -> None:
     assert payload["operations"][0]["methodTerms"] == ["reserve", "stock"]
 
 
-def test_final_phase_label_accepts_up_to_eight_words() -> None:
+def test_final_phase_label_accepts_up_to_six_words() -> None:
     graph, _ = _uncertain_subject()
     client = MagicMock()
-    client.complete.return_value = "Update Cart Item Quantity And Recalculate Total Value"
+    client.complete.return_value = "Update Cart Quantity And Recalculate Total"
 
     assert label_phase(client, graph, ("reserve",), 0) == (
-        "Update Cart Item Quantity And Recalculate Total Value"
+        "Update Cart Quantity And Recalculate Total"
     )
+
+
+def test_final_phase_label_accepts_connectors_and_wrapping_quotes() -> None:
+    graph, _ = _uncertain_subject()
+    client = MagicMock()
+    client.complete.return_value = '"Load & Validate Stock"'
+
+    assert label_phase(client, graph, ("reserve",), 0) == "Load & Validate Stock"
+
+
+def test_final_phase_label_retries_blank_response_once() -> None:
+    graph, _ = _uncertain_subject()
+    client = MagicMock()
+    client.complete.side_effect = ["", "Stock Reservation"]
+
+    assert label_phase(client, graph, ("reserve",), 0) == "Stock Reservation"
+    assert client.complete.call_count == 2
+    assert "previous response was blank or invalid" in (
+        client.complete.call_args.kwargs["system"].lower()
+    )
+
+
+def test_final_phase_label_rejects_empty_or_unresolved_evidence(capsys) -> None:
+    graph = Graph.from_dict({"nodes": [], "edges": []})
+    client = MagicMock()
+
+    assert label_phase(client, graph, (), 0) is None
+    assert label_phase(client, graph, ("missing",), 1) is None
+    client.complete.assert_not_called()
+    error = capsys.readouterr().err
+    assert "phase has no members" in error
+    assert "no semantic evidence" in error
 
 
 def test_final_phase_label_rejects_and_reports_wrong_format(capsys) -> None:

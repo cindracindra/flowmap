@@ -1,4 +1,4 @@
 {
-  "sourceDir": "../project_a/src/main",
-  "outputDir": "../generated/project_a/output"
+  "sourceDir": "../test_code/java_project/java_project/src/main",
+  "outputDir": "../test_code/java_project/output"
 }

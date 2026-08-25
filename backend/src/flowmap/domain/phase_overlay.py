@@ -189,7 +189,11 @@ def overlay_phases(analysis: Analysis, flattened: Graph) -> list[Phase]:
             else:
                 phase = instance_phases.get(phase_index)
                 if phase is None:
-                    phase = Phase()
+                    source_phase = method.phases[phase_index]
+                    phase = Phase(
+                        label=source_phase.label,
+                        labelSourcePhaseId=source_phase.id,
+                    )
                     instance_phases[phase_index] = phase
                     output.append(phase)
 
@@ -204,7 +208,7 @@ def overlay_phases(analysis: Analysis, flattened: Graph) -> list[Phase]:
 
 
 def phase_tree_dict(flattened: Graph, phases: list[Phase]) -> dict:
-    """Serialize already-overlaid and optionally labelled phases."""
+    """Serialize phases labelled deterministically during overlay."""
     return {
         "entryPoint": flattened.entryPoint or "",
         "phases": [phase.to_dict() for phase in phases],
@@ -212,5 +216,5 @@ def phase_tree_dict(flattened: Graph, phases: list[Phase]) -> dict:
 
 
 def overlay_phase_tree(analysis: Analysis, flattened: Graph) -> dict:
-    """Return an unlabelled frontend phase tree for one trace."""
+    """Return a frontend phase tree using method-phase labels."""
     return phase_tree_dict(flattened, overlay_phases(analysis, flattened))

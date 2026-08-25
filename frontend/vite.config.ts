@@ -21,12 +21,17 @@ function flowmapData(): Plugin {
     load(id) {
       if (id !== resolvedId) return undefined
       const jsonImport = (name: string) => JSON.stringify(path.join(outputDir, `${name}.json`))
+      const graphBundlePath = path.join(outputDir, 'graph_bundle.json')
+      const graphBundleExport = fs.existsSync(graphBundlePath)
+        ? `export { default as graphBundleRaw } from ${JSON.stringify(graphBundlePath)};`
+        : 'export const graphBundleRaw = { methodsByEntryId: {}, operationsById: {}, callersByEntryId: {}, operationIdsByMethodEntryId: {} };'
       return [
         `export const classFilesRaw = ${JSON.stringify(config.classFiles ?? {})};`,
         `export { default as fullGraphRaw } from ${jsonImport('full_cfg')};`,
         `export { default as topicClusterRaw } from ${jsonImport('topic_cluster')};`,
         `export { default as topicOperationsRaw } from ${jsonImport('topic_operations')};`,
         `export { default as opseqVisualisationsRaw } from ${jsonImport('opseq_visualisations')};`,
+        graphBundleExport,
       ].join('\n')
     },
   }

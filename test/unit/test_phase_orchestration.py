@@ -62,7 +62,7 @@ def _originals(flattened: Graph, node_ids: list[str]) -> list[str]:
     return [nodes[node_id].origId or nodes[node_id].id for node_id in node_ids]
 
 
-def test_orchestration_resolves_before_overlay_and_labelling() -> None:
+def test_orchestration_resolves_before_deterministic_label_overlay() -> None:
     events = []
 
     def resolve(_graph, questions):
@@ -76,14 +76,15 @@ def test_orchestration_resolves_before_overlay_and_labelling() -> None:
             for question in questions
         }
 
-    def label(_graph, node_ids, index):
-        events.append(("label", node_ids, index))
-        return "Order Preparation" if index == 0 else "Customer Notification"
-
     graph = _graph()
     analysis = analyse_codebase_phases(graph, resolve)
+    method_phases = analysis.methods["entry"].phases
+    method_phases[0].id = "entry:phase:1"
+    method_phases[0].label = "Order Preparation"
+    method_phases[1].id = "entry:phase:2"
+    method_phases[1].label = "Customer Notification"
     flattened = flatten_cfg(graph)
-    result = discover_phases(analysis, flattened, label)
+    result = discover_phases(analysis, flattened)
 
     assert [
         _originals(flattened, phase["nodes"])
@@ -92,7 +93,10 @@ def test_orchestration_resolves_before_overlay_and_labelling() -> None:
     assert [phase["label"] for phase in result["phases"]] == [
         "Order Preparation", "Customer Notification"
     ]
-    assert [event[0] for event in events] == ["gate", "label", "label"]
+    assert [phase["labelSourcePhaseId"] for phase in result["phases"]] == [
+        "entry:phase:1", "entry:phase:2"
+    ]
+    assert [event[0] for event in events] == ["gate"]
 
 
 def test_unanswered_llm_gate_remains_a_fallback_split_and_is_exported() -> None:

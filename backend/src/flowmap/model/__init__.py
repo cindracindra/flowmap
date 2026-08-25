@@ -13,6 +13,7 @@ from .class_document import ClassDocument
 from .edge import Edge, EdgeType
 from .graph import Graph
 from .loop import LoopGroup, LoopKind
+from .method_definition import MethodDefinition
 from .method_document import MethodDocument
 from .node import MethodExitKind, Node, NodeType, Terminus
 from .phase import (
@@ -32,6 +33,7 @@ __all__ = [
     "NodeType",
     "Terminus",
     "MethodExitKind",
+    "MethodDefinition",
     "Edge",
     "EdgeType",
     "Graph",

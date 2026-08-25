@@ -28,6 +28,21 @@ public class OperationalChains {
         earlyReturn(true);
         callConditionReturn();
         shortCircuitCallConditionReturn();
+        asymmetricBranch(true);
+        returnHelper();
+        returnConditional(true);
+        returnWrapper();
+        helperThenReturn();
+        branchWithCalls(true);
+        emptyContinuingArm(true);
+        emptyReturnArm(true);
+        emptyThrowArm(true, null);
+        nestedEmptyBranch(true, true);
+        branchAtMethodEnd(true);
+        consecutiveThrowGuards(false, false);
+        unequalDistanceBranch(false);
+        normalPathAfterThrowGuard(false);
+        consecutiveEmptyTerminalBranches(false, false, new RuntimeException("failure"));
         List.of("lambda").forEach(value -> doInner());
     }
 
@@ -61,6 +76,142 @@ public class OperationalChains {
 
     private boolean isOwner() {
         return true;
+    }
+
+    private void asymmetricBranch(boolean existing) {
+        if (existing) {
+            doX();
+        } else {
+            String value = String.valueOf(existing);
+            value.trim();
+            doY();
+        }
+    }
+
+    private int returnHelper() {
+        return helper();
+    }
+
+    private int returnConditional(boolean condition) {
+        return condition ? helperA() : helperB();
+    }
+
+    private int returnWrapper() {
+        return wrapper(helper());
+    }
+
+    private void helperThenReturn() {
+        helper();
+        return;
+    }
+
+    private int helper() {
+        return 1;
+    }
+
+    private int helperA() {
+        return 2;
+    }
+
+    private int helperB() {
+        return 3;
+    }
+
+    private int wrapper(int value) {
+        return value;
+    }
+
+    private void branchWithCalls(boolean condition) {
+        if (condition) {
+            doX();
+        } else {
+            doInner();
+        }
+        doHelper();
+    }
+
+    private void emptyContinuingArm(boolean condition) {
+        if (condition) {
+            doX();
+        }
+        doHelper();
+    }
+
+    private void emptyReturnArm(boolean condition) {
+        doInner();
+        if (condition) {
+            return;
+        }
+        doHelper();
+    }
+
+    private void emptyThrowArm(boolean condition, RuntimeException failure) {
+        doInner();
+        if (condition) {
+            throw failure;
+        }
+        doHelper();
+    }
+
+    private void nestedEmptyBranch(boolean outer, boolean inner) {
+        if (outer) {
+            if (inner) {
+                return;
+            }
+            doX();
+        }
+        doHelper();
+    }
+
+    private void branchAtMethodEnd(boolean condition) {
+        if (condition) {
+            doX();
+        } else {
+            doInner();
+        }
+    }
+
+    private void consecutiveThrowGuards(boolean first, boolean second) {
+        if (first) {
+            throw new IllegalArgumentException("first guard");
+        }
+        if (second) {
+            throw new IllegalStateException("second guard");
+        }
+        doHelper();
+    }
+
+    private void unequalDistanceBranch(boolean condition) {
+        if (condition) {
+            doX();
+        } else {
+            int value = 1;
+            value += 2;
+            doY();
+        }
+        doHelper();
+    }
+
+    private void normalPathAfterThrowGuard(boolean rejected) {
+        if (rejected) {
+            throw new IllegalArgumentException("rejected");
+        }
+        int value = 1;
+        value += 2;
+        doHelper();
+    }
+
+    private void consecutiveEmptyTerminalBranches(
+            boolean first,
+            boolean second,
+            RuntimeException failure) {
+        if (first) {
+            throw failure;
+        }
+        if (second) {
+            return;
+        }
+        doHelper();
     }
 
     public void doProcessTwo() {
