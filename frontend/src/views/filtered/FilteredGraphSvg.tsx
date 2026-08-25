@@ -15,7 +15,7 @@ import type {
   VisibleNode,
 } from "../../lib/filteredGraphProjection";
 import { visibleNodeLoops } from "../../lib/filteredGraphLoops";
-import { EDGE_STYLES, nodeVisualStyle } from "../../lib/nodeStyles";
+import { EDGE_ARROW_SIZE, EDGE_STYLES, nodeVisualStyle } from "../../lib/nodeStyles";
 import { MONO } from "../../lib/ui";
 import type { GraphBundle } from "../../types/filteredGraph";
 
@@ -47,11 +47,11 @@ function FilteredGraphSvgComponent({
   return (
     <svg width={width} height={height} role="img" aria-label="Expandable filtered control flow">
       <defs>
-        <marker id={sequenceMarkerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M 0 0 L 8 4 L 0 8 z" fill={EDGE_STYLES.sequence.color} />
+        <marker id={sequenceMarkerId} markerWidth={EDGE_ARROW_SIZE} markerHeight={EDGE_ARROW_SIZE} refX={EDGE_ARROW_SIZE - 1} refY={EDGE_ARROW_SIZE / 2} orient="auto">
+          <path d={`M 0 0 L ${EDGE_ARROW_SIZE} ${EDGE_ARROW_SIZE / 2} L 0 ${EDGE_ARROW_SIZE} z`} fill={EDGE_STYLES.sequence.color} />
         </marker>
-        <marker id={invokeMarkerId} markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M 0 0 L 8 4 L 0 8 z" fill={EDGE_STYLES.invoke.color} />
+        <marker id={invokeMarkerId} markerWidth={EDGE_ARROW_SIZE} markerHeight={EDGE_ARROW_SIZE} refX={EDGE_ARROW_SIZE - 1} refY={EDGE_ARROW_SIZE / 2} orient="auto">
+          <path d={`M 0 0 L ${EDGE_ARROW_SIZE} ${EDGE_ARROW_SIZE / 2} L 0 ${EDGE_ARROW_SIZE} z`} fill={EDGE_STYLES.invoke.color} />
         </marker>
       </defs>
       {branches.map(({ group, x, y, width: branchWidth, height: branchHeight }) => {

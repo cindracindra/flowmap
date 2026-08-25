@@ -79,13 +79,9 @@ export default function FilteredGraphDetails({ node, bundle, onCollapse }: Filte
               </Box>)}
             </Flex>
           </Box>}
-          <Flex gap="1" wrap="wrap">
-            {node.recursiveCutoff && <Badge color="orange">recursive cutoff</Badge>}
-            {node.retainedCall && <Badge color="purple">retained call</Badge>}
-            {node.retainedCall && node.retainedCalleePhaseCount !== undefined && (
-              <Badge color="purple">{node.retainedCalleePhaseCount} {node.retainedCalleePhaseCount === 1 ? "phase" : "phases"} inside</Badge>
-            )}
-          </Flex>
+          {node.recursiveCutoff && <Flex gap="1" wrap="wrap">
+            <Badge color="orange">recursive cutoff</Badge>
+          </Flex>}
         </Flex></ScrollArea>
       )}
     </Flex>

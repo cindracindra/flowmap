@@ -84,6 +84,8 @@ export interface EdgeVisualStyle {
   dash?: string;
 }
 
+export const EDGE_ARROW_SIZE = 6;
+
 /** Canonical edge styling shared by graph canvases and the legend. */
 export const EDGE_STYLES: Record<EdgeClass, EdgeVisualStyle> = {
   sequence: { color: "var(--edge-sequence)", label: "next statement" },

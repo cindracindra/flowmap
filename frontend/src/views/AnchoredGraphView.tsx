@@ -64,7 +64,7 @@ import {
 } from "../lib/displayHierarchy";
 import { BranchRegions, BranchSwitchers } from "../components/BranchOverlay";
 import { MONO } from "../lib/ui";
-import { EDGE_STYLES as EDGE_STYLE, NODE_STYLES, NODE_TYPES, type EdgeClass } from "../lib/nodeStyles";
+import { EDGE_ARROW_SIZE, EDGE_STYLES as EDGE_STYLE, NODE_STYLES, NODE_TYPES, type EdgeClass } from "../lib/nodeStyles";
 import {
   shortLabel,
   ownerClassOf,
@@ -165,7 +165,7 @@ function edgePath(from: NodePosition, to: NodePosition, fromR: number, toR: numb
   const dist = Math.sqrt(dx * dx + dy * dy) || 1;
   const nx = dx / dist;
   const ny = dy / dist;
-  const ARROW = 7;
+  const ARROW = EDGE_ARROW_SIZE;
   const x1 = (from.x + fromR * nx).toFixed(1);
   const y1 = (from.y + fromR * ny).toFixed(1);
   const x2 = (to.x - (toR + ARROW) * nx).toFixed(1);
@@ -1211,13 +1211,13 @@ function GraphCanvasView({ initialTab = "explore" }: { initialTab?: PanelTab }) 
                 <marker
                   key={kind}
                   id={`arrow-${kind}`}
-                  markerWidth="7"
-                  markerHeight="7"
-                  refX="6"
-                  refY="3.5"
+                  markerWidth={EDGE_ARROW_SIZE}
+                  markerHeight={EDGE_ARROW_SIZE}
+                  refX={EDGE_ARROW_SIZE - 1}
+                  refY={EDGE_ARROW_SIZE / 2}
                   orient="auto"
                 >
-                  <path d="M0,0 L0,7 L7,3.5 z" fill={EDGE_STYLE[kind].color} />
+                  <path d={`M0,0 L0,${EDGE_ARROW_SIZE} L${EDGE_ARROW_SIZE},${EDGE_ARROW_SIZE / 2} z`} fill={EDGE_STYLE[kind].color} />
                 </marker>
               ))}
             </defs>

@@ -5,6 +5,7 @@ import type {
   FlowNode,
 } from "../types/flowmap";
 import type { GraphBundle, MethodDefinition } from "../types/filteredGraph";
+import { sequenceOrderedNodes } from "./sequenceTraversal";
 
 export type InstanceNodeId = string;
 export type BranchInstanceId = string;
@@ -188,46 +189,6 @@ function phasesByNode(method: MethodDefinition, instanceId: string): Map<string,
 }
 
 /**
- * Order a method from its entry by walking its sequence edges. The backend's
- * node array is a serialization detail and does not necessarily describe
- * execution order. Branch successors retain the order in sequenceEdges;
- * cycles are safe because a node is emitted only on its first visit.
- */
-function sequenceOrderedNodes(method: MethodDefinition): FlowNode[] {
-  const byId = new Map(
-    [method.entry, ...method.nodes].map((node) => [node.id, node]),
-  );
-  const successors = new Map<string, string[]>();
-  for (const edge of method.sequenceEdges) {
-    if (!byId.has(edge.from) || !byId.has(edge.to)) continue;
-    const targets = successors.get(edge.from);
-    if (targets) {
-      if (!targets.includes(edge.to)) targets.push(edge.to);
-    } else {
-      successors.set(edge.from, [edge.to]);
-    }
-  }
-
-  const ordered: FlowNode[] = [];
-  const visited = new Set<string>();
-  const visit = (nodeId: string): void => {
-    if (visited.has(nodeId)) return;
-    const node = byId.get(nodeId);
-    if (!node) return;
-    visited.add(nodeId);
-    ordered.push(node);
-    for (const targetId of successors.get(nodeId) ?? []) visit(targetId);
-  };
-
-  visit(method.entryId);
-  // Malformed or intentionally disconnected structural nodes have no
-  // sequence-derived position. Keep them visible with a deterministic
-  // fallback that does not depend on JSON array order.
-  for (const nodeId of [...byId.keys()].sort()) visit(nodeId);
-  return ordered;
-}
-
-/**
  * Build caller-local flow with optionally attached callee bodies.
  *
  * Local sequence edges are immutable presentation facts: expanding a call
@@ -266,7 +227,12 @@ export function projectVisibleGraph(
     if (!method) return;
     const phaseForNode = phasesByNode(method, instanceId);
     const retainedCalls = new Set(method.retainedCallNodeIds);
-    const definitionNodes = sequenceOrderedNodes(method);
+    const definitionNodes = sequenceOrderedNodes(
+      [method.entry, ...method.nodes],
+      method.sequenceEdges,
+      method.entryId,
+      (node) => node.line,
+    );
 
     const instanceBranchGroups = instantiateBranchGroups(
       method,

@@ -5,6 +5,7 @@ import type {
   VisibleNode,
 } from "./filteredGraphProjection";
 import { shortClassName } from "./graph";
+import { sequenceOrderedNodes } from "./sequenceTraversal";
 
 export interface GraphPoint { x: number; y: number }
 
@@ -137,34 +138,17 @@ function layoutInstanceBlocks(projection: VisibleGraphProjection): Map<string, G
   const orderedNodes = (instanceId: string): VisibleNode[] => {
     const localNodes = nodesByInstance.get(instanceId) ?? [];
     const localIds = new Set(localNodes.map((node) => node.id));
-    const outgoing = new Map<string, string[]>();
-    for (const edge of projection.edges) {
-      if (edge.kind !== "sequence" || !localIds.has(edge.from) || !localIds.has(edge.to)) continue;
-      const targets = outgoing.get(edge.from);
-      if (targets) {
-        if (!targets.includes(edge.to)) targets.push(edge.to);
-      } else {
-        outgoing.set(edge.from, [edge.to]);
-      }
-    }
-
-    const result: VisibleNode[] = [];
-    const visited = new Set<string>();
-    const visit = (id: string): void => {
-      if (visited.has(id)) return;
-      const current = nodeById.get(id);
-      if (!current || current.instanceId !== instanceId) return;
-      visited.add(id);
-      result.push(current);
-      for (const target of outgoing.get(id) ?? []) visit(target);
-    };
-
     const entryId = entryByInstance.get(instanceId)
       ?? localNodes.find((node) => node.node.type === "entry")?.id;
-    if (entryId) visit(entryId);
-    // Keep malformed or intentionally disconnected visible nodes inspectable.
-    for (const localNode of localNodes) visit(localNode.id);
-    return result;
+    return sequenceOrderedNodes(
+      localNodes,
+      projection.edges.filter((edge) =>
+        edge.kind === "sequence"
+        && localIds.has(edge.from)
+        && localIds.has(edge.to)),
+      entryId,
+      (node) => node.node.line,
+    );
   };
 
   const positions = new Map<string, GraphPoint>();

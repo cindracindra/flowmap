@@ -295,4 +295,46 @@ for (const branch of nestedTryLayout.branches) {
   }
 }
 
+// A selected short-circuit arm can leave both its condition continuation and
+// body continuation reachable from the same node. CFG reachability stays
+// authoritative, while source location decides which DFS successor is laid
+// out first.
+const conditionInstance = "operation:test/root:add-item";
+const conditionProjection: VisibleGraphProjection = {
+  rootId: `${conditionInstance}:entry`,
+  nodes: [
+    node(`${conditionInstance}:entry`, conditionInstance, 0, "entry", {
+      node: { id: "entry", type: "entry", line: 94 },
+    }),
+    node(`${conditionInstance}:get-cart`, conditionInstance, 0, "get-cart", {
+      node: { id: "get-cart", type: "call", code: "getCart(session)", line: 101 },
+    }),
+    node(`${conditionInstance}:return`, conditionInstance, 0, "return", {
+      node: { id: "return", type: "exit", exitKind: "return", line: 110 },
+    }),
+    node(`${conditionInstance}:trim`, conditionInstance, 0, "trim", {
+      node: { id: "trim", type: "call", code: "workingItemId.trim()", line: 97 },
+    }),
+    node(`${conditionInstance}:is-empty`, conditionInstance, 0, "is-empty", {
+      node: { id: "is-empty", type: "call", code: "workingItemId.trim().isEmpty()", line: 97 },
+    }),
+  ],
+  edges: [
+    { from: `${conditionInstance}:entry`, to: `${conditionInstance}:get-cart`, type: "sequence", kind: "sequence" },
+    { from: `${conditionInstance}:entry`, to: `${conditionInstance}:trim`, type: "sequence", kind: "sequence" },
+    { from: `${conditionInstance}:get-cart`, to: `${conditionInstance}:return`, type: "sequence", kind: "sequence" },
+    { from: `${conditionInstance}:trim`, to: `${conditionInstance}:is-empty`, type: "sequence", kind: "sequence" },
+    { from: `${conditionInstance}:is-empty`, to: `${conditionInstance}:get-cart`, type: "sequence", kind: "sequence" },
+    { from: `${conditionInstance}:is-empty`, to: `${conditionInstance}:trim`, type: "sequence", kind: "sequence" },
+  ],
+  branchGroups: [],
+  exits: [],
+};
+
+const conditionLayout = layoutFilteredGraph(conditionProjection);
+const conditionY = (id: string) => conditionLayout.positions.get(`${conditionInstance}:${id}`)!.y;
+assert(conditionY("trim") < conditionY("is-empty"), "nested condition calls retain CFG order");
+assert(conditionY("is-empty") < conditionY("get-cart"), "earlier condition route wins a DFS successor tie");
+assert(conditionY("get-cart") < conditionY("return"), "selected body remains before its return");
+
 console.log("filtered graph layout checks passed");

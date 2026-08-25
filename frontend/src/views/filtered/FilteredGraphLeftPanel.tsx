@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Box, Flex, IconButton, ScrollArea, Text, TextField } from "@radix-ui/themes";
-import { ChevronDown, ChevronLeft, ChevronRight, FileCode2, FolderOpen, Hash, Search, Waypoints } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, FileCode2, FolderOpen, Hash, ListTree, Search } from "lucide-react";
 
 import { opseqLabel } from "../../data/operationLabels";
 import { shortLabel } from "../../lib/graph";
@@ -111,7 +111,7 @@ function TreeRow({ item, depth, selectedId, leafKind, onSelect }: {
         {branch ? (open ? <ChevronDown size={12} /> : <ChevronRight size={12} />) : <Box style={{ width: 12, flexShrink: 0 }} />}
         {item.kind === "folder" && <FolderOpen size={12} color="var(--amber-9)" />}
         {item.kind === "file" && <FileCode2 size={12} color="var(--teal-9)" />}
-        {item.kind === "leaf" && (leafKind === "method" ? <Hash size={12} color="var(--gray-9)" /> : <Waypoints size={12} color="var(--gray-9)" />)}
+        {item.kind === "leaf" && (leafKind === "method" ? <Hash size={12} color="var(--gray-9)" /> : <ListTree size={12} color="var(--gray-9)" />)}
         <Text size="1" truncate style={{ fontFamily: MONO }}>{item.name}</Text>
       </button>
       {branch && open && item.children?.map((child, index) => (

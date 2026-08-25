@@ -60,7 +60,7 @@ export default function FilteredGraphCanvas({
           {currentMethod ? shortLabel(currentMethod.methodFullName) : "Expandable flow"}
         </Text>
         <Flex gap="2">
-          <SummaryButton label="operational sequences" count={operationIds.length} open={openSummary === "operations"}
+          <SummaryButton label="operation sequences" count={operationIds.length} open={openSummary === "operations"}
             onClick={() => setOpenSummary((value) => value === "operations" ? null : "operations")} />
           <SummaryButton label="callers" count={callerIds.length} open={openSummary === "callers"}
             onClick={() => setOpenSummary((value) => value === "callers" ? null : "callers")} />

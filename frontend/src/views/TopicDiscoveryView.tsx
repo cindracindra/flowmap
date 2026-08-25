@@ -178,7 +178,7 @@ function TopicDetailView({
           <Separator size="4" my="4" />
 
           <Text size="1" weight="bold" color="gray" style={{ textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            Operations
+            Operation sequences
           </Text>
           <Box mt="2" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
             {operations.map((operation) => (
@@ -278,9 +278,6 @@ export default function TopicDiscoveryView() {
     setDisplayedOperationLabel(operation.label);
   }, []);
 
-  const opseqCount = ALLOCATED_OPSEQ_COUNT;
-  const topicCount = TOPICS.length;
-
   return (
     <Flex direction="column" flexGrow="1" overflow="hidden" style={{ minHeight: 0 }}>
       <Flex flexGrow="1" style={{ minHeight: 0 }}>
@@ -349,41 +346,6 @@ export default function TopicDiscoveryView() {
         </Box>
       </Flex>
 
-      {/* Status bar */}
-      <Flex
-        align="center"
-        gap="3"
-        px="4"
-        flexShrink="0"
-        height="24px"
-        style={{ borderTop: "1px solid var(--gray-a5)", background: "var(--color-panel-solid)" }}
-      >
-        <Flex align="center" gap="2">
-          <Box style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--teal-9)" }} />
-          <Text size="1" color="gray">
-            topic clusters
-          </Text>
-        </Flex>
-        <Text size="1" color="gray">
-          ·
-        </Text>
-        <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-          {topicCount} topics
-        </Text>
-        <Text size="1" color="gray">
-          ·
-        </Text>
-        <Text size="1" color="gray" style={{ fontFamily: MONO }}>
-          {opseqCount} opseqs
-        </Text>
-        <Flex align="center" gap="2" ml="auto">
-          {selectedTopic && (
-            <Text size="1" color="amber" style={{ fontFamily: MONO }}>
-              {topicLabel(selectedTopic)}
-            </Text>
-          )}
-        </Flex>
-      </Flex>
     </Flex>
   );
 }
