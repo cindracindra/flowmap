@@ -9,6 +9,7 @@ FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap
 sys.path.insert(0, str(FLOWMAP_SRC))
 
 from service.method_phase_label import label_method_phases  # noqa: E402
+from service.phase_label_format import valid_phase_label  # noqa: E402
 
 
 def _subject(subject_id: str, phase_id: str) -> dict:
@@ -47,6 +48,10 @@ def test_labels_method_phase_subjects_in_one_json_batch() -> None:
     assert call["json_object"] is True
     assert len(json.loads(call["user"])["subjects"]) == 2
     assert "weak ordering context" in call["system"]
+
+
+def test_dotted_java_name_counts_as_one_label_word() -> None:
+    assert valid_phase_label("unsafe host ping via Runtime.exec")
 
 
 def test_retries_only_missing_or_invalid_subjects() -> None:

@@ -9,13 +9,14 @@ import {
 
 import {
   ALLOCATED_OPSEQ_COUNT,
+  DISCOVERED_TOPIC_COUNT,
   OPERATIONS_BY_TOPIC,
   TOPICS,
 } from "../data/graph";
 import { GRAPH_BUNDLE } from "../data/filteredGraph";
 import { opseqLabel } from "../data/operationLabels";
 import type { TopicCluster, TopicOperation } from "../types/topics";
-import { topicLabel, isUnnamed } from "../lib/topics";
+import { NOISE_LABEL, topicLabel, isUnnamed } from "../lib/topics";
 import { MONO } from "../lib/ui";
 import FilteredGraphView from "./FilteredGraphView";
 
@@ -37,7 +38,6 @@ function TopicRow({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const hasLlmLabel = Boolean(topic.llm_label?.trim());
   const unnamed = isUnnamed(topic);
   const operations = OPERATIONS_BY_TOPIC[String(topic.label)] ?? [];
 
@@ -51,7 +51,7 @@ function TopicRow({
         boxSizing: "border-box",
         display: "block",
         width: "100%",
-        minHeight: 58,
+        height: 58,
         padding: "10px 12px",
         borderRadius: 6,
         cursor: "pointer",
@@ -72,11 +72,6 @@ function TopicRow({
         >
           {topicLabel(topic)}
         </Text>
-        {hasLlmLabel && (
-          <Badge size="1" variant="outline" color="violet">
-            LLM label
-          </Badge>
-        )}
         {unnamed && (
           <Badge size="1" variant="outline" color="gray">
             unlabelled
@@ -97,17 +92,20 @@ function TopicList({
   selectedLabel: number | null;
   onSelect: (label: number) => void;
 }) {
+  const discoveredTopics = TOPICS.filter((topic) => topic.label !== NOISE_LABEL);
+  const unassignedTopic = TOPICS.find((topic) => topic.label === NOISE_LABEL);
+
   return (
     <ScrollArea style={{ height: "100%" }}>
       <Box p="4" style={{ maxWidth: 1100, margin: "0 auto" }}>
         <Heading size="3">Topics</Heading>
         <Text as="p" size="1" color="gray" mt="1">
           {ALLOCATED_OPSEQ_COUNT} operation sequences across{" "}
-          {TOPICS.length} topics. Click a topic to see
-          its assigned operation sequences.
+          {DISCOVERED_TOPIC_COUNT} discovered topics. Operations without a
+          topic appear under Unassigned.
         </Text>
         <Box mt="3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
-          {TOPICS.map((topic) => (
+          {discoveredTopics.map((topic) => (
             <TopicRow
               key={topic.label}
               topic={topic}
@@ -115,12 +113,24 @@ function TopicList({
               onSelect={() => onSelect(topic.label)}
             />
           ))}
-          {TOPICS.length === 0 && (
+          {discoveredTopics.length === 0 && !unassignedTopic && (
             <Text size="1" color="gray" align="center" mt="4" as="p">
               No topics in this run.
             </Text>
           )}
         </Box>
+        {unassignedTopic && (
+          <>
+            <Separator size="4" my="4" />
+            <Box style={{ width: "min(100%, 360px)" }}>
+              <TopicRow
+                topic={unassignedTopic}
+                selected={unassignedTopic.label === selectedLabel}
+                onSelect={() => onSelect(unassignedTopic.label)}
+              />
+            </Box>
+          </>
+        )}
       </Box>
     </ScrollArea>
   );

@@ -4,22 +4,13 @@
 // updates the next dev-server reload/build without a manual copy. There is
 // no backend API yet, so these remain JSON module imports rather than fetches.
 //
-// Derived once here rather than per view: both the app shell and the
-// anchored-graph view read the same trace, and rebuilding the branch panels
-// or the explorer tree per mount would give them different object identities.
+// Topic metadata is normalized once here so every topic view uses the same
+// operation assignment and ordering.
 
-import {
-  fullGraphRaw,
-  topicClusterRaw,
-  topicOperationsRaw,
-  opseqVisualisationsRaw,
-} from "virtual:flowmap-data";
-import type { FlowGraph, PhaseTree } from "../types/flowmap";
-import type { SerializedDisplayHierarchy } from "../lib/displayHierarchy";
+import { topicClusterRaw, topicOperationsRaw } from "virtual:flowmap-data";
 import type { TopicCluster, TopicOperation } from "../types/topics";
 import { sortTopics } from "../lib/topics";
 
-export const FULL_GRAPH = fullGraphRaw as unknown as FlowGraph;
 export { GRAPH_BUNDLE, FILTERED_GRAPH_DATA } from "./filteredGraph";
 
 const GENERATED_TOPICS = topicClusterRaw as unknown as TopicCluster[];
@@ -28,32 +19,9 @@ const GENERATED_TOPICS = topicClusterRaw as unknown as TopicCluster[];
 // label outputs. The frontend intentionally does not own a second copy.
 const GENERATED_OPERATIONS_BY_TOPIC = topicOperationsRaw as Record<string, TopicOperation[]>;
 
-export interface GraphVisualisation {
-  graph: FlowGraph;
-  phaseTree: PhaseTree;
-  displayHierarchy?: SerializedDisplayHierarchy;
-  rootMethodFullName?: string;
-  memberMethodFullNames?: string[];
-}
-
-export function graphVisualisation(graph: FlowGraph, phaseTree: PhaseTree): GraphVisualisation {
-  return { graph, phaseTree };
-}
-
-// Generated alongside topic_operations.json. Each root id resolves to the
-// exact flattened graph and phase tree the shared graph view needs.
-export const OPSEQ_VISUALISATIONS = opseqVisualisationsRaw as Record<string, GraphVisualisation>;
-const EMPTY_VISUALISATION = graphVisualisation(
-  { nodes: [], edges: [] },
-  { entryPoint: "", phases: [] },
-);
-export const ANCHORED_VISUALISATION =
-  Object.values(OPSEQ_VISUALISATIONS)[0] ?? EMPTY_VISUALISATION;
-export const GRAPH = ANCHORED_VISUALISATION.graph;
-
-// Class-clustering noise (-1) is not an operation topic. Also normalize
-// older top-k exports by retaining only each opseq's highest-similarity
-// assignment, so stale artifacts cannot show one operation under two topics.
+// Normalize older top-k exports by retaining only each opseq's
+// highest-similarity assignment, so stale artifacts cannot show one operation
+// under two discovered topics. The -1 bucket is added separately below.
 const highestAssignmentByOpseq = new Map<
   string,
   { topicLabel: string; operation: TopicOperation }
@@ -72,59 +40,31 @@ export const OPERATIONS_BY_TOPIC: Record<string, TopicOperation[]> = {};
 for (const { topicLabel, operation } of highestAssignmentByOpseq.values()) {
   (OPERATIONS_BY_TOPIC[topicLabel] ??= []).push(operation);
 }
+
+// The backend retains operations with no topic assignment under -1. Surface
+// them as a final Unassigned group, without duplicating an operation that also
+// appears in an older mixed assignment export.
+const unassignedOperations = (GENERATED_OPERATIONS_BY_TOPIC["-1"] ?? [])
+  .filter((operation) => !highestAssignmentByOpseq.has(operation.id));
+if (unassignedOperations.length > 0) {
+  OPERATIONS_BY_TOPIC["-1"] = unassignedOperations;
+}
 for (const operations of Object.values(OPERATIONS_BY_TOPIC)) {
   operations.sort((a, b) => a.label.localeCompare(b.label));
 }
-export const ALLOCATED_OPSEQ_COUNT = highestAssignmentByOpseq.size;
+export const ALLOCATED_OPSEQ_COUNT = highestAssignmentByOpseq.size + unassignedOperations.length;
 
+const discoveredTopics = GENERATED_TOPICS.filter((topic) => topic.label !== -1);
+const unassignedTopic: TopicCluster = {
+  label: -1,
+  member_full_names: [],
+  statistical_terms: [],
+  readme_paths: [],
+};
+
+export const DISCOVERED_TOPIC_COUNT = discoveredTopics.length;
 export const TOPICS = sortTopics(
-  GENERATED_TOPICS.filter((topic) => topic.label !== -1),
+  unassignedOperations.length > 0
+    ? [...discoveredTopics, unassignedTopic]
+    : discoveredTopics,
 );
-
-export interface OpseqChoice {
-  id: string;
-  label: string;
-  rootMethodFullName: string;
-}
-
-const operationMetadataById = new Map<string, TopicOperation>();
-for (const operations of Object.values(OPERATIONS_BY_TOPIC)) {
-  for (const operation of operations) {
-    if (!operationMetadataById.has(operation.id)) operationMetadataById.set(operation.id, operation);
-  }
-}
-
-const opseqIdsByMethod = new Map<string, string[]>();
-for (const [id, visualisation] of Object.entries(OPSEQ_VISUALISATIONS)) {
-  // New exports carry unfiltered membership explicitly. The graph scan keeps
-  // older generated artifacts usable until the backend is rerun.
-  const memberMethods = visualisation.memberMethodFullNames
-    ?? visualisation.graph.nodes.flatMap((node) =>
-      node.type === "entry" && node.calleeFullName ? [node.calleeFullName] : []
-    );
-  for (const method of new Set(memberMethods)) {
-    const ids = opseqIdsByMethod.get(method);
-    if (ids) ids.push(id);
-    else opseqIdsByMethod.set(method, [id]);
-  }
-}
-
-export function opseqChoicesForMethod(methodFullName: string): OpseqChoice[] {
-  return (opseqIdsByMethod.get(methodFullName) ?? []).map((id) => {
-    const visualisation = OPSEQ_VISUALISATIONS[id];
-    const metadata = operationMetadataById.get(id);
-    const rootMethodFullName = visualisation?.rootMethodFullName
-      ?? metadata?.rootMethodFullName
-      ?? visualisation?.graph.entryPoint
-      ?? id;
-    return {
-      id,
-      label: metadata?.label ?? rootMethodFullName,
-      rootMethodFullName,
-    };
-  }).sort((a, b) => a.label.localeCompare(b.label));
-}
-
-export function methodParticipatesInOpseq(methodFullName: string): boolean {
-  return opseqIdsByMethod.has(methodFullName);
-}

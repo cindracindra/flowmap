@@ -15,7 +15,8 @@ from service.phase_label_format import normalise_phase_label, valid_phase_label
 _JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 _RETRY_SUFFIX = (
     " This is a corrective retry containing only subjects whose labels were "
-    "missing or invalid. Return all requested IDs with valid 2-6 word labels."
+    "missing or invalid. Return all requested IDs exactly, with valid labels "
+    "containing 2-6 whitespace-separated tokens and never more than 6."
 )
 _BATCH_SIZES = (8, 4, 1)
 

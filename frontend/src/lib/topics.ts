@@ -11,13 +11,14 @@ export function topicLabel(topic: TopicCluster): string {
   if (llm) return llm;
   const term = topic.statistical_terms.find((t) => t.trim());
   if (term) return term;
-  return topic.label === NOISE_LABEL ? "Unclustered" : `topic ${topic.label}`;
+  return topic.label === NOISE_LABEL ? "Unassigned" : `topic ${topic.label}`;
 }
 
-// True when the label shown is a stand-in rather than a real name -- worth
-// marking in the UI, since "Unclustered" is a bucket and not a topic.
+// True when the label shown is a stand-in rather than a real name.
 export function isUnnamed(topic: TopicCluster): boolean {
-  return !topic.llm_label?.trim() && !topic.statistical_terms.some((t) => t.trim());
+  return topic.label !== NOISE_LABEL
+    && !topic.llm_label?.trim()
+    && !topic.statistical_terms.some((t) => t.trim());
 }
 
 // Noise last, then biggest cluster first: the -1 bucket is an artefact of

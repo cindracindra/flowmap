@@ -75,7 +75,7 @@ def test_groups_transitive_standalone_one_phase_delegates() -> None:
 
     assert len(request["subjects"]) == 1
     subject = request["subjects"][0]
-    assert subject["id"].startswith("label-group:")
+    assert subject["id"] == "group-1"
     assert subject["phaseIds"] == [
         "a-entry:phase:1", "b-entry:phase:1", "c-entry:phase:1",
     ]

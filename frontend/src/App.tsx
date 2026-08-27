@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Flex, Text, Button } from "@radix-ui/themes";
 import { GitBranch, Info, Compass, Workflow, BookOpen } from "lucide-react";
 
-import { GraphLegend } from "./views/AnchoredGraphView";
+import GraphLegend from "./components/GraphLegend";
 import TopicDiscoveryView from "./views/TopicDiscoveryView";
 import FilteredGraphView from "./views/FilteredGraphView";
 import UserGuideView from "./views/UserGuideView";

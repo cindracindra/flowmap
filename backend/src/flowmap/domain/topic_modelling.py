@@ -207,6 +207,7 @@ def discover_topics(
     top_n_terms: int = 10,
     label_fn: ClusterLabelFn | None = None,
     whole_corpus_fn: WholeCorpusGroupingFn | None = None,
+    force_whole_corpus: bool = False,
 ) -> list[TopicCluster]:
     """Backward-compatible clusters-only topic-discovery API."""
     return discover_topics_with_centroids(
@@ -218,6 +219,7 @@ def discover_topics(
         top_n_terms=top_n_terms,
         label_fn=label_fn,
         whole_corpus_fn=whole_corpus_fn,
+        force_whole_corpus=force_whole_corpus,
     ).clusters
 
 
@@ -231,6 +233,7 @@ def discover_topics_with_centroids(
     top_n_terms: int = 10,
     label_fn: ClusterLabelFn | None = None,
     whole_corpus_fn: WholeCorpusGroupingFn | None = None,
+    force_whole_corpus: bool = False,
 ) -> TopicDiscoveryResult:
     """
     Full Mode 1 pipeline: preprocess -> embed -> cluster -> statistically
@@ -267,6 +270,23 @@ def discover_topics_with_centroids(
     docs_kept = list(docs_kept)
 
     embeddings = embed_documents(docs_kept, model_name=model_name)
+
+    if force_whole_corpus:
+        if whole_corpus_fn is None:
+            raise ValueError(
+                "force_whole_corpus requires a whole_corpus_fn"
+            )
+        clusters = whole_corpus_fn(class_documents, readme_documents)
+        clusters = attach_readme_context(
+            clusters, class_documents, readme_documents
+        )
+        return TopicDiscoveryResult(
+            clusters=clusters,
+            centroids=_centroids_from_discovery_embeddings(
+                clusters, list(classes_kept), embeddings
+            ),
+        )
+
     labels = cluster_documents(embeddings, min_cluster_size=min_cluster_size)
     statistical_terms = label_clusters_statistical(
         docs_kept, labels, max_df=max_df, top_n=top_n_terms

@@ -151,10 +151,11 @@ def build_label_subjects(analysis: Analysis) -> MethodPhaseLabelRequest:
         phase_ids_by_root[groups.find(phase_id)].append(phase_id)
 
     subjects: list[LabelSubject] = []
-    for phase_ids in sorted(
+    sorted_phase_groups = sorted(
         (sorted(ids) for ids in phase_ids_by_root.values()),
         key=lambda ids: ids[0],
-    ):
+    )
+    for subject_number, phase_ids in enumerate(sorted_phase_groups, start=1):
         evidence: list[PhaseEvidence] = []
         for phase_id in phase_ids:
             entry_id, index, phase = phase_records[phase_id]
@@ -174,9 +175,12 @@ def build_label_subjects(analysis: Analysis) -> MethodPhaseLabelRequest:
                     if (node := nodes_by_id.get(node_id)) is not None
                 ],
             })
-        subject_prefix = "label-group" if len(phase_ids) > 1 else "label-subject"
+        subject_prefix = "group" if len(phase_ids) > 1 else "subject"
         subjects.append({
-            "id": f"{subject_prefix}:{phase_ids[0]}",
+            # Phase IDs remain authoritative in phaseIds. The LLM only needs a
+            # short opaque correlation key; embedding colon-delimited phase IDs
+            # here encouraged providers to truncate them in batch responses.
+            "id": f"{subject_prefix}-{subject_number}",
             "phaseIds": phase_ids,
             "phaseEvidence": evidence,
         })

@@ -7,7 +7,7 @@ import react from '@vitejs/plugin-react'
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const config = JSON.parse(
   fs.readFileSync(path.join(projectRoot, 'flowmap.config.json'), 'utf8'),
-) as { outputDir: string; classFiles?: Record<string, string> }
+) as { outputDir: string }
 const outputDir = path.resolve(projectRoot, config.outputDir)
 
 function flowmapData(): Plugin {
@@ -26,11 +26,8 @@ function flowmapData(): Plugin {
         ? `export { default as graphBundleRaw } from ${JSON.stringify(graphBundlePath)};`
         : 'export const graphBundleRaw = { methodsByEntryId: {}, operationsById: {}, callersByEntryId: {}, operationIdsByMethodEntryId: {} };'
       return [
-        `export const classFilesRaw = ${JSON.stringify(config.classFiles ?? {})};`,
-        `export { default as fullGraphRaw } from ${jsonImport('full_cfg')};`,
         `export { default as topicClusterRaw } from ${jsonImport('topic_cluster')};`,
         `export { default as topicOperationsRaw } from ${jsonImport('topic_operations')};`,
-        `export { default as opseqVisualisationsRaw } from ${jsonImport('opseq_visualisations')};`,
         graphBundleExport,
       ].join('\n')
     },

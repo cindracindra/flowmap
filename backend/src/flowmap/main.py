@@ -40,9 +40,8 @@ from domain.topic_modelling import (
     extract_readme_documents,
 )
 from domain.cfg_slicing import filter_and_classify_roots_and_orphans, slice_from_root
-from domain.cfg_flattening import flatten_cfg
 from domain.opseq_orchestration import has_operation_body
-from domain.phase_orchestration import analyse_codebase_phases, discover_phases
+from domain.phase_orchestration import analyse_codebase_phases
 from domain.phase_data_flow import build_phase_data_flow_questions
 from domain.method_phase_label import label_method_analysis
 from domain.method_branch_routing import prepare_all_method_branch_routes
@@ -50,7 +49,6 @@ from domain.method_scoping import build_method_definitions
 from service.phase import resolve_phase_gate_batch
 from service.method_phase_label import label_method_phases as label_method_phase_batch
 from domain.opseq_clustering import assign_operation_topics_batch
-from domain.display_hierarchy import build_display_hierarchy
 from model import Graph
 from presentation import build_graph_bundle, serialize_graph_bundle
 from data.code_eval import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
@@ -146,6 +144,14 @@ def parse_args() -> argparse.Namespace:
         help="Re-extract cpg.bin even when a cached artifact already exists.",
     )
     parser.add_argument(
+        "--whole-corpus-topics",
+        action="store_true",
+        help=(
+            "Force LLM whole-corpus topic grouping instead of local HDBSCAN "
+            "clustering and its automatic degeneracy fallback."
+        ),
+    )
+    parser.add_argument(
         "--eval-output",
         nargs="?",
         const=str(default_eval_output),
@@ -190,6 +196,7 @@ if __name__ == "__main__":
         EvaluationRecorder(manifest={
             "provider": args.provider,
             "force_cpg": args.force_cpg,
+            "whole_corpus_topics": args.whole_corpus_topics,
             "source_dir": str(SOURCE_DIR),
             "output_dir": str(OUTPUT_DIR),
         })
@@ -296,6 +303,7 @@ if __name__ == "__main__":
                 label_cluster, client, class_by_full_name=class_by_full_name
             ),
             whole_corpus_fn=functools.partial(discover_topics_whole_corpus, client),
+            force_whole_corpus=args.whole_corpus_topics,
         )
         topic_clusters = topic_discovery.clusters
 
@@ -372,27 +380,7 @@ if __name__ == "__main__":
                 print(f"label_opseq failed for {root_id!r}: {exc!r}")
                 opseq_labels[root_id] = None
 
-    # 13–15. Flatten each filtered slice and deterministically propagate the
-    # precomputed method-phase labels through the overlay. Non-retained
-    # callees inherit their enclosing phase; retained callees remain separate.
-    with timed("Operation flattening and deterministic phase overlay", recorder):
-        opseq_visualisations: dict[str, dict] = {}
-        for root_id, opseq in opseqs.items():
-            flattened_cfg = flatten_cfg(opseq)
-            phase_tree = discover_phases(phase_analysis, flattened_cfg)
-            opseq_visualisations[root_id] = {
-                "rootMethodFullName": root_methods[root_id],
-                "memberMethodFullNames": sorted({
-                    node.calleeFullName
-                    for node in opseq.nodes
-                    if node.type == "entry" and node.calleeFullName is not None
-                }),
-                "graph": flattened_cfg.to_dict(),
-                "displayHierarchy": build_display_hierarchy(flattened_cfg),
-                "phaseTree": phase_tree,
-            }
-
-    # 16. Build and export every artifact only after all analysis is complete.
+    # Build and export every artifact only after all analysis is complete.
     with timed("Artifact construction and export", recorder):
         graph_bundle = build_graph_bundle(
             filtered_cfg,
@@ -406,10 +394,6 @@ if __name__ == "__main__":
         export_to_json(
             Path(OUTPUT_DIR) / "graph_bundle.json",
             serialize_graph_bundle(graph_bundle),
-        )
-        export_to_json(
-            Path(OUTPUT_DIR) / "opseq_visualisations.json",
-            opseq_visualisations,
         )
         export_to_json(
             Path(OUTPUT_DIR) / "topic_cluster.json",

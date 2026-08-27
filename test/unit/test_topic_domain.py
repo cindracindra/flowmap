@@ -249,9 +249,9 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
     are about the unconditional whole_corpus_fn fallback BRANCHING logic in
     discover_topics, not about real embedding/clustering behaviour (already
     covered elsewhere), so they stay fast/hermetic (no real model download
-    or HTTP call). There is no mode switch: the fallback fires whenever
-    whole_corpus_fn is supplied AND is_degenerate says so -- the only way
-    to opt out is to not pass whole_corpus_fn at all.
+    or HTTP call). The automatic fallback fires whenever whole_corpus_fn is
+    supplied AND is_degenerate says so; force_whole_corpus bypasses that
+    decision and always uses the supplied grouping function.
     """
 
     def _class_documents(self, n, prefix="C", terms=("methodOne", "methodTwo")):
@@ -297,6 +297,41 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
 
         whole_corpus_fn.assert_not_called()
         self.assertEqual({c.label for c in result}, {0, 1})
+
+    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
+    def test_force_whole_corpus_bypasses_local_clustering(self, mock_embed, mock_cluster):
+        classes = self._class_documents(25)
+        mock_embed.return_value = np.ones((25, 2))
+        whole_corpus_result = [
+            TopicCluster(
+                label=0,
+                member_full_names=[c.fullName for c in classes],
+                llm_label="Forced grouping",
+            )
+        ]
+        whole_corpus_fn = MagicMock(return_value=whole_corpus_result)
+
+        result = discover_topics_with_centroids(
+            classes,
+            whole_corpus_fn=whole_corpus_fn,
+            force_whole_corpus=True,
+        )
+
+        mock_cluster.assert_not_called()
+        whole_corpus_fn.assert_called_once_with(classes, [])
+        self.assertEqual(result.clusters[0].llm_label, "Forced grouping")
+        np.testing.assert_allclose(
+            result.centroids[0], [2 ** -0.5, 2 ** -0.5]
+        )
+
+    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
+    def test_force_whole_corpus_requires_grouping_function(self, mock_embed):
+        classes = self._class_documents(2)
+        mock_embed.return_value = np.ones((2, 2))
+
+        with self.assertRaisesRegex(ValueError, "requires a whole_corpus_fn"):
+            discover_topics_with_centroids(classes, force_whole_corpus=True)
 
     @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
     @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")

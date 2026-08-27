@@ -92,17 +92,22 @@ _PHASE_GATE_SYSTEM_PROMPT = (
 
 _LABEL_PHASE_SYSTEM_PROMPT = (
     "Name this already-grouped phase of a Java operation with a specific "
-    "2-6 word subprocess label. Describe what the operations collectively "
+    "2-6 word subprocess label. Count words as whitespace-separated tokens; "
+    "dotted Java names such as Runtime.exec count as one token. Describe what "
+    "the operations collectively "
     "accomplish. Do not discuss or change phase membership. Return exactly "
     "one line containing only the 2-6 word label: no sentence, explanation, "
     "quotes, JSON, Markdown fence, or trailing punctuation. Ampersand (&), "
-    "slash (/), apostrophes, and hyphens are allowed within the label."
+    "slash (/), apostrophes, dots, and hyphens are allowed within the label."
 )
 
 
 _LABEL_METHOD_PHASES_SYSTEM_PROMPT = (
     "Label each already-grouped Java method-phase subject with a specific "
-    "2-6 word subprocess label. Each subject is an independent question. "
+    "2-6 word subprocess label. Count words as whitespace-separated tokens: "
+    "every label must contain at least 2 and no more than 6 tokens. Dotted "
+    "Java names such as Runtime.exec count as one token. Each subject is an "
+    "independent question. Copy every subject ID exactly and completely. "
     "Use every phaseEvidence item within that subject together; multiple "
     "items mean the backend has determined that those method phases must "
     "share one label. Treat operations, code, fields, domain types, and "
@@ -113,6 +118,6 @@ _LABEL_METHOD_PHASES_SYSTEM_PROMPT = (
     "behaviour. Do not use unrelated subjects as evidence for one another. "
     "Return one result for every subject ID as valid JSON exactly shaped as "
     '{"labels":[{"id":"subject-id","label":"2-6 word label"}]}. '
-    "Labels may contain ampersand (&), slash (/), apostrophes, and hyphens. "
+    "Labels may contain ampersand (&), slash (/), apostrophes, dots, and hyphens. "
     "Return no explanation, Markdown, or additional keys."
 )
