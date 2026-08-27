@@ -1,4 +1,4 @@
 {
-  "sourceDir": "../evaluation/codebase/jpetstore-6/src/main",
-  "outputDir": "../evaluation/results/jpetstore-6/cold_1/output"
+  "sourceDir": "../project_b/src/main",
+  "outputDir": "../generated/project_b/output"
 }
