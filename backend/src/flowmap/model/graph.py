@@ -53,16 +53,6 @@ class Graph:
             node_id: NodeSemanticFeatures.from_dict(features)
             for node_id, features in data.get("semanticFeatures", {}).items()
         }
-        data_sources: dict[str, list[str]] = {}
-        data_consumers: dict[str, list[str]] = {}
-        for edge in edges:
-            if edge.type != "data":
-                continue
-            data_sources.setdefault(edge.target, []).append(edge.source)
-            data_consumers.setdefault(edge.source, []).append(edge.target)
-        for node_id, features in semantic_features.items():
-            features.dataSourceIds = list(dict.fromkeys(data_sources.get(node_id, ())))
-            features.dataConsumerIds = list(dict.fromkeys(data_consumers.get(node_id, ())))
 
         return cls(
             entryPoint=data.get("entryPoint"),

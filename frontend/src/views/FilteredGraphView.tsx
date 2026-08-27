@@ -4,7 +4,9 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { GRAPH_BUNDLE } from "../data/filteredGraph";
 import {
+  branchInstanceId,
   callInstanceId,
+  instanceNodeId,
   projectVisibleGraph,
   type BranchInstanceId,
   type CallInstanceId,
@@ -16,13 +18,49 @@ import FilteredGraphDetails from "./filtered/FilteredGraphDetails";
 import FilteredGraphLeftPanel from "./filtered/FilteredGraphLeftPanel";
 import { MONO } from "../lib/ui";
 
+interface MethodPathStep {
+  callerEntryId: string;
+  callNodeId: string;
+  targetEntryId: string;
+  targetIndex: number;
+}
+
+function methodCallPath(bundle: GraphBundle, rootEntryId: string, targetEntryId: string): MethodPathStep[] | null {
+  const queue: Array<{ entryId: string; steps: MethodPathStep[] }> = [{ entryId: rootEntryId, steps: [] }];
+  const visited = new Set<string>();
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (current.entryId === targetEntryId) return current.steps;
+    if (visited.has(current.entryId)) continue;
+    visited.add(current.entryId);
+    const method = bundle.methodsByEntryId[current.entryId];
+    if (!method) continue;
+    for (const call of Object.values(method.calls)) {
+      for (const [targetIndex, target] of call.targetEntryIds.entries()) {
+        if (visited.has(target)) continue;
+        queue.push({
+          entryId: target,
+          steps: [...current.steps, {
+            callerEntryId: current.entryId,
+            callNodeId: call.callNodeId,
+            targetEntryId: target,
+            targetIndex,
+          }],
+        });
+      }
+    }
+  }
+  return null;
+}
+
 export interface FilteredGraphViewProps {
   bundle?: GraphBundle;
   initialOperationId?: string;
   onOperationChange?: (operationId: string) => void;
+  leftPanelVariant?: "default" | "operation-methods";
 }
 
-export default function FilteredGraphView({ bundle = GRAPH_BUNDLE, initialOperationId, onOperationChange }: FilteredGraphViewProps) {
+export default function FilteredGraphView({ bundle = GRAPH_BUNDLE, initialOperationId, onOperationChange, leftPanelVariant = "default" }: FilteredGraphViewProps) {
   const firstOperationId = initialOperationId ?? Object.keys(bundle.operationsById)[0] ?? null;
   const [operationId, setOperationId] = useState<string | null>(firstOperationId);
   const [expandedCalls, setExpandedCalls] = useState<Set<string>>(() => new Set());
@@ -38,9 +76,16 @@ export default function FilteredGraphView({ bundle = GRAPH_BUNDLE, initialOperat
   const [detailsPanelOpen, setDetailsPanelOpen] = useState(true);
   const projection = useMemo(
     () => operationId
-      ? projectVisibleGraph(bundle, operationId, expandedCalls, selectedBranchArms, selectedMethodEntryId ?? undefined, selectedTargetByCallInstanceId)
+      ? projectVisibleGraph(
+          bundle,
+          operationId,
+          expandedCalls,
+          selectedBranchArms,
+          leftPanelVariant === "operation-methods" ? undefined : selectedMethodEntryId ?? undefined,
+          selectedTargetByCallInstanceId,
+        )
       : null,
-    [bundle, operationId, expandedCalls, selectedBranchArms, selectedMethodEntryId, selectedTargetByCallInstanceId],
+    [bundle, operationId, expandedCalls, selectedBranchArms, selectedMethodEntryId, selectedTargetByCallInstanceId, leftPanelVariant],
   );
   const selectedNode = projection?.nodes.find((node) => node.id === selectedNodeId) ?? null;
   const currentMethodEntryId = selectedMethodEntryId
@@ -52,7 +97,45 @@ export default function FilteredGraphView({ bundle = GRAPH_BUNDLE, initialOperat
     onOperationChange?.(id);
   }, [onOperationChange]);
   const selectMethod = useCallback((entryId: string) => {
-    const operation = bundle.operationIdsByMethodEntryId[entryId]?.[0];
+    if (leftPanelVariant === "operation-methods" && operationId) {
+      const operation = bundle.operationsById[operationId];
+      if (!operation) return;
+      const path = methodCallPath(bundle, operation.rootEntryId, entryId);
+      if (!path) return;
+      const nextExpandedCalls = new Set<string>();
+      const nextSelectedTargets = new Map<CallInstanceId, string>();
+      const nextSelectedBranches = new Map<BranchInstanceId, string>();
+      let instanceId = `operation:${operationId}/root:${operation.rootEntryId}`;
+      for (const step of path) {
+        const method = bundle.methodsByEntryId[step.callerEntryId];
+        const callNode = method
+          ? [method.entry, ...method.nodes].find((node) => node.id === step.callNodeId)
+          : undefined;
+        for (const requirement of callNode?.branchArms ?? []) {
+          nextSelectedBranches.set(
+            branchInstanceId(instanceId, requirement.groupId),
+            requirement.armLabel,
+          );
+        }
+        const callId = callInstanceId(instanceId, step.callNodeId);
+        nextExpandedCalls.add(callId);
+        nextSelectedTargets.set(callId, step.targetEntryId);
+        instanceId = `${callId}/target:${step.targetIndex}:${step.targetEntryId}`;
+      }
+      setExpandedCalls(nextExpandedCalls);
+      setSelectedBranchArms(nextSelectedBranches);
+      setSelectedTargetByCallInstanceId(nextSelectedTargets);
+      setSelectedMethodEntryId(entryId);
+      setSelectedNodeId(instanceNodeId(instanceId, entryId));
+      return;
+    }
+    const currentOperation = operationId ? bundle.operationsById[operationId] : undefined;
+    const belongsToCurrentOperation = currentOperation
+      ? currentOperation.rootEntryId === entryId || currentOperation.reachableMethodEntryIds.includes(entryId)
+      : false;
+    const operation = belongsToCurrentOperation
+      ? operationId
+      : bundle.operationIdsByMethodEntryId[entryId]?.[0];
     if (operation && operation !== operationId) {
       setOperationId(operation);
       onOperationChange?.(operation);
@@ -62,7 +145,7 @@ export default function FilteredGraphView({ bundle = GRAPH_BUNDLE, initialOperat
     setSelectedTargetByCallInstanceId(new Map());
     setSelectedNodeId(null);
     setSelectedMethodEntryId(entryId);
-  }, [bundle, operationId, onOperationChange]);
+  }, [bundle, operationId, onOperationChange, leftPanelVariant]);
   const toggleCall = useCallback((node: VisibleNode) => {
     const id = callInstanceId(node.instanceId, node.definitionNodeId);
     setExpandedCalls((previous) => {
@@ -100,6 +183,7 @@ export default function FilteredGraphView({ bundle = GRAPH_BUNDLE, initialOperat
           onSelectOperation={selectOperation}
           onSelectMethod={selectMethod}
           onCollapse={() => setLeftPanelOpen(false)}
+          variant={leftPanelVariant}
         />
       )}
       {!leftPanelOpen && (

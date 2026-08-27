@@ -873,6 +873,6 @@ def flatten_cfg(cfg: Graph) -> Graph:
         branchGroups=groups,
         loopGroups=flat_loops + [loop for loop in cfg.loopGroups if loop.method is None],
         semanticFeatures=scoped_semantic_features(
-            flat_semantic_features, set(flat_nodes), flat_edges
+            flat_semantic_features, set(flat_nodes)
         ),
     )

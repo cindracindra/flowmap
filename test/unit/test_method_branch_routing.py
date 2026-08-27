@@ -9,6 +9,7 @@ from model import (
     BranchArm,
     BranchArmRef,
     BranchGroup,
+    BranchRequirement,
     Edge,
     MethodDefinition,
     Node,
@@ -71,6 +72,43 @@ def test_tags_non_empty_and_nested_arm_edges() -> None:
         ("g1", "if"),
         ("g2", "if"),
     }
+
+
+def test_target_arm_supersedes_prior_iteration_arm_on_loop_transition() -> None:
+    method = _method(
+        nodes=[
+            Node(
+                id="first_iteration",
+                type="call",
+                branchArms=[BranchArmRef("g1", "if")],
+            ),
+            Node(
+                id="later_iteration",
+                type="call",
+                branchArms=[BranchArmRef("g1", "elseif1")],
+            ),
+        ],
+        edges=[
+            Edge(
+                "first_iteration",
+                "later_iteration",
+                "sequence",
+                branchRequirements=[
+                    BranchRequirement("g1", "if"),
+                    BranchRequirement("g1", "elseif1"),
+                ],
+            ),
+        ],
+        groups=[BranchGroup(
+            "g1",
+            "IF",
+            arms=[BranchArm("if"), BranchArm("elseif1")],
+        )],
+    )
+
+    routed = prepare_method_branch_routes(method)
+
+    assert _requirements(routed.sequenceEdges[0]) == {("g1", "elseif1")}
 
 
 def test_materializes_empty_continuing_arm_to_local_continuation() -> None:

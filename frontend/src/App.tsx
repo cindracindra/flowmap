@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Flex, Text, Button } from "@radix-ui/themes";
-import { GitBranch, Info, Compass, Waypoints, Workflow } from "lucide-react";
+import { GitBranch, Info, Compass, Workflow, BookOpen } from "lucide-react";
 
-import AnchoredGraphView, { GraphLegend } from "./views/AnchoredGraphView";
+import { GraphLegend } from "./views/AnchoredGraphView";
 import TopicDiscoveryView from "./views/TopicDiscoveryView";
 import FilteredGraphView from "./views/FilteredGraphView";
+import UserGuideView from "./views/UserGuideView";
 
 // ── App shell ────────────────────────────────────────────────────────────
 // Header identifies the trace; the sub-header switches between the two
@@ -12,13 +13,19 @@ import FilteredGraphView from "./views/FilteredGraphView";
 // its own side panels and status bar -- they answer different questions and
 // share no canvas state.
 
-type View = "topics" | "anchored" | "filtered";
+type View = "guide" | "topics" | "filtered";
 
 const VIEWS: { id: View; label: string; icon: typeof Compass; hint: string }[] = [
   { id: "topics", label: "Topic discovery", icon: Compass, hint: "what this trace is about" },
-  { id: "anchored", label: "Anchored graph", icon: Waypoints, hint: "the flattened control flow" },
   { id: "filtered", label: "Expandable graph", icon: Workflow, hint: "caller-local flow with attached method bodies" },
 ];
+
+const GUIDE_VIEW: (typeof VIEWS)[number] = {
+  id: "guide",
+  label: "User guide",
+  icon: BookOpen,
+  hint: "how to read and navigate FlowMap",
+};
 
 function ViewTab({
   view,
@@ -59,7 +66,7 @@ function ViewTab({
 }
 
 export default function App() {
-  const [view, setView] = useState<View>("anchored");
+  const [view, setView] = useState<View>("guide");
   const [legendOpen, setLegendOpen] = useState(false);
 
   return (
@@ -121,6 +128,7 @@ export default function App() {
       {/* Sub-header: view switcher */}
       <Flex
         align="center"
+        justify="between"
         px="2"
         flexShrink="0"
         height="34px"
@@ -133,16 +141,21 @@ export default function App() {
           ))}
           </nav>
         </Flex>
+        <Flex asChild align="center" height="100%">
+          <nav aria-label="Help">
+            <ViewTab view={GUIDE_VIEW} active={view === "guide"} onSelect={() => setView("guide")} />
+          </nav>
+        </Flex>
       </Flex>
 
       {/* Keep each view mounted while it is hidden so tab switches preserve
           graph selection, expansion, scrolling and panel state. */}
       <Flex direction="column" flexGrow="1" style={{ minHeight: 0 }}>
+        <Flex direction="column" flexGrow="1" style={{ minHeight: 0, display: view === "guide" ? "flex" : "none" }}>
+          <UserGuideView />
+        </Flex>
         <Flex direction="column" flexGrow="1" style={{ minHeight: 0, display: view === "topics" ? "flex" : "none" }}>
           <TopicDiscoveryView />
-        </Flex>
-        <Flex direction="column" flexGrow="1" style={{ minHeight: 0, display: view === "anchored" ? "flex" : "none" }}>
-          <AnchoredGraphView />
         </Flex>
         <Flex direction="column" flexGrow="1" style={{ minHeight: 0, display: view === "filtered" ? "flex" : "none" }}>
           <FilteredGraphView />

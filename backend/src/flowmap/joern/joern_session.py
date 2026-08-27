@@ -23,7 +23,7 @@ from cpgqls_client import CPGQLSClient
 # then echoes as `val resN: String = """...json...""". This regex pulls that
 # triple-quoted payload back out so it can be parsed as real JSON.
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-_JSON_PAYLOAD_RE = re.compile(r'"""(.*)"""', re.DOTALL)
+_JSON_PAYLOAD_RE = re.compile(r'"""(.*?)"""', re.DOTALL)
 
 # Whatever json.loads() can produce -- query_json/query_script_json don't
 # know ahead of time whether a given query's JSON payload is an object, an
@@ -288,10 +288,13 @@ class JoernSession:
     @staticmethod
     def _parse_repl_json(raw: str) -> JsonValue:
         clean = _ANSI_RE.sub("", raw)
-        match = _JSON_PAYLOAD_RE.search(clean)
-        if not match:
-            raise RuntimeError(f"Could not find JSON payload in REPL output: {clean!r}")
-        return json.loads(match.group(1))
+        matches = list(_JSON_PAYLOAD_RE.finditer(clean))
+        for match in reversed(matches):
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                continue
+        raise RuntimeError(f"Could not find JSON payload in REPL output: {clean!r}")
 
     def stop(self) -> None:
         """Terminate the real server process and release its memory."""
@@ -309,7 +312,12 @@ class JoernSession:
         # _prev_*_handler stay None, so this is a no-op).
         self._restore_signal_handlers()
 
-        pid = self._pid or pid_on_port(self.port)
+        # Only fall back to the port owner when this session actually launched
+        # a server. If start() rejected an already-occupied port, _launcher is
+        # still None and that unrelated process must never be terminated.
+        pid = self._pid
+        if pid is None and self._launcher is not None:
+            pid = pid_on_port(self.port)
         if pid is not None:
             try:
                 os.kill(pid, signal.SIGTERM)

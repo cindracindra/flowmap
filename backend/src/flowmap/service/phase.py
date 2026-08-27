@@ -118,6 +118,7 @@ def resolve_phase_gate_batch(
             user=prompt,
             max_tokens=max(512, min(4096, 160 * len(questions))),
             json_object=True,
+            call_site="resolve_phase_gate_batch",
         ).strip()
     except LLMError:
         return {}
@@ -197,6 +198,7 @@ def label_phase(
                 ),
                 user=user_prompt,
                 max_tokens=64,
+                call_site="label_phase",
             )
         except LLMError as exc:
             _phase_label_issue(graph, phase_index, f"provider error: {exc}")

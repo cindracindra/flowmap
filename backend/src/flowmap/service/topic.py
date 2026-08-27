@@ -178,6 +178,7 @@ def label_cluster(
             system=_LABEL_SYSTEM_PROMPT,
             user=_cluster_prompt(cluster, class_by_full_name),
             max_tokens=128,
+            call_site="label_cluster",
         ).strip()
         return label or _fallback_label(cluster)
     except LLMError:
@@ -217,6 +218,7 @@ def discover_topics_whole_corpus(
             system=_WHOLE_CORPUS_SYSTEM_PROMPT,
             user=_whole_corpus_prompt(class_documents, readme_documents),
             json_object=True,
+            call_site="discover_topics_whole_corpus",
         )
     except LLMError as e:
         raise RuntimeError(
@@ -340,6 +342,7 @@ def classify_operation(
             ),
             max_tokens=128,
             json_object=True,
+            call_site="classify_operation",
         )
     except LLMError as exc:
         raise RuntimeError(f"classify_operation: {exc}") from exc
@@ -392,6 +395,7 @@ def label_opseq(
             system=_LABEL_OPSEQ_SYSTEM_PROMPT,
             user=content,
             max_tokens=128,
+            call_site="label_opseq",
         ).strip()
     except LLMError as exc:
         raise RuntimeError(f"label_opseq: {exc}") from exc

@@ -1,4 +1,4 @@
 {
-  "sourceDir": "../test_code/jpetstore/jpetstore-6/src/main",
-  "outputDir": "../test_code/jpetstore/output"
+  "sourceDir": "../evaluation/codebase/gson/gson/src/main",
+  "outputDir": "../evaluation/results/gson/cold_1/output"
 }

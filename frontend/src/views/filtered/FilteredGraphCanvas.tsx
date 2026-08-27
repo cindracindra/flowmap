@@ -1,6 +1,6 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { opseqLabel } from "../../data/operationLabels";
 import { layoutFilteredGraph, visibleNodeLabel, type PhaseGeometry } from "../../lib/filteredGraphLayout";
@@ -51,6 +51,24 @@ export default function FilteredGraphCanvas({
   const currentMethod = currentMethodEntryId ? bundle.methodsByEntryId[currentMethodEntryId] : undefined;
   const callerIds = currentMethodEntryId ? bundle.callersByEntryId[currentMethodEntryId] ?? [] : [];
   const operationIds = currentMethodEntryId ? bundle.operationIdsByMethodEntryId[currentMethodEntryId] ?? [] : [];
+
+  useEffect(() => {
+    if (!selectedNodeId) return;
+    const point = layout.positions.get(selectedNodeId);
+    const viewport = graphScrollRef.current;
+    if (!point || !viewport) return;
+    const margin = 72;
+    const outsideViewport = point.x < viewport.scrollLeft + margin
+      || point.x > viewport.scrollLeft + viewport.clientWidth - margin
+      || point.y < viewport.scrollTop + margin
+      || point.y > viewport.scrollTop + viewport.clientHeight - margin;
+    if (!outsideViewport) return;
+    viewport.scrollTo({
+      left: Math.max(0, point.x - viewport.clientWidth / 2),
+      top: Math.max(0, point.y - viewport.clientHeight / 2),
+      behavior: "smooth",
+    });
+  }, [layout, selectedNodeId]);
 
   return (
     <Flex direction="column" flexGrow="1" style={{ minWidth: 0 }}>

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal, Mapping
 
 from groq import Groq, GroqError
 from openai import OpenAI, OpenAIError
@@ -59,6 +60,7 @@ class LLMClient:
 
     provider: Provider
     sdk: Any
+    telemetry_sink: Callable[[Mapping[str, object]], None] | None = None
 
     def model(self, role: Role) -> str:
         return _MODELS[self.provider][role]
@@ -73,6 +75,7 @@ class LLMClient:
         temperature: float = 0,
         reasoning_effort: str | None = "low",
         json_object: bool = False,
+        call_site: str = "unspecified",
     ) -> str:
         """
         Run one chat completion and return the message content (never None;
@@ -101,15 +104,53 @@ class LLMClient:
             if max_tokens is not None:
                 kwargs["max_tokens"] = max_tokens
 
+        started = time.perf_counter()
         try:
             response = self.sdk.chat.completions.create(**kwargs)
         except (GroqError, OpenAIError) as exc:
+            self._record_telemetry(
+                call_site=call_site, role=role, duration=time.perf_counter() - started,
+                system=system, user=user, response_text="", response=None, error=exc,
+            )
             raise LLMError(f"{self.provider} call failed: {exc}") from exc
+        content = response.choices[0].message.content or ""
+        self._record_telemetry(
+            call_site=call_site, role=role, duration=time.perf_counter() - started,
+            system=system, user=user, response_text=content, response=response, error=None,
+        )
+        return content
 
-        return response.choices[0].message.content or ""
+    def _record_telemetry(self, *, call_site: str, role: Role, duration: float,
+                          system: str, user: str, response_text: str,
+                          response: Any, error: BaseException | None) -> None:
+        if self.telemetry_sink is None:
+            return
+        usage = getattr(response, "usage", None) if response is not None else None
+        def count(name: str) -> int | None:
+            value = getattr(usage, name, None)
+            return value if isinstance(value, int) else None
+        # Telemetry must never make a successful model request fail.
+        try:
+            self.telemetry_sink({
+                "call_site": call_site, "provider": self.provider,
+                "model": self.model(role), "role": role,
+                "duration_seconds": duration, "success": error is None,
+                "prompt_characters": len(system) + len(user),
+                "response_characters": len(response_text),
+                "input_tokens": count("prompt_tokens"),
+                "output_tokens": count("completion_tokens"),
+                "total_tokens": count("total_tokens"),
+                "error_type": type(error).__name__ if error is not None else None,
+            })
+        except Exception:
+            pass
 
 
-def get_client(provider: Provider = "groq") -> LLMClient:
+def get_client(
+    provider: Provider = "groq",
+    *,
+    telemetry_sink: Callable[[Mapping[str, object]], None] | None = None,
+) -> LLMClient:
     """
     Construct a client for `provider`, reading its key from the environment
     (load_dotenv() must have run first -- both SDKs infer the key implicitly
@@ -121,13 +162,14 @@ def get_client(provider: Provider = "groq") -> LLMClient:
         )
     try:
         if provider == "groq":
-            return LLMClient(provider=provider, sdk=Groq())
+            return LLMClient(provider=provider, sdk=Groq(), telemetry_sink=telemetry_sink)
         api_key = os.environ.get("TOGETHERAI_API_KEY")
         if not api_key:
             raise OpenAIError("TOGETHERAI_API_KEY is not set.")
         return LLMClient(
             provider=provider,
             sdk=OpenAI(api_key=api_key, base_url=_TOGETHER_BASE_URL),
+            telemetry_sink=telemetry_sink,
         )
     except (GroqError, OpenAIError) as exc:
         raise RuntimeError(f"{exc} {_KEY_HELP[provider]}") from exc

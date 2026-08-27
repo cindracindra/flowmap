@@ -39,12 +39,6 @@ class NodeSemanticFeatures:
     # Method’s return type.
     outputType: str | None = None
 
-    # IDs of operation nodes that provide data used by this node.
-    dataSourceIds: list[str] = field(default_factory=list)
-
-    # IDs of operation nodes that consume data produced by this node.
-    dataConsumerIds: list[str] = field(default_factory=list)
-
     # Application-specific types associated with the operation, gathered
     # from the receiver, arguments, return type, or referenced fields.
     domainTypes: list[str] = field(default_factory=list)
@@ -68,8 +62,6 @@ class NodeSemanticFeatures:
             fieldsRead=list(data.get("fieldsRead", [])),
             fieldsWritten=list(data.get("fieldsWritten", [])),
             outputType=data.get("outputType"),
-            dataSourceIds=list(data.get("dataSourceIds", [])),
-            dataConsumerIds=list(data.get("dataConsumerIds", [])),
             domainTypes=list(data.get("domainTypes", [])),
             methodTerms=list(data.get("methodTerms", [])),
             observedFeatures=list(data.get("observedFeatures", [])),
@@ -92,8 +84,6 @@ class NodeSemanticFeatures:
             ("inputIdentifiers", self.inputIdentifiers),
             ("fieldsRead", self.fieldsRead),
             ("fieldsWritten", self.fieldsWritten),
-            ("dataSourceIds", self.dataSourceIds),
-            ("dataConsumerIds", self.dataConsumerIds),
             ("domainTypes", self.domainTypes),
             ("methodTerms", self.methodTerms),
             ("observedFeatures", self.observedFeatures),

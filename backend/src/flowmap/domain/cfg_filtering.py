@@ -343,7 +343,7 @@ def filter_noise_cfg(cfg: Graph, *, preserve_all_entries: bool = False) -> Graph
         edges=kept_edges,
         branchGroups=groups,
         semanticFeatures=scoped_semantic_features(
-            cfg.semanticFeatures, {node.id for node in kept_nodes}, kept_edges
+            cfg.semanticFeatures, {node.id for node in kept_nodes}
         ),
     )
     return _annotate_filtered_method_routes(filtered)

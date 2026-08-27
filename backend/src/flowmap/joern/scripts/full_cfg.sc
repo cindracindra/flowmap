@@ -74,8 +74,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       callee => callee.ast.isFieldIdentifier.canonicalName.l
     ).distinct.filterNot(writtenFields.contains)
 
-    val dataSources = call.start.repeat(_.ddgIn)(_.maxDepth(10).until(_.isCall))
-      .isCall.dedup.l.map(source => s"c${source.id}")
     val receiverCode = receiver.map(_.code).filter(readable)
     val receiverType = receiver.flatMap(expressionTypes(_).headOption).filter(usefulType)
     val argumentTypes = explicitArguments.flatMap(expressionTypes).filter(usefulType)
@@ -90,7 +88,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val observed =
       (if (receiver.isEmpty || receiverCode.isDefined) List("receiver") else Nil) ++
       (if (argumentsObserved) List("arguments", "inputs") else Nil) ++
-      List("callsiteFields", "ddg") ++
+      List("callsiteFields") ++
       (if (outputType.isDefined) List("output") else Nil) ++
       (if (calleeEntries.nonEmpty) List("calleeFields") else Nil)
 
@@ -100,7 +98,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       "inputIdentifiers" -> stringArray(identifiers),
       "fieldsRead" -> stringArray((argumentFields ++ calleeFields).distinct),
       "fieldsWritten" -> stringArray(writtenFields),
-      "dataSourceIds" -> stringArray(dataSources),
       "domainTypes" -> stringArray(domainTypes),
       "methodTerms" -> stringArray(methodTerms),
       "observedFeatures" -> stringArray(observed)
@@ -660,11 +657,6 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       terminusById.get(call.id).foreach { t => callNode("terminus") = ujson.Str(t) }
       addNode(callId, callNode)
       semanticFeatures(callId) = semanticFeature(call)
-
-      // data dependency chain -- same ddgIn walk as inter_cfg.sc, unfiltered
-      call.start.repeat(_.ddgIn)(_.maxDepth(10).until(_.isCall)).isCall.dedup.l.foreach { src =>
-        edges += ujson.Obj("from" -> s"c${src.id}", "to" -> callId, "type" -> "data")
-      }
 
       // interprocedural traversal
       val resolvedCallees = call.callee.whereNot(_.isAbstract).l

@@ -148,9 +148,28 @@ def annotate_method_branch_requirements(method: MethodDefinition) -> MethodDefin
 
     edges: list[Edge] = []
     for edge in method.sequenceEdges:
+        target_requirements = _requirements_for_node(nodes.get(edge.target))
+        target_arm_by_group = {
+            requirement.groupId: requirement.armLabel
+            for requirement in target_requirements
+        }
+
+        # A filtered edge can cross a loop boundary and enter a different arm
+        # of the same lexical branch on the next iteration. The edge's
+        # extraction metadata then contains both the source iteration's arm
+        # and the target iteration's arm. Branch requirements describe the
+        # state needed to enter the target, so its arm is authoritative for
+        # that group; retaining both would incorrectly make a valid iterative
+        # transition look contradictory.
+        inherited_requirements = [
+            requirement
+            for requirement in edge.branchRequirements
+            if requirement.groupId not in target_arm_by_group
+            or target_arm_by_group[requirement.groupId] == requirement.armLabel
+        ]
         requirements = _merge_requirements(
-            list(edge.branchRequirements),
-            _requirements_for_node(nodes.get(edge.target)),
+            inherited_requirements,
+            target_requirements,
         )
         for group_id, labels in arms_by_group.items():
             matching = [

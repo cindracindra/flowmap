@@ -205,8 +205,6 @@ export interface NodeSemanticFeatures {
   fieldsRead?: string[];
   fieldsWritten?: string[];
   outputType?: string;
-  dataSourceIds?: string[];
-  dataConsumerIds?: string[];
   domainTypes?: string[];
   methodTerms?: string[];
   observedFeatures?: string[];

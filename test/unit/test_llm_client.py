@@ -87,6 +87,26 @@ class CompleteTests(unittest.TestCase):
         with self.assertRaises(llm_client.LLMError):
             client.complete(role="small", system="s", user="u")
 
+    def test_optional_telemetry_records_usage_without_prompt_content(self):
+        events = []
+        client, sdk = self._client("groq")
+        client = llm_client.LLMClient(
+            provider=client.provider, sdk=client.sdk, telemetry_sink=events.append
+        )
+        sdk.chat.completions.create.return_value.usage = MagicMock(
+            prompt_tokens=11, completion_tokens=4, total_tokens=15
+        )
+        client.complete(
+            role="small", system="secret-system", user="secret-user",
+            call_site="label_cluster",
+        )
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["call_site"], "label_cluster")
+        self.assertEqual(events[0]["input_tokens"], 11)
+        self.assertEqual(events[0]["output_tokens"], 4)
+        self.assertNotIn("system", events[0])
+        self.assertNotIn("user", events[0])
+
 
 if __name__ == "__main__":
     unittest.main()

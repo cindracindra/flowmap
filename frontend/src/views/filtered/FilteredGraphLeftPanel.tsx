@@ -128,19 +128,27 @@ export interface FilteredGraphLeftPanelProps {
   onSelectOperation: (operationId: string) => void;
   onSelectMethod: (entryId: string) => void;
   onCollapse: () => void;
+  variant?: "default" | "operation-methods";
 }
 
 function TabButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
   return <button onClick={onClick} style={{ all: "unset", cursor: "pointer", flex: 1, padding: "9px 10px", textAlign: "center", fontSize: 12, color: active ? "var(--accent-11)" : "var(--gray-10)", boxShadow: active ? "inset 0 -2px 0 var(--accent-9)" : "none" }}>{children}</button>;
 }
 
-export default function FilteredGraphLeftPanel({ bundle, selectedOperationId, selectedMethodEntryId, onSelectOperation, onSelectMethod, onCollapse }: FilteredGraphLeftPanelProps) {
+export default function FilteredGraphLeftPanel({ bundle, selectedOperationId, selectedMethodEntryId, onSelectOperation, onSelectMethod, onCollapse, variant = "default" }: FilteredGraphLeftPanelProps) {
   const [tab, setTab] = useState<PanelTab>("explore");
   const [query, setQuery] = useState("");
   const normalized = query.trim().toLowerCase();
-  const methodTree = useMemo(() => buildSourceTree(Object.values(bundle.methodsByEntryId).map((method) => ({
+  const operationMethodIds = useMemo(() => {
+    if (variant !== "operation-methods" || !selectedOperationId) return null;
+    const operation = bundle.operationsById[selectedOperationId];
+    return operation ? new Set([operation.rootEntryId, ...operation.reachableMethodEntryIds]) : new Set<string>();
+  }, [bundle, selectedOperationId, variant]);
+  const methodTree = useMemo(() => buildSourceTree(Object.values(bundle.methodsByEntryId)
+    .filter((method) => !operationMethodIds || operationMethodIds.has(method.entryId))
+    .map((method) => ({
     path: sourcePath(method.methodFullName, method.entry.sourceFile), name: methodShortName(method.methodFullName), id: method.entryId, fullName: method.methodFullName,
-  }))), [bundle]);
+  }))), [bundle, operationMethodIds]);
   const operationTree = useMemo(() => buildSourceTree(Object.values(bundle.operationsById).map((operation) => {
     const method = bundle.methodsByEntryId[operation.rootEntryId];
     const fullName = method?.methodFullName ?? operation.id;
@@ -148,21 +156,36 @@ export default function FilteredGraphLeftPanel({ bundle, selectedOperationId, se
       ?? (operation.label ? shortLabel(operation.label) : methodShortName(fullName));
     return { path: sourcePath(fullName, method?.entry.sourceFile), name: label, id: operation.id, fullName: label };
   })), [bundle]);
-  const tree = filterTree(tab === "explore" ? methodTree : operationTree, normalized);
-  const selectedId = tab === "explore" ? selectedMethodEntryId : selectedOperationId;
-  const select = tab === "explore" ? onSelectMethod : onSelectOperation;
+  const methodsOnly = variant === "operation-methods";
+  const activeTab = methodsOnly ? "explore" : tab;
+  const tree = filterTree(activeTab === "explore" ? methodTree : operationTree, normalized);
+  const selectedId = activeTab === "explore" ? selectedMethodEntryId : selectedOperationId;
+  const select = activeTab === "explore" ? onSelectMethod : onSelectOperation;
 
   return (
     <Flex direction="column" width="260px" flexShrink="0" style={{ borderRight: "1px solid var(--gray-a5)" }}>
       <Flex style={{ borderBottom: "1px solid var(--gray-a5)" }}>
-        <TabButton active={tab === "explore"} onClick={() => setTab("explore")}>Explore</TabButton>
-        <TabButton active={tab === "operations"} onClick={() => setTab("operations")}>Operations</TabButton>
+        {methodsOnly ? (
+          <Box style={{
+            boxSizing: "border-box",
+            flex: 1,
+            padding: "9px 10px",
+            textAlign: "center",
+            fontSize: 12,
+            color: "var(--accent-11)",
+          }}>Methods</Box>
+        ) : (
+          <>
+            <TabButton active={tab === "explore"} onClick={() => setTab("explore")}>Explore</TabButton>
+            <TabButton active={tab === "operations"} onClick={() => setTab("operations")}>Operations</TabButton>
+          </>
+        )}
         <Flex align="center" pr="1"><IconButton size="1" variant="ghost" color="gray" aria-label="Hide left panel" onClick={onCollapse}><ChevronLeft size={14} /></IconButton></Flex>
       </Flex>
-      <Box p="2"><TextField.Root size="1" placeholder={tab === "explore" ? "Find a method" : "Find an operation"} value={query} onChange={(event) => setQuery(event.target.value)}><TextField.Slot><Search size={13} /></TextField.Slot></TextField.Root></Box>
+      <Box p="2"><TextField.Root size="1" placeholder={activeTab === "explore" ? "Find a method" : "Find an operation"} value={query} onChange={(event) => setQuery(event.target.value)}><TextField.Slot><Search size={13} /></TextField.Slot></TextField.Root></Box>
       <ScrollArea style={{ flex: 1 }}>
         <Flex direction="column" gap="1" p="2">
-          {tree.map((item, index) => <TreeRow key={`${item.kind}:${item.name}:${index}`} item={item} depth={0} selectedId={selectedId} leafKind={tab === "explore" ? "method" : "operation"} onSelect={select} />)}
+          {tree.map((item, index) => <TreeRow key={`${item.kind}:${item.name}:${index}`} item={item} depth={0} selectedId={selectedId} leafKind={activeTab === "explore" ? "method" : "operation"} onSelect={select} />)}
         </Flex>
       </ScrollArea>
     </Flex>

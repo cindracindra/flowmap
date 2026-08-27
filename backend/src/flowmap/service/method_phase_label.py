@@ -134,6 +134,7 @@ def label_method_phases(
                     # complete objects even when every label uses six words.
                     max_tokens=max(512, min(2048, 128 * len(chunk))),
                     json_object=True,
+                    call_site="label_method_phases",
                 )
             except LLMError as exc:
                 _issue(f"provider error on attempt {attempt + 1}: {exc}")

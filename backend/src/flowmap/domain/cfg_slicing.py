@@ -110,7 +110,7 @@ def slice_from_root(graph: Graph, root_id: str) -> Graph:
         branchGroups=sliced_groups,
         loopGroups=sliced_loops,
         semanticFeatures=scoped_semantic_features(
-            graph.semanticFeatures, reached, sliced_edges
+            graph.semanticFeatures, reached
         ),
     )
 

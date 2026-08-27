@@ -1,9 +1,19 @@
 import json
 import functools
 import argparse
+import atexit
+from dataclasses import asdict
 from pathlib import Path
+import sys
 from typing import Any
 from dotenv import load_dotenv
+
+# `main.py` is commonly executed by file path. In that mode Python adds this
+# file's directory, but not the repository root that owns `data.code_eval`.
+# Resolve it from the file rather than depending on the caller's working dir.
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import time
 from contextlib import contextmanager
@@ -12,7 +22,11 @@ from datetime import datetime
 from llm.client import PROVIDERS, get_client
 from joern.joern_session import JoernSession
 from service.cpg import parse_project
-from service.cfg import extract_full_cfg
+from service.cfg import (
+    attach_targeted_data_edges,
+    extract_cfg_structure,
+    extract_targeted_ddg_edges,
+)
 from service.topic import (
     extract_class_and_method_documents,
     label_cluster,
@@ -29,6 +43,7 @@ from domain.cfg_slicing import filter_and_classify_roots_and_orphans, slice_from
 from domain.cfg_flattening import flatten_cfg
 from domain.opseq_orchestration import has_operation_body
 from domain.phase_orchestration import analyse_codebase_phases, discover_phases
+from domain.phase_data_flow import build_phase_data_flow_questions
 from domain.method_phase_label import label_method_analysis
 from domain.method_branch_routing import prepare_all_method_branch_routes
 from domain.method_scoping import build_method_definitions
@@ -38,9 +53,9 @@ from domain.opseq_clustering import assign_operation_topics_batch
 from domain.display_hierarchy import build_display_hierarchy
 from model import Graph
 from presentation import build_graph_bundle, serialize_graph_bundle
+from data.code_eval import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
 with (PROJECT_ROOT / "flowmap.config.json").open() as config_file:
     FLOWMAP_CONFIG = json.load(config_file)
 
@@ -112,6 +127,13 @@ def root_method_full_names(graph: Graph) -> dict[str, str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate FlowMap analysis artifacts.")
+    default_eval_output = (
+        PROJECT_ROOT
+        / "data"
+        / "code_eval"
+        / "results"
+        / f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    )
     parser.add_argument(
         "--provider",
         choices=PROVIDERS,
@@ -123,16 +145,39 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Re-extract cpg.bin even when a cached artifact already exists.",
     )
+    parser.add_argument(
+        "--eval-output",
+        nargs="?",
+        const=str(default_eval_output),
+        default=None,
+        metavar="PATH",
+        help=(
+            "Record structured stage and LLM telemetry. If PATH is omitted, "
+            "write a timestamped file under data/code_eval/results/."
+        ),
+    )
     return parser.parse_args()
 
 
 @contextmanager
-def timed(label: str):
+def timed(
+    label: str,
+    recorder: EvaluationRecorder | None = None,
+    *,
+    input_stats: dict[str, int | float | str | None] | None = None,
+    output_stats: dict[str, int | float | str | None] | None = None,
+):
     start_wall = datetime.now().strftime("%H:%M:%S")
     start = time.perf_counter()
     print(f"[{start_wall}] START {label}")
     try:
-        yield
+        if recorder is None:
+            yield
+        else:
+            with recorder.stage(
+                label, input_stats=input_stats, output_stats=output_stats
+            ):
+                yield
     finally:
         elapsed = time.perf_counter() - start
         print(f"[{datetime.now().strftime('%H:%M:%S')}] DONE {label} ({elapsed:.2f}s)")
@@ -141,27 +186,107 @@ def timed(label: str):
 if __name__ == "__main__":
     load_dotenv()
     args = parse_args()
-    client = get_client(args.provider)
+    recorder = (
+        EvaluationRecorder(manifest={
+            "provider": args.provider,
+            "force_cpg": args.force_cpg,
+            "source_dir": str(SOURCE_DIR),
+            "output_dir": str(OUTPUT_DIR),
+        })
+        if args.eval_output is not None else None
+    )
+    if recorder is not None:
+        # Preserve partial telemetry on uncaught failures (including the failed
+        # stage recorded by EvaluationRecorder.stage).
+        atexit.register(recorder.write_json, args.eval_output)
+    client = get_client(
+        args.provider,
+        telemetry_sink=recorder.record_llm_call if recorder is not None else None,
+    )
 
     # 1. Reuse the cached CPG unless the caller explicitly invalidates it.
-    with timed("CPG preparation"):
+    with timed("CPG preparation", recorder):
         cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
         if args.force_cpg or not cpg_output_path.exists():
             parse_project(SOURCE_DIR, cpg_output_path)
 
-    # 2–4. Joern is needed only for document and raw CFG extraction.
+    # 2–5. Keep Joern queries separate so structural CFG and DDG cost are visible.
     session = JoernSession(port=8080)
-    with timed("Joern extraction"):
-        try:
+    try:
+        with timed("Joern startup and CPG load", recorder):
             session.start()
             session.load_cpg(cpg_output_path)
-            class_docs, method_docs = extract_class_and_method_documents(session)
-            raw_cfg = extract_full_cfg(session, SOURCE_DIR)
-        finally:
-            session.stop()
 
-    # 5. Topics describe the codebase documents and do not depend on CFG slices.
-    with timed("Topic clustering"):
+        with timed("Joern document extraction", recorder):
+            class_docs, method_docs = extract_class_and_method_documents(session)
+
+        cfg_output_stats: dict[str, int | float | str | None] = {}
+        with timed(
+            "Joern structural CFG extraction", recorder,
+            output_stats=cfg_output_stats,
+        ):
+            cfg_structure = extract_cfg_structure(session, SOURCE_DIR)
+            cfg_output_stats.update(asdict(collect_graph_stats(cfg_structure)))
+
+        filtering_output_stats: dict[str, int | float | str | None] = {}
+        with timed(
+            "Whole-codebase CFG filtering and root classification",
+            recorder,
+            input_stats=asdict(collect_graph_stats(cfg_structure)),
+            output_stats=filtering_output_stats,
+        ):
+            filtered_cfg = filter_and_classify_roots_and_orphans(cfg_structure)
+            filtering_output_stats.update(asdict(collect_graph_stats(filtered_cfg)))
+
+        candidate_output_stats: dict[str, int | float | str | None] = {}
+        with timed(
+            "Phase DDG candidate construction", recorder,
+            output_stats=candidate_output_stats,
+        ):
+            ddg_questions = build_phase_data_flow_questions(filtered_cfg)
+            candidate_output_stats.update(
+                candidate_pairs=sum(map(len, ddg_questions.values())),
+                unique_targets=len(ddg_questions),
+            )
+
+        ddg_output_stats: dict[str, int | float | str | None] = {}
+        with timed(
+            "Joern targeted DDG extraction", recorder,
+            input_stats={
+                "retained_call_nodes": filtering_output_stats.get("call_nodes"),
+                "candidate_pairs": candidate_output_stats["candidate_pairs"],
+                "unique_targets": candidate_output_stats["unique_targets"],
+            },
+            output_stats=ddg_output_stats,
+        ):
+            data_edges, ddg_stats = extract_targeted_ddg_edges(
+                session, ddg_questions
+            )
+            ddg_output_stats.update({
+                key: value
+                for key, value in ddg_stats.items()
+                if isinstance(value, (int, float, str)) or value is None
+            })
+            ddg_output_stats["missing_target_count"] = len(
+                ddg_stats.get("missingTargets", [])
+            )
+            filtered_cfg = attach_targeted_data_edges(
+                filtered_cfg, data_edges, ddg_questions
+            )
+    finally:
+        session.stop()
+    if recorder is not None:
+        recorder.run.codebase = collect_codebase_stats(
+            SOURCE_DIR,
+            class_documents=class_docs,
+            method_documents=method_docs,
+        )
+
+    # Topics describe the codebase documents and do not depend on CFG slices.
+    with timed(
+        "Topic clustering", recorder,
+        input_stats={"classes": len(class_docs), "methods": len(method_docs)},
+    ):
         readme_docs = extract_readme_documents(SOURCE_DIR, class_docs)
         class_by_full_name = {document.fullName: document for document in class_docs}
         topic_discovery = discover_topics_with_centroids(
@@ -174,18 +299,14 @@ if __name__ == "__main__":
         )
         topic_clusters = topic_discovery.clusters
 
-    # 6. This is the one authoritative whole-codebase filtering pass.
-    with timed("Whole-codebase CFG filtering and root classification"):
-        filtered_cfg = filter_and_classify_roots_and_orphans(raw_cfg)
-
-    # 7. Build reusable method topology once for graph-bundle export.
-    with timed("Method definition construction"):
+    # Build reusable method topology once for graph-bundle export.
+    with timed("Method definition construction", recorder):
         methods_by_entry_id = prepare_all_method_branch_routes(
             build_method_definitions(filtered_cfg)
         )
 
-    # 8–9. Method analysis and method labelling are independent operations.
-    with timed("Method-level phase analysis"):
+    # Method analysis and method labelling are independent operations.
+    with timed("Method-level phase analysis", recorder):
         phase_gate_resolver = functools.partial(resolve_phase_gate_batch, client)
         phase_analysis = analyse_codebase_phases(
             filtered_cfg,
@@ -193,13 +314,18 @@ if __name__ == "__main__":
             methods_by_entry_id,
         )
 
-    with timed("Method-level phase labelling"):
+    with timed("Method-level phase labelling", recorder):
         method_phase_labeler = functools.partial(label_method_phase_batch, client)
         label_method_analysis(phase_analysis, method_phase_labeler)
 
     # 10. A final classified root must produce an executable operation slice.
     # Slicing the already-filtered graph must not run noise filtering again.
-    with timed("Operation sequence discovery"):
+    operation_output_stats: dict[str, int | float | str | None] = {}
+    with timed(
+        "Operation sequence discovery", recorder,
+        input_stats={"roots": len(filtered_cfg.roots)},
+        output_stats=operation_output_stats,
+    ):
         root_methods = root_method_full_names(filtered_cfg)
         opseqs: dict[str, Graph] = {}
         for root_id in filtered_cfg.roots:
@@ -209,9 +335,15 @@ if __name__ == "__main__":
                     f"classified root {root_id!r} has no executable operation body"
                 )
             opseqs[root_id] = opseq
+        operation_output_stats["operations"] = len(opseqs)
+        operation_output_stats["total_nodes"] = sum(len(graph.nodes) for graph in opseqs.values())
+        operation_output_stats["total_edges"] = sum(len(graph.edges) for graph in opseqs.values())
 
     # 11–12. Assign every operation to topics and generate its display name.
-    with timed("Operation topic assignment and naming"):
+    with timed(
+        "Operation topic assignment and naming", recorder,
+        input_stats={"operations": len(opseqs), "topics": len(topic_clusters)},
+    ):
         formed_by_llm = not any(
             cluster.statistical_terms for cluster in topic_clusters
         )
@@ -243,7 +375,7 @@ if __name__ == "__main__":
     # 13–15. Flatten each filtered slice and deterministically propagate the
     # precomputed method-phase labels through the overlay. Non-retained
     # callees inherit their enclosing phase; retained callees remain separate.
-    with timed("Operation flattening and deterministic phase overlay"):
+    with timed("Operation flattening and deterministic phase overlay", recorder):
         opseq_visualisations: dict[str, dict] = {}
         for root_id, opseq in opseqs.items():
             flattened_cfg = flatten_cfg(opseq)
@@ -261,13 +393,13 @@ if __name__ == "__main__":
             }
 
     # 16. Build and export every artifact only after all analysis is complete.
-    with timed("Artifact construction and export"):
+    with timed("Artifact construction and export", recorder):
         graph_bundle = build_graph_bundle(
             filtered_cfg,
             phase_analysis,
             methods_by_entry_id,
         )
-        export_to_json(Path(OUTPUT_DIR) / "raw_cfg.json", raw_cfg.to_dict())
+        export_to_json(Path(OUTPUT_DIR) / "raw_cfg.json", cfg_structure.to_dict())
         # Keep full_cfg.json as the established frontend-compatible name for
         # the authoritative filtered whole-codebase graph.
         export_to_json(Path(OUTPUT_DIR) / "full_cfg.json", filtered_cfg.to_dict())
@@ -299,3 +431,8 @@ if __name__ == "__main__":
                 root_methods,
             ),
         )
+
+    if recorder is not None:
+        evaluation_path = recorder.write_json(args.eval_output)
+        atexit.unregister(recorder.write_json)
+        print(f"Evaluation telemetry written to {evaluation_path}")

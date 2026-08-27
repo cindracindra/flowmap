@@ -327,6 +327,7 @@ export default function TopicDiscoveryView() {
                 <FilteredGraphView
                   key={selectedOperation.id}
                   initialOperationId={selectedOperation.id}
+                  leftPanelVariant="operation-methods"
                   onOperationChange={(operationId) => {
                     const operation = GRAPH_BUNDLE.operationsById[operationId];
                     setDisplayedOperationLabel(opseqLabel(operationId) ?? operation?.label ?? operationId);
