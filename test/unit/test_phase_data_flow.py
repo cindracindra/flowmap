@@ -44,8 +44,6 @@ def test_excludes_edges_that_phase_relationship_does_not_compare():
         Edge("a", "leaf", "sequence"),
         Edge("a", "b", "invoke"),
         Edge("a", "b", "data"),
-        Edge("a", "b", "sequence", returnFrom="call-site"),
-        Edge("b", "a", "sequence", loopBack=True),
         Edge("missing", "b", "sequence"),
     ])
 
@@ -63,3 +61,17 @@ def test_keeps_forward_branch_transitions_as_separate_sources_for_one_target():
         "b": ["a"],
         "c": ["a", "b"],
     }
+
+
+def test_structural_anchors_do_not_hide_a_ddg_candidate_pair():
+    graph = _graph([
+        Edge("a", "branch_entry", "sequence"),
+        Edge("branch_entry", "decision", "sequence"),
+        Edge("decision", "b", "sequence"),
+    ])
+    graph.nodes.extend([
+        Node("branch_entry", "structure"),
+        Node("decision", "structure"),
+    ])
+
+    assert build_phase_data_flow_questions(graph) == {"b": ["a"]}

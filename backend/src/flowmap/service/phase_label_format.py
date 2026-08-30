@@ -24,6 +24,10 @@ def normalise_phase_label(response: str) -> str:
         ('"', '"'), ("'", "'"), ("`", "`"), ("“", "”"), ("‘", "’"),
     }:
         label = label[1:-1].strip()
+    # Models commonly write slash alternatives without spaces (for example,
+    # ``key/value``), while the label grammar treats slash as a connector.
+    # Canonicalise that harmless variation before validating the label.
+    label = re.sub(r"(?<=\w)/(?=\w)", " / ", label)
     return re.sub(r"\s+", " ", label)
 
 

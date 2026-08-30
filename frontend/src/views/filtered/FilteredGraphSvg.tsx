@@ -4,9 +4,10 @@ import { Repeat2 } from "lucide-react";
 import type { FilteredGraphLayout } from "../../lib/filteredGraphLayout";
 import {
   branchArmText,
+  branchArmToggleLabel,
+  branchArmToggleWidth,
   dispatchArmLabel,
   dispatchArmWidth,
-  truncateBranchText,
   visibleNodeLabel,
 } from "../../lib/filteredGraphLayout";
 import type {
@@ -74,16 +75,13 @@ function FilteredGraphSvgComponent({
           markerEnd={`url(#${invoke ? invokeMarkerId : sequenceMarkerId})`}><title>{style.label}</title></path>;
       })}
       {projection.branchGroups.filter((group) => group.kind === "DISPATCH").map((group) => {
-        const selectedArm = group.arms.find((arm) => arm.label === group.selectedArmLabel);
-        const entry = selectedArm?.firstCallId ? positions.get(selectedArm.firstCallId) : undefined;
-        const fallback = (group.branchPointIds ?? []).map((id) => positions.get(id)).find(Boolean);
-        const anchor = entry ?? fallback;
+        const anchor = group.dispatchAnchorId ? positions.get(group.dispatchAnchorId) : undefined;
         if (!anchor) return null;
         const labels = group.arms.map(dispatchArmLabel);
         const widths = group.arms.map(dispatchArmWidth);
         const selectorX = anchor.x;
         let cursorX = selectorX + 58;
-        const y = entry ? entry.y - 38 : anchor.y + 28;
+        const y = anchor.y + 28;
         const color = "var(--panel-polymorphic)";
         return (
           <g key={`dispatch-controls:${group.id}`}>
@@ -154,8 +152,8 @@ function FilteredGraphSvgComponent({
               {node.recursiveCutoff ? "↻" : node.expanded ? "−" : "+"}
             </text>}
             <text x={style.radius + 9} y="4" fontSize="11" fontFamily={MONO} fill="var(--canvas-foreground)">{visibleNodeLabel(node)}</text>
-            {node.node.type === "exit" && <text x="18" y="19" fontSize="9" fontFamily={MONO} fill={style.stroke}>
-              {node.node.exitKind === "fallthrough" ? "implicit method end" : node.node.exitKind === "throw" ? "dead end" : "explicit return"}
+            {(node.node.type === "exit" || node.node.type === "transfer") && <text x="18" y="19" fontSize="9" fontFamily={MONO} fill={style.stroke}>
+              {node.node.transferKind ?? (node.node.exitKind === "fallthrough" ? "implicit method end" : node.node.exitKind === "throw" ? "dead end" : "explicit return")}
             </text>}
             {node.retainedCall && <text x="18" y="19" fontSize="9" fontFamily={MONO} fill="var(--accent-11)">
               {`${node.retainedCalleePhaseCount ?? 0} ${node.retainedCalleePhaseCount === 1 ? "phase" : "phases"} inside`}
@@ -163,42 +161,56 @@ function FilteredGraphSvgComponent({
           </g>
         );
       })}
-      {branches.map(({ group, x, y }) => {
-        let cursorX = x + 70;
+      {branches.map(({ group, x, y, width: branchWidth }) => {
         const color = group.kind === "DISPATCH" ? "var(--panel-polymorphic)" : "var(--panel-conditional)";
+        const toggleWidths = group.arms.map(branchArmToggleWidth);
+        const totalToggleWidth = toggleWidths.reduce((total, width) => total + width, 0)
+          + Math.max(0, group.arms.length - 1) * 6;
+        let toggleX = x + branchWidth - totalToggleWidth - 8;
         return (
           <g key={`branch-controls:${group.id}`}>
             <text x={x + 9} y={y + 18} fontSize="10" fontWeight="600" fontFamily={MONO} fill={color}>{group.kind === "DISPATCH" ? "dispatch" : group.kind}</text>
-            {group.arms.map((arm) => {
+            {group.arms.map((arm, index) => {
               const fullText = branchArmText(arm);
-              const label = truncateBranchText(fullText);
-              const buttonWidth = Math.max(58, label.length * 6.2 + 18);
+              const conditionText = arm.conditionCode
+                ?? (arm.exceptionType ? `catch ${arm.exceptionType}` : fullText);
               const selected = arm.label === group.selectedArmLabel;
-              const buttonX = cursorX;
-              cursorX += buttonWidth + 6;
+              const buttonWidth = toggleWidths[index];
+              const buttonX = toggleX;
+              toggleX += buttonWidth + 6;
+              const tooltipWidth = Math.max(120, conditionText.length * 6.1 + 16);
+              const tooltipX = Math.max(x + 8, x + branchWidth - tooltipWidth - 8);
               return (
-                <g key={arm.label} role="button" tabIndex={0} aria-label={`Select ${group.kind} arm ${fullText}`}
+                <g key={arm.label} className="branch-arm-toggle" role="button" tabIndex={0} aria-label={`Select ${group.kind} arm ${fullText}`}
                   aria-pressed={selected} onClick={(event) => { event.stopPropagation(); onSelectBranchArm(group.id, arm.label, group.kind); }}
                   onKeyDown={(event) => {
                     if (event.key !== "Enter" && event.key !== " ") return;
                     event.preventDefault();
                     onSelectBranchArm(group.id, arm.label, group.kind);
                   }} style={{ cursor: "pointer" }}>
-                  <title>{fullText}</title>
                   <rect x={buttonX} y={y + 5} width={buttonWidth} height="20" rx="10"
                     fill={color} fillOpacity={selected ? 0.3 : 0.08}
                     stroke={color} strokeOpacity={selected ? 1 : 0.45}
                     strokeWidth={selected ? 1.8 : 1} />
                   <text x={buttonX + buttonWidth / 2} y={y + 18.5} textAnchor="middle" fontSize="9"
                     fontWeight={selected ? "600" : "400"} fontFamily={MONO}
-                    fill="var(--canvas-foreground)" pointerEvents="none">{label}</text>
+                    fill="var(--canvas-foreground)" pointerEvents="none">{branchArmToggleLabel(arm)}</text>
+                  <g className="branch-arm-tooltip" pointerEvents="none" opacity="0">
+                    <rect x={tooltipX} y={y - 27} width={tooltipWidth} height="24" rx="5"
+                      fill="var(--color-panel-solid)" stroke="var(--gray-a6)" />
+                    <text x={tooltipX + 8} y={y - 11} fontSize="9" fontFamily={MONO}
+                      fill="var(--canvas-foreground)">{conditionText}</text>
+                  </g>
                 </g>
               );
             })}
           </g>
         );
       })}
-      <style>{`.filtered-graph-node:hover > .filtered-graph-node-hover { opacity: 1; }`}</style>
+      <style>{`
+        .filtered-graph-node:hover > .filtered-graph-node-hover { opacity: 1; }
+        .branch-arm-toggle:hover > .branch-arm-tooltip { opacity: 1; }
+      `}</style>
     </svg>
   );
 }

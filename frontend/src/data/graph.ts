@@ -11,7 +11,7 @@ import { topicClusterRaw, topicOperationsRaw } from "virtual:flowmap-data";
 import type { TopicCluster, TopicOperation } from "../types/topics";
 import { sortTopics } from "../lib/topics";
 
-export { GRAPH_BUNDLE, FILTERED_GRAPH_DATA } from "./filteredGraph";
+export { GRAPH_BUNDLE } from "./filteredGraph";
 
 const GENERATED_TOPICS = topicClusterRaw as unknown as TopicCluster[];
 

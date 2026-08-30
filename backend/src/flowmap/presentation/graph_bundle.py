@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from domain.method_branch_routing import prepare_all_method_branch_routes
+from domain.method_structure_validation import validate_all_method_structures
 from domain.method_scoping import build_method_definitions
 from domain.phase_segmentation import Analysis
 from model import Graph, MethodDefinition
@@ -64,7 +64,7 @@ def build_graph_bundle(
         raise ValueError("phase_analysis was not computed for the supplied filtered graph")
 
     if methods is None:
-        methods = prepare_all_method_branch_routes(
+        methods = validate_all_method_structures(
             build_method_definitions(filtered_graph)
         )
     callers_by_entry: dict[str, set[str]] = {

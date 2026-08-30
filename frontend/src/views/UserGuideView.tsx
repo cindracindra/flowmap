@@ -121,7 +121,7 @@ export default function UserGuideView() {
           </GuideCard>
           <GuideCard icon={<Info size={16} />} title="Legend">
             The global <strong>Legend</strong> button explains node shapes, edge styles, loops, and recursive calls. Use it when
-            distinguishing sequence, invocation, return, and inferred fallback edges, or entry, call, leaf, and exit nodes.
+            distinguishing method-local sequence and invocation edges, or entry, call, leaf, transfer, and exit nodes.
           </GuideCard>
         </Box>
 
@@ -191,7 +191,6 @@ export default function UserGuideView() {
           <Term label="method">A Java method definition. The expandable canvas can focus on one method while preserving links to operations that use it.</Term>
           <Term label="phase">A semantic stage within a method, inferred from related work. It is not a thread, timing measurement, or runtime trace span.</Term>
           <Term label="leaf">An external or unresolved operation whose internal control flow is not available to expand.</Term>
-          <Term label="fallback">An inferred continuation used when the analysed callee has no direct path back to the caller’s next visible node.</Term>
         </Flex>
 
         <Flex align="center" gap="2" p="3" style={{ borderRadius: 7, background: "var(--accent-a2)", border: "1px solid var(--accent-a5)" }}>

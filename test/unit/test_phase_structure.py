@@ -171,6 +171,82 @@ def test_prebuilt_method_definitions_preserve_structure_output() -> None:
     assert canonical_call == legacy_call
 
 
+def test_structural_branch_nodes_do_not_enter_or_split_phase_structures() -> None:
+    graph = Graph.from_dict({
+        "nodes": [
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
+            {"id": "before", "type": "call", "callerMethod": "run"},
+            {
+                "id": "decision", "type": "structure", "callerMethod": "run",
+                "structureGroupId": "g1", "structureRole": "decision", "code": "enabled",
+            },
+            {
+                "id": "work", "type": "call", "callerMethod": "run",
+                "branchArms": [{"groupId": "g1", "armLabel": "if"}],
+            },
+            {"id": "after", "type": "call", "callerMethod": "run"},
+        ],
+        "edges": [
+            {"from": "entry", "to": "before", "type": "sequence"},
+            {"from": "before", "to": "decision", "type": "sequence"},
+            {"from": "decision", "to": "work", "type": "sequence"},
+            {"from": "work", "to": "after", "type": "sequence"},
+        ],
+        "branchGroups": [{
+            "id": "g1", "kind": "IF", "method": "run", "entryNodeId": "decision",
+            "arms": [
+                {"label": "if", "empty": False, "exits": [{"kind": "continues"}]},
+                {"label": "else", "empty": True, "exits": [{"kind": "continues"}]},
+            ],
+        }],
+    })
+
+    structure = build_method_structures(graph)["entry"]
+
+    assert all(
+        "decision" not in item.nodeIds
+        for item in structure.structures
+        if isinstance(item, LinearStructure)
+    )
+    assert structure.structures[0] == LinearStructure(("before",))
+    branch = structure.structures[1]
+    assert isinstance(branch, BranchStructure)
+    assert branch.arms == ((LinearStructure(("work",)),),)
+    assert structure.structures[2] == LinearStructure(("after",))
+
+
+def test_loop_anchors_and_transfer_do_not_split_call_sequence() -> None:
+    graph = Graph.from_dict({
+        "nodes": [
+            {"id": "entry", "type": "entry", "calleeFullName": "run"},
+            {"id": "before", "type": "call", "callerMethod": "run"},
+            {"id": "loop_entry", "type": "structure", "callerMethod": "run", "structureGroupId": "loop", "structureRole": "entry"},
+            {"id": "body", "type": "call", "callerMethod": "run", "loopIds": ["loop"]},
+            {"id": "continue", "type": "transfer", "callerMethod": "run", "transferKind": "continue", "targetStructureGroupId": "loop", "loopIds": ["loop"]},
+            {"id": "loop_exit", "type": "structure", "callerMethod": "run", "structureGroupId": "loop", "structureRole": "exit"},
+            {"id": "after", "type": "call", "callerMethod": "run"},
+        ],
+        "edges": [
+            {"from": "entry", "to": "before", "type": "sequence"},
+            {"from": "before", "to": "loop_entry", "type": "sequence"},
+            {"from": "loop_entry", "to": "body", "type": "sequence"},
+            {"from": "body", "to": "continue", "type": "sequence"},
+            {"from": "continue", "to": "loop_exit", "type": "sequence"},
+            {"from": "loop_exit", "to": "after", "type": "sequence"},
+        ],
+        "loopGroups": [{
+            "id": "loop", "kind": "WHILE", "method": "run",
+            "entryNodeId": "loop_entry", "exitNodeId": "loop_exit",
+        }],
+    })
+
+    structure = build_method_structures(graph)["entry"]
+
+    assert structure.structures == (
+        LinearStructure(("before", "body", "after")),
+    )
+
+
 def test_explicitly_owned_disconnected_call_is_not_dropped() -> None:
     graph = Graph.from_dict({
         "nodes": [
@@ -191,27 +267,35 @@ def test_explicitly_owned_disconnected_call_is_not_dropped() -> None:
     )
 
 
-def test_synthesized_return_edge_does_not_order_method_calls() -> None:
+def test_branch_arm_order_follows_cfg_edges_not_node_serialization() -> None:
     graph = Graph.from_dict({
         "nodes": [
             {"id": "entry", "type": "entry", "calleeFullName": "run"},
-            {"id": "first", "type": "call", "callerMethod": "run"},
-            {"id": "second", "type": "call", "callerMethod": "run"},
+            {"id": "pre", "type": "call", "callerMethod": "run"},
+            {
+                "id": "serialized_first", "type": "call", "callerMethod": "run",
+                "branchArms": [{"groupId": "choice", "armLabel": "else"}],
+            },
+            {
+                "id": "cfg_first", "type": "call", "callerMethod": "run",
+                "branchArms": [{"groupId": "choice", "armLabel": "if"}],
+            },
+            {"id": "after", "type": "call", "callerMethod": "run"},
         ],
         "edges": [
-            {"from": "entry", "to": "first", "type": "sequence"},
-            {
-                "from": "first",
-                "to": "second",
-                "type": "sequence",
-                "returnFrom": "some-caller",
-            },
+            {"from": "entry", "to": "pre", "type": "sequence"},
+            {"from": "pre", "to": "cfg_first", "type": "sequence"},
+            {"from": "pre", "to": "serialized_first", "type": "sequence"},
+            {"from": "cfg_first", "to": "after", "type": "sequence"},
+            {"from": "serialized_first", "to": "after", "type": "sequence"},
         ],
     })
 
     method = build_method_structures(graph)["entry"]
+    branch = method.structures[1]
 
-    assert method.structures == (
-        LinearStructure(("first",)),
-        LinearStructure(("second",)),
+    assert isinstance(branch, BranchStructure)
+    assert branch.arms == (
+        (LinearStructure(("cfg_first",)),),
+        (LinearStructure(("serialized_first",)),),
     )

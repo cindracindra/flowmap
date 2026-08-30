@@ -6,7 +6,8 @@ from pathlib import Path
 FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
 sys.path.insert(0, str(FLOWMAP_SRC))
 
-from domain.cfg_pipeline import filter_noise_cfg, flatten_cfg, slice_from_root
+from domain.cfg_filtering import filter_noise_cfg
+from domain.cfg_slicing import slice_from_root
 from model import Graph, NodeSemanticFeatures, Phase, Transition
 
 
@@ -65,16 +66,6 @@ def test_slice_keeps_only_features_for_reached_nodes() -> None:
     sliced = slice_from_root(_graph_with_features(), "entry")
 
     assert set(sliced.semanticFeatures) == {"call"}
-
-
-def test_flatten_rekeys_and_copies_features_for_each_clone() -> None:
-    graph = _graph_with_features()
-    flattened = flatten_cfg(graph)
-    call_clone = next(node for node in flattened.nodes if node.origId == "call")
-
-    assert call_clone.id in flattened.semanticFeatures
-    assert flattened.semanticFeatures[call_clone.id].arguments == ["order"]
-    assert flattened.semanticFeatures[call_clone.id] is not graph.semanticFeatures["call"]
 
 
 def test_filter_removes_features_for_filtered_call_nodes() -> None:

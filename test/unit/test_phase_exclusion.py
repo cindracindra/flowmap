@@ -43,10 +43,10 @@ def _guard_graph(*, compensating_work: bool = False) -> Graph:
         "edges": edges,
         "branchGroups": [{
             "id": "guard", "kind": "IF", "method": "run", "line": 2,
-            "branchPointIds": ["check"],
+            "entryNodeId": "entry",
             "arms": [
-                {"label": "if", "empty": False, "terminus": "throw"},
-                {"label": "else", "empty": True, "terminus": "continues"},
+                {"label": "if", "empty": False, "exits": [{"kind": "throw"}]},
+                {"label": "else", "empty": True, "exits": [{"kind": "continues"}]},
             ],
         }],
     })
@@ -133,10 +133,10 @@ def test_returning_and_continuing_arms_exclude_nothing() -> None:
         ],
         "edges": [{"from": "entry", "to": "early", "type": "sequence"}],
         "branchGroups": [{
-            "id": "g", "kind": "IF", "method": "run",
+            "id": "g", "kind": "IF", "method": "run", "entryNodeId": "entry",
             "arms": [
-                {"label": "if", "empty": False, "terminus": "return"},
-                {"label": "else", "empty": True, "terminus": "continues"},
+                {"label": "if", "empty": False, "exits": [{"kind": "return"}]},
+                {"label": "else", "empty": True, "exits": [{"kind": "continues"}]},
             ],
         }],
     })
@@ -159,14 +159,37 @@ def test_a_node_in_a_nested_arm_is_excluded_when_any_of_its_arms_throws() -> Non
         ],
         "edges": [{"from": "entry", "to": "nested", "type": "sequence"}],
         "branchGroups": [
-            {"id": "outer", "kind": "IF", "method": "run",
-             "arms": [{"label": "if", "empty": False, "terminus": "continues"}]},
-            {"id": "inner", "kind": "IF", "method": "run",
-             "arms": [{"label": "if", "empty": False, "terminus": "throw"}]},
+            {"id": "outer", "kind": "IF", "method": "run", "entryNodeId": "entry",
+             "arms": [{"label": "if", "empty": False, "exits": [{"kind": "continues"}]}]},
+            {"id": "inner", "kind": "IF", "method": "run", "entryNodeId": "entry",
+             "arms": [{"label": "if", "empty": False, "exits": [{"kind": "throw"}]}]},
         ],
     })
 
     assert find_excluded_operations(graph) == {"nested": "in-throwing-arm"}
+
+
+def test_nested_throw_path_does_not_make_the_whole_outer_arm_throwing() -> None:
+    graph = Graph.from_dict({
+        "nodes": [{
+            "id": "outer_work", "type": "call", "calleeFullName": "Service.work",
+            "callerMethod": "run",
+            "branchArms": [{"groupId": "outer", "armLabel": "if"}],
+        }],
+        "edges": [],
+        "branchGroups": [{
+            "id": "outer", "kind": "IF", "method": "run", "entryNodeId": "entry",
+            "arms": [{
+                "label": "if",
+                "exits": [
+                    {"kind": "throw"},
+                    {"kind": "continues", "destinationNodeId": "after"},
+                ],
+            }],
+        }],
+    })
+
+    assert find_excluded_operations(graph) == {}
 
 
 def test_entries_and_leaves_are_never_excluded() -> None:
@@ -182,8 +205,8 @@ def test_entries_and_leaves_are_never_excluded() -> None:
         ],
         "edges": [],
         "branchGroups": [{
-            "id": "g", "kind": "IF", "method": "run",
-            "arms": [{"label": "if", "empty": False, "terminus": "throw"}],
+            "id": "g", "kind": "IF", "method": "run", "entryNodeId": "entry",
+            "arms": [{"label": "if", "empty": False, "exits": [{"kind": "throw"}]}],
         }],
     })
 

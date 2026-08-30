@@ -18,8 +18,8 @@ const bundle = {
       nodes: [], sequenceEdges: [], calls: {}, exits: [], branchGroups: [], semanticFeatures: {}, phases: [],
       retainedCallNodeIds: [],
       loopGroups: [
-        { id: "outer", kind: "FOR", line: 10, conditionCode: "i < n" },
-        { id: "inner", kind: "WHILE", line: 11, conditionCode: "ready" },
+        { id: "outer", kind: "FOR", line: 10, conditionCode: "i < n", entryNodeId: "outer-entry", exitNodeId: "outer-exit" },
+        { id: "inner", kind: "WHILE", line: 11, conditionCode: "ready", entryNodeId: "inner-entry", exitNodeId: "inner-exit" },
       ],
     },
   },
@@ -30,5 +30,7 @@ const loops = visibleNodeLoops(node, bundle);
 assert.deepEqual(loops.map((loop) => loop.label), ["for: i < n", "while: ready"]);
 assert.equal(loops[0].instanceLoopId, `${instanceId}:loop:outer`);
 assert.equal(loops[1].instanceLoopId, `${instanceId}:loop:inner`);
+assert.equal(loops[0].entryNodeId, `${instanceId}:outer-entry`);
+assert.equal(loops[0].exitNodeId, `${instanceId}:outer-exit`);
 
 console.log("filtered graph loop checks passed");

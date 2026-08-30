@@ -175,12 +175,12 @@ def build_label_subjects(analysis: Analysis) -> MethodPhaseLabelRequest:
                     if (node := nodes_by_id.get(node_id)) is not None
                 ],
             })
-        subject_prefix = "group" if len(phase_ids) > 1 else "subject"
         subjects.append({
             # Phase IDs remain authoritative in phaseIds. The LLM only needs a
-            # short opaque correlation key; embedding colon-delimited phase IDs
-            # here encouraged providers to truncate them in batch responses.
-            "id": f"{subject_prefix}-{subject_number}",
+            # uniform opaque correlation key. Using different prefixes for
+            # singleton and grouped phases encouraged models to rewrite
+            # ``group-N`` as the generic ``subject-N`` in batch responses.
+            "id": f"item-{subject_number}",
             "phaseIds": phase_ids,
             "phaseEvidence": evidence,
         })

@@ -13,24 +13,19 @@ def classify_roots_and_orphans(graph: Graph) -> Graph:
     }
 
     invoke_in: dict[str, int] = {}
-    entries_with_executable_flow: set[str] = set()
+    # Root/orphan classification must use the same definition of executable
+    # content as operation discovery: a surviving call owned by the method.
+    # Structural branch and exit nodes can remain after filtering, but they do
+    # not make an otherwise empty method into an operation.
+    entries_with_executable_flow: set[str] = {
+        owner_id
+        for node in graph.nodes
+        if node.type == "call" and node.callerMethod is not None
+        if (owner_id := entry_id_by_fullname.get(node.callerMethod)) is not None
+    }
     for e in graph.edges:
         if e.type not in ("sequence", "invoke"):
             continue
-        source_node = nodes_by_id.get(e.source)
-        if source_node is not None:
-            if source_node.type == "entry":
-                target_node = nodes_by_id.get(e.target)
-                # Exit markers describe how a method ends; they are not an
-                # executable operation by themselves. In particular, an
-                # entry -> fallthrough edge must not turn an otherwise empty,
-                # uncalled method into a root instead of an orphan.
-                if target_node is None or target_node.type != "exit":
-                    entries_with_executable_flow.add(source_node.id)
-            elif source_node.callerMethod is not None:
-                owner_id = entry_id_by_fullname.get(source_node.callerMethod)
-                if owner_id is not None:
-                    entries_with_executable_flow.add(owner_id)
 
         if e.type == "invoke" and nodes_by_id.get(e.target, None) is not None:
             if nodes_by_id[e.target].type == "entry":

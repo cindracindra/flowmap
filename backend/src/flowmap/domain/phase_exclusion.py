@@ -48,7 +48,7 @@ def _throwing_arms(graph: Graph) -> set[tuple[str, str]]:
         (group.id, arm.label)
         for group in graph.branchGroups
         for arm in group.arms
-        if arm.terminus == "throw"
+        if {exit_.kind for exit_ in arm.exits} == {"throw"}
     )
     return arms
 

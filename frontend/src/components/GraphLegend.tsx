@@ -7,8 +7,6 @@ import type { NodeType } from "../types/flowmap";
 const EDGE_LEGEND_LABEL: Record<EdgeClass, string> = {
   sequence: "seq",
   invoke: "invoke",
-  return: "return",
-  fallback: "fallback",
 };
 
 function LegendNodeShape({ type }: { type: NodeType }) {

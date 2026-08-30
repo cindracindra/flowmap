@@ -37,6 +37,7 @@ def test_builds_method_phase_evidence_without_flattening() -> None:
     assert request["schemaVersion"] == "method-phase-label-v1"
     assert len(request["subjects"]) == 1
     subject = request["subjects"][0]
+    assert subject["id"] == "item-1"
     assert subject["phaseIds"] == ["entry:phase:1"]
     phase = subject["phaseEvidence"][0]
     assert phase["method"] == {"entryId": "entry", "fullName": "Order.checkout:void()"}
@@ -75,7 +76,7 @@ def test_groups_transitive_standalone_one_phase_delegates() -> None:
 
     assert len(request["subjects"]) == 1
     subject = request["subjects"][0]
-    assert subject["id"] == "group-1"
+    assert subject["id"] == "item-1"
     assert subject["phaseIds"] == [
         "a-entry:phase:1", "b-entry:phase:1", "c-entry:phase:1",
     ]

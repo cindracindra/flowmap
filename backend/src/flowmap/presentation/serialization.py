@@ -8,6 +8,10 @@ from model import BranchRequirement, MethodDefinition
 from .graph_bundle import GraphBundle
 
 
+def _ordered_unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
 def _serialize_method(
     method: MethodDefinition,
     analysis: MethodAnalysis | None,
@@ -25,7 +29,11 @@ def _serialize_method(
         node.id: {
             "callNodeId": node.id,
             "targetEntryIds": sorted(set(invoke_targets.get(node.id, ()))),
-            "continuationIds": sorted(set(sequence_targets.get(node.id, ()))),
+            # Sequence edge encounter order is the canonical projected CFG
+            # successor order. Deduplicate without replacing it by ID order.
+            "continuationIds": _ordered_unique(
+                sequence_targets.get(node.id, [])
+            ),
         }
         for node in method.nodes
         if node.type == "call"

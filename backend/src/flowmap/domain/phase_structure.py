@@ -8,6 +8,7 @@ from typing import TypeAlias
 
 from domain.phase_exclusion import ExclusionReason
 from domain.method_scoping import build_method_definitions
+from domain.phase_topology import method_call_sequence_pairs
 from model import Graph, MethodDefinition
 
 
@@ -109,15 +110,13 @@ def _execution_order(
         if node_id in order:
             continue
         order[node_id] = len(order)
+        # ``outgoing`` preserves method.sequenceEdges encounter order, which is
+        # the canonical projected CFG successor order. Node serialization rank
+        # is only a fallback for disconnected roots, never a successor sort.
         queue.extend(
-            sorted(
-                (
-                    target
-                    for target in outgoing[node_id]
-                    if target in method_nodes and target not in order
-                ),
-                key=lambda target: rank[target],
-            )
+            target
+            for target in outgoing[node_id]
+            if target in method_nodes and target not in order
         )
 
     for node_id in sorted(method_nodes - order.keys(), key=lambda value: rank[value]):
@@ -160,19 +159,10 @@ def build_method_structures(
     incoming: dict[str, list[str]] = defaultdict(list)
     call_ids = set(paths_by_node)
     for method in method_definitions.values():
-        for edge in method.sequenceEdges:
-            source, target = edge.source, edge.target
-            if (
-                edge.returnFrom is None
-                and source in call_ids
-                and target in call_ids
-            ):
+        for source, target in method_call_sequence_pairs(method):
+            if source in call_ids and target in call_ids:
                 outgoing[source].append(target)
                 incoming[target].append(source)
-    for adjacency in (outgoing, incoming):
-        for neighbours in adjacency.values():
-            neighbours.sort(key=lambda node_id: rank[node_id])
-
     result: dict[str, MethodStructure] = {}
     for entry_id, all_method_nodes in calls_by_entry.items():
         order = _execution_order(all_method_nodes, outgoing, incoming, rank)

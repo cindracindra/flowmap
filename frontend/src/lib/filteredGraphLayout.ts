@@ -59,12 +59,23 @@ function nodeRadius(node: VisibleNode): number {
 export function branchArmText(arm: VisibleBranchArm): string {
   const detail = arm.conditionCode
     ?? (arm.exceptionType ? `catch ${arm.exceptionType}` : undefined);
-  const meaning = arm.empty && arm.terminus ? `empty → ${arm.terminus}` : undefined;
+  const exitKinds = [...new Set(arm.exits.map((exit) => exit.kind))];
+  const meaning = arm.empty && exitKinds.length > 0
+    ? `empty → ${exitKinds.join("/")}`
+    : undefined;
   return [arm.label, detail, meaning].filter(Boolean).join(" · ");
 }
 
 export function truncateBranchText(text: string, length = 34): string {
   return text.length > length ? `${text.slice(0, length - 1)}…` : text;
+}
+
+export function branchArmToggleLabel(arm: VisibleBranchArm): string {
+  return truncateBranchText(arm.label, 9);
+}
+
+export function branchArmToggleWidth(arm: VisibleBranchArm): number {
+  return Math.max(42, branchArmToggleLabel(arm).length * 6.2 + 18);
 }
 
 export function dispatchArmLabel(arm: VisibleBranchArm): string {
@@ -147,7 +158,6 @@ function layoutInstanceBlocks(projection: VisibleGraphProjection): Map<string, G
         && localIds.has(edge.from)
         && localIds.has(edge.to)),
       entryId,
-      (node) => node.node.line,
     );
   };
 
@@ -238,6 +248,7 @@ interface BranchCandidate {
   controlsWidth: number;
   ownedNodeIds: Set<string>;
   compactEmpty: boolean;
+  minimumHeight: number;
 }
 
 function buildBranchCandidates(
@@ -249,11 +260,21 @@ function buildBranchCandidates(
     // Dispatch is an inline selector attached to the selected callee entry,
     // not a branch region that owns or reserves graph rows.
     if (group.kind === "DISPATCH") return [];
+    const selectedArmByGroup = new Map(
+      projection.branchGroups.map((candidate) => [candidate.id, candidate.selectedArmLabel]),
+    );
+    if (!(group.enclosingRequirements ?? []).every((requirement) =>
+      selectedArmByGroup.get(requirement.groupId) === requirement.armLabel)) return [];
     const selectedArm = group.arms.find((arm) => arm.label === group.selectedArmLabel);
     if (!selectedArm) return [];
-    const forkEntry = (group.branchPointIds ?? [])
+    const forkEntry = group.entryPredecessorIds
       .map((id) => ({ id, point: positions.get(id) }))
-      .find((entry): entry is { id: string; point: GraphPoint } => entry.point !== undefined);
+      .filter((entry): entry is { id: string; point: GraphPoint } => entry.point !== undefined)
+      // A short-circuit condition can leave several visible predecessors for
+      // one hidden decision. The decision occurs after its latest displayed
+      // condition call, not after whichever predecessor happened to be
+      // discovered first (often the method entry).
+      .sort((left, right) => right.point.y - left.point.y)[0];
     if (!forkEntry) return [];
     const fork = forkEntry.point;
 
@@ -277,26 +298,22 @@ function buildBranchCandidates(
     const routeEdges = selectedRouteEdges(projection, group);
     const ownedNodeIds = ownedNodesForBranch(projection, group);
     // A shared surviving predecessor does not make a later branch reachable.
-    const selectedTargetIds = [
-      ...(selectedArm.targetIds ?? []),
-      ...(selectedArm.exits ?? []).flatMap((exit) => exit.targetIds ?? []),
-    ];
+    const selectedTargetIds = group.continuationIds;
     if (
+      !selectedArm.empty
+      &&
       ownedNodeIds.size === 0
       && routeEdges.length === 0
       && !selectedTargetIds.some((id) => positions.has(id))
     ) return [];
 
-    const targetIds = [
-      ...selectedTargetIds,
-      ...routeEdges.map((edge) => edge.to),
-    ];
     const firstOwnedId = [...ownedNodeIds]
       .filter((id) => positions.has(id))
       .sort((left, right) => positions.get(left)!.y - positions.get(right)!.y)[0];
-    const effectiveHeadId = selectedArm.firstCallId
-      ?? firstOwnedId
-      ?? targetIds.find((id) => positions.has(id));
+    const effectiveHeadId = firstOwnedId
+      ?? group.entrySuccessorIds.find((id) => positions.has(id))
+      ?? selectedTargetIds.find((id) => positions.has(id))
+      ?? routeEdges.map((edge) => edge.to).find((id) => positions.has(id));
     const head = effectiveHeadId ? positions.get(effectiveHeadId) : undefined;
     const headNode = effectiveHeadId ? nodeById.get(effectiveHeadId) : undefined;
     const ownedPoints = [...ownedNodeIds].flatMap((id) => {
@@ -304,6 +321,7 @@ function buildBranchCandidates(
       return point ? [point] : [];
     });
     const compactEmpty = selectedArm.empty && ownedPoints.length === 0;
+    const minimumHeight = EMPTY_BRANCH_HEIGHT;
     const minOwnedX = ownedPoints.length > 0
       ? Math.min(...ownedPoints.map((point) => point.x))
       : head?.x ?? fork.x;
@@ -321,7 +339,7 @@ function buildBranchCandidates(
         : expandedForkBottom + FILTERED_ROW_HEIGHT / 2;
     const controlsWidth = 78 + group.arms.reduce(
       (width, arm) => width
-        + Math.max(58, truncateBranchText(branchArmText(arm)).length * 6.2 + 18)
+        + branchArmToggleWidth(arm)
         + 6,
       0,
     );
@@ -336,6 +354,7 @@ function buildBranchCandidates(
       controlsWidth,
       ownedNodeIds,
       compactEmpty,
+      minimumHeight,
     }];
   });
 }
@@ -355,9 +374,16 @@ function placeBranchPanels(
   positions: Map<string, GraphPoint>,
   nodeById: ReadonlyMap<string, VisibleNode>,
 ): BranchGeometry[] {
+  const encloses = (parent: VisibleBranchGroup, child: VisibleBranchGroup): boolean =>
+    (child.enclosingRequirements ?? []).some((requirement) =>
+      requirement.groupId === parent.id);
   const sortedCandidates = (): BranchCandidate[] =>
     buildBranchCandidates(projection, positions, nodeById).sort((left, right) =>
       left.group.instanceId.localeCompare(right.group.instanceId)
+      // Parents must be placed before children so an invisible structural
+      // decision can contribute a parent-relative virtual anchor.
+      || (encloses(left.group, right.group) ? -1 : 0)
+      || (encloses(right.group, left.group) ? 1 : 0)
       // A TRY's source line is the start of its protected body, but its
       // catch/noCatch split hangs from the body tail. Order every structure by
       // that actual fork position, exactly as we do for IF execution order.
@@ -366,7 +392,19 @@ function placeBranchPanels(
       || left.sourceIndex - right.sourceIndex);
   let candidates = sortedCandidates();
 
+  const explicitParentFor = (candidate: BranchCandidate): BranchCandidate | undefined =>
+    [...(candidate.group.enclosingRequirements ?? [])]
+      .reverse()
+      .map((requirement) => candidates.find((possibleParent) =>
+        possibleParent.group.id === requirement.groupId
+        && possibleParent.group.selectedArmLabel === requirement.armLabel))
+      .find((parent): parent is BranchCandidate => parent !== undefined);
+
   const laneFor = (candidate: BranchCandidate): string => {
+    const explicitParent = explicitParentFor(candidate);
+    if (explicitParent) {
+      return `${candidate.group.instanceId}:${explicitParent.group.id}`;
+    }
     const candidateMembers = candidate.ownedNodeIds;
     const parents = candidates.filter((possibleParent) => {
       if (
@@ -377,7 +415,7 @@ function placeBranchPanels(
         return possibleParent.ownedNodeIds.size > candidateMembers.size
           && [...candidateMembers].every((id) => possibleParent.ownedNodeIds.has(id));
       }
-      return (candidate.group.branchPointIds ?? []).some((id) =>
+      return candidate.group.entryPredecessorIds.some((id) =>
         possibleParent.ownedNodeIds.has(id));
     });
     const parent = parents.sort(
@@ -392,18 +430,32 @@ function placeBranchPanels(
   const maxPasses = Math.max(8, candidates.length * 4);
   for (let pass = 0; pass < maxPasses; pass++) {
     const nextYByLane = new Map<string, number>();
+    const placedYByGroup = new Map<string, number>();
     let shifted = false;
     for (const candidate of candidates) {
       const lane = laneFor(candidate);
-      const minimumY = nextYByLane.get(lane) ?? -Infinity;
+      const parent = explicitParentFor(candidate);
+      const parentY = parent ? placedYByGroup.get(parent.group.id) : undefined;
+      // Hidden structural decisions must not collapse a nested panel onto its
+      // parent's header. The enclosure contract supplies a virtual anchor:
+      // place the child below the parent's controls even when projection
+      // bridged both decisions to the same visible predecessor.
+      const parentMinimumY = parent === undefined || parentY === undefined
+        ? -Infinity
+        : parentY + parent.minimumHeight + BRANCH_STACK_GAP;
+      const minimumY = Math.max(
+        nextYByLane.get(lane) ?? -Infinity,
+        parentMinimumY,
+      );
       const y = Math.max(candidate.desiredY, minimumY);
+      placedYByGroup.set(candidate.group.id, y);
       if (
         candidate.compactEmpty
         && candidate.headY !== undefined
-        && y + EMPTY_BRANCH_HEIGHT + candidate.headClearance > candidate.headY
+        && y + candidate.minimumHeight + candidate.headClearance > candidate.headY
       ) {
         const overlap = y
-          + EMPTY_BRANCH_HEIGHT
+          + candidate.minimumHeight
           + candidate.headClearance
           - candidate.headY;
         shiftRows(positions, candidate.headY, overlap);
@@ -424,8 +476,8 @@ function placeBranchPanels(
       const ownedBottom = [...candidate.ownedNodeIds].reduce((bottom, id) => {
         const point = positions.get(id);
         return point ? Math.max(bottom, point.y + BRANCH_REGION_PAD) : bottom;
-      }, y + EMPTY_BRANCH_HEIGHT);
-      const bottom = candidate.compactEmpty ? y + EMPTY_BRANCH_HEIGHT : ownedBottom;
+      }, y + candidate.minimumHeight);
+      const bottom = candidate.compactEmpty ? y + candidate.minimumHeight : ownedBottom;
       nextYByLane.set(lane, bottom + BRANCH_STACK_GAP);
     }
     if (!shifted) break;
@@ -433,17 +485,43 @@ function placeBranchPanels(
   }
 
   const nextYByLane = new Map<string, number>();
-  return candidates.map((candidate) => {
+  const nestingDepth = (candidate: BranchCandidate): number => {
+    let depth = 0;
+    let current: BranchCandidate | undefined = candidate;
+    const visited = new Set<string>();
+    while (current) {
+      const parent = explicitParentFor(current);
+      if (!parent || visited.has(parent.group.id)) break;
+      visited.add(parent.group.id);
+      depth++;
+      current = parent;
+    }
+    return depth;
+  };
+  const geometryByCandidateId = new Map<string, BranchGeometry>();
+  const geometries = candidates.map((candidate) => {
     const lane = laneFor(candidate);
-    const y = Math.max(candidate.desiredY, nextYByLane.get(lane) ?? -Infinity);
+    const parent = explicitParentFor(candidate);
+    const parentGeometry = parent
+      ? geometryByCandidateId.get(parent.group.id)
+      : undefined;
+    const parentMinimumY = parentGeometry
+      ? parentGeometry.y + parent!.minimumHeight + BRANCH_STACK_GAP
+      : -Infinity;
+    const y = Math.max(
+      candidate.desiredY,
+      nextYByLane.get(lane) ?? -Infinity,
+      parentMinimumY,
+    );
     const ownedPoints = [...candidate.ownedNodeIds].flatMap((id) => {
       const point = positions.get(id);
       return point ? [point] : [];
     });
     const bottom = candidate.compactEmpty
-      ? y + EMPTY_BRANCH_HEIGHT
-      : Math.max(y + EMPTY_BRANCH_HEIGHT, ...ownedPoints.map((point) => point.y + BRANCH_REGION_PAD));
-    let right = candidate.x + candidate.controlsWidth;
+      ? y + candidate.minimumHeight
+      : Math.max(y + candidate.minimumHeight, ...ownedPoints.map((point) => point.y + BRANCH_REGION_PAD));
+    const x = candidate.x + Math.min(nestingDepth(candidate) * 12, BRANCH_REGION_PAD - 4);
+    let right = x + candidate.controlsWidth;
     for (const nodeId of candidate.ownedNodeIds) {
       const node = nodeById.get(nodeId);
       const point = positions.get(nodeId);
@@ -453,22 +531,74 @@ function placeBranchPanels(
       right = Math.max(right, point.x + labelWidth + BRANCH_REGION_PAD);
     }
     nextYByLane.set(lane, bottom + BRANCH_STACK_GAP);
-    return {
+    const geometry = {
       group: candidate.group,
-      x: candidate.x,
+      x,
       y,
-      width: right - candidate.x,
+      width: right - x,
       height: bottom - y,
       ownedNodeIds: candidate.ownedNodeIds,
       compactEmpty: candidate.compactEmpty,
     };
+    geometryByCandidateId.set(candidate.group.id, geometry);
+    return geometry;
   });
+
+  // A parent's bounds include child panels even when the child owns no
+  // visible nodes. Expand from the deepest panels upward without moving the
+  // parent's header anchor.
+  const geometryById = new Map(
+    geometries.map((geometry) => [geometry.group.id, geometry]),
+  );
+  const candidatesByDepth = [...candidates]
+    .sort((left, right) => nestingDepth(right) - nestingDepth(left));
+  for (const childCandidate of candidatesByDepth) {
+    const parentCandidate = explicitParentFor(childCandidate);
+    if (!parentCandidate) continue;
+    const child = geometryById.get(childCandidate.group.id);
+    const parent = geometryById.get(parentCandidate.group.id);
+    if (!child || !parent) continue;
+    const right = Math.max(
+      parent.x + parent.width,
+      child.x + child.width + BRANCH_REGION_PAD / 2,
+    );
+    const bottom = Math.max(
+      parent.y + parent.height,
+      child.y + child.height + BRANCH_REGION_PAD / 2,
+    );
+    parent.width = right - parent.x;
+    parent.height = bottom - parent.y;
+  }
+  return geometries;
 }
 
 export function layoutFilteredGraph(projection: VisibleGraphProjection): FilteredGraphLayout {
   const positions = layoutInstanceBlocks(projection);
   const nodeById = new Map(projection.nodes.map((node) => [node.id, node]));
-  const branches = placeBranchPanels(projection, positions, nodeById);
+  let branches = placeBranchPanels(projection, positions, nodeById);
+  // The exit anchor owns downstream placement. Once nested child panels have
+  // expanded their parents, reserve enough rows before the first visible
+  // continuation and then rebuild the geometry against the shifted topology.
+  const maxContinuationPasses = Math.max(2, branches.length * 2);
+  for (let pass = 0; pass < maxContinuationPasses; pass++) {
+    let shifted = false;
+    for (const branch of [...branches].sort(
+      (left, right) => left.y + left.height - (right.y + right.height),
+    )) {
+      const continuationPoints = branch.group.continuationIds
+        .map((id) => positions.get(id))
+        .filter((point): point is GraphPoint => point !== undefined);
+      if (continuationPoints.length === 0) continue;
+      const continuationY = Math.min(...continuationPoints.map((point) => point.y));
+      const requiredY = branch.y + branch.height + EMPTY_PANEL_NODE_GAP;
+      if (continuationY >= requiredY) continue;
+      shiftRows(positions, continuationY, requiredY - continuationY);
+      shifted = true;
+      break;
+    }
+    if (!shifted) break;
+    branches = placeBranchPanels(projection, positions, nodeById);
+  }
   const nodesByInstance = new Map<string, VisibleNode[]>();
   const phaseMembers = new Map<string, VisibleNode[]>();
   for (const node of projection.nodes) {
@@ -544,10 +674,7 @@ export function layoutFilteredGraph(projection: VisibleGraphProjection): Filtere
   );
   const dispatchRightEdges = projection.branchGroups.flatMap((group) => {
     if (group.kind !== "DISPATCH") return [];
-    const selectedArm = group.arms.find((arm) => arm.label === group.selectedArmLabel);
-    const entry = selectedArm?.firstCallId ? positions.get(selectedArm.firstCallId) : undefined;
-    const fallback = (group.branchPointIds ?? []).map((id) => positions.get(id)).find(Boolean);
-    const anchor = entry ?? fallback;
+    const anchor = group.dispatchAnchorId ? positions.get(group.dispatchAnchorId) : undefined;
     if (!anchor) return [];
     // Must mirror FilteredGraphSvg: label starts at anchor.x, pills begin 58
     // pixels later, and each pill is separated by a 6-pixel gap.

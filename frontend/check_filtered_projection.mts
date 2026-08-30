@@ -98,26 +98,46 @@ const retainedWork = retained.nodes.find((node) => node.definitionNodeId === "wo
 assert.notEqual(retainedWork.phase?.id, callerCall.phase?.id, "retained callee must use its own phase");
 assert.equal(retainedWork.phase?.definitionPhaseId, "callee-phase");
 
+const wrapper = method(
+  "wrapper", "Example.wrapper:void()",
+  [
+    { id: "wrapper-work", type: "call", callerMethod: "Example.wrapper:void()" },
+    { id: "inner-call", type: "call", callerMethod: "Example.wrapper:void()" },
+    { id: "wrapper-end", type: "exit", callerMethod: "Example.wrapper:void()", exitKind: "return" },
+  ],
+  [
+    { from: "wrapper", to: "wrapper-work", type: "sequence" },
+    { from: "wrapper-work", to: "inner-call", type: "sequence" },
+    { from: "inner-call", to: "wrapper-end", type: "sequence" },
+  ],
+  { "inner-call": { callNodeId: "inner-call", targetEntryIds: ["callee"], continuationIds: ["wrapper-end"] } },
+  [{ id: "wrapper-phase", memberNodeIds: ["wrapper-work"] }],
+  ["inner-call"],
+);
+bundle.methodsByEntryId.wrapper = wrapper;
+root.calls.call.targetEntryIds = ["wrapper"];
+const transitivelyRetained = projectVisibleGraph(bundle, "op", new Set())!;
+assert.equal(
+  transitivelyRetained.nodes.find((node) => node.definitionNodeId === "call")?.retainedCalleePhaseCount,
+  2,
+  "collapsed retained-call badges include unique local and nested retained phases",
+);
+root.calls.call.targetEntryIds = ["callee"];
+
 const branchDefinition = {
   id: "cs1",
   kind: "IF",
-  branchPointIds: ["work"],
-  convergesAt: "return",
   arms: [
     {
       label: "if",
-      firstCallId: "work",
       empty: false,
-      terminus: "continues" as const,
-      targetIds: ["return"],
       exits: [{
         kind: "continues" as const,
-        frontierIds: ["work"],
-        targetIds: ["return"],
+        destinationNodeId: "return",
         branchRequirements: [{ groupId: "cs1", armLabel: "if" }],
       }],
     },
-    { label: "else", firstCallId: "throw", empty: false, terminus: "throw" as const },
+    { label: "else", empty: false, exits: [{ kind: "throw" as const, destinationNodeId: "throw" }] },
   ],
 };
 callee.branchGroups = [branchDefinition];
@@ -134,11 +154,8 @@ const calleeInstance = `${expandedId}/target:0:callee`;
 const visibleBranchId = branchInstanceId(calleeInstance, "cs1");
 const visibleBranch = branched.branchGroups.find((group) => group.id === visibleBranchId)!;
 assert.equal(visibleBranch.definitionBranchId, "cs1");
-assert.deepEqual(visibleBranch.branchPointIds, [`${calleeInstance}:work`]);
-assert.equal(visibleBranch.arms[0].firstCallId, `${calleeInstance}:work`);
-assert.deepEqual(visibleBranch.arms[0].targetIds, [`${calleeInstance}:return`]);
-assert.deepEqual(visibleBranch.arms[0].exits?.[0].frontierIds, [`${calleeInstance}:work`]);
-assert.equal(visibleBranch.arms[0].exits?.[0].branchRequirements?.[0].groupId, visibleBranchId);
+assert.deepEqual(visibleBranch.entryPredecessorIds, []);
+assert.equal(visibleBranch.arms[0].exits[0].destinationNodeId, `${calleeInstance}:return`);
 assert.equal(
   branched.nodes.find((node) => node.definitionNodeId === "work")?.branchRequirements[0].groupId,
   visibleBranchId,
@@ -153,7 +170,7 @@ assert.equal(
   visibleBranchId,
 );
 assert.equal(callee.branchGroups[0].id, "cs1", "projection must not mutate definition branch IDs");
-assert.deepEqual(callee.branchGroups[0].branchPointIds, ["work"]);
+assert.equal(callee.branchGroups[0].id, "cs1");
 
 assert.equal(visibleBranch.selectedArmLabel, "if", "if is the deterministic preferred arm");
 assert.equal(
@@ -262,16 +279,16 @@ nested.branchGroups = [
     id: "outer",
     kind: "IF",
     arms: [
-      { label: "if", firstCallId: "outer-if", empty: false },
-      { label: "else", firstCallId: "outer-else", empty: false },
+      { label: "if", empty: false },
+      { label: "else", empty: false },
     ],
   },
   {
     id: "inner",
     kind: "IF",
     arms: [
-      { label: "if", firstCallId: "inner-if", empty: false },
-      { label: "else", firstCallId: "inner-else", empty: false },
+      { label: "if", empty: false },
+      { label: "else", empty: false },
     ],
   },
 ];
@@ -346,14 +363,12 @@ const emptyArmMethod = method(
 emptyArmMethod.branchGroups = [{
   id: "empty-branch",
   kind: "IF",
-  branchPointIds: ["branch-point"],
   arms: [
-    { label: "if", firstCallId: "if-work", empty: false, terminus: "continues" },
+    { label: "if", empty: false, exits: [{ kind: "continues" }] },
     {
       label: "else",
       empty: true,
-      terminus: "continues",
-      targetIds: ["after-empty-arm"],
+      exits: [{ kind: "continues", destinationNodeId: "after-empty-arm" }],
     },
   ],
 }];
@@ -418,5 +433,91 @@ assert.deepEqual(
   [`${polyCallInstance}/target:1:impl-b:impl-b`],
   "dispatch selection must be scoped to the expanded call instance",
 );
+
+const bridgedMethod = method(
+  "bridged-entry", "Example.bridged:void()",
+  [
+    { id: "decision", type: "structure", structureGroupId: "guard", structureRole: "decision" },
+    { id: "work", type: "call", callerMethod: "Example.bridged:void()", branchArms: [{ groupId: "guard", armLabel: "if" }] },
+  ],
+  [
+    { from: "bridged-entry", to: "decision", type: "sequence" },
+    { from: "decision", to: "work", type: "sequence", branchRequirements: [{ groupId: "guard", armLabel: "if" }] },
+  ],
+  {},
+  [{ id: "work-phase", memberNodeIds: ["work"] }],
+);
+bridgedMethod.branchGroups = [{
+  id: "guard",
+  kind: "IF",
+  entryNodeId: "decision",
+  arms: [
+    { label: "if", empty: false, exits: [{ kind: "continues" }] },
+    { label: "else", empty: true, exits: [{ kind: "continues" }] },
+  ],
+}];
+const bridgedBundle: GraphBundle = {
+  methodsByEntryId: { "bridged-entry": bridgedMethod },
+  operationsById: { bridged: { id: "bridged", rootEntryId: "bridged-entry", reachableMethodEntryIds: ["bridged-entry"] } },
+  callersByEntryId: { "bridged-entry": [] },
+  operationIdsByMethodEntryId: { "bridged-entry": ["bridged"] },
+};
+const bridgedProjection = projectVisibleGraph(bridgedBundle, "bridged", new Set())!;
+const bridgedInstance = "operation:bridged/root:bridged-entry";
+assert.equal(bridgedProjection.nodes.some((node) => node.node.type === "structure"), false);
+assert(bridgedProjection.edges.some((edge) =>
+  edge.from === `${bridgedInstance}:bridged-entry`
+  && edge.to === `${bridgedInstance}:work`
+  && edge.branchRequirements?.[0]?.groupId === branchInstanceId(bridgedInstance, "guard")));
+assert.deepEqual(
+  bridgedProjection.branchGroups[0].entryPredecessorIds,
+  [`${bridgedInstance}:bridged-entry`],
+);
+
+// Authoritative entry/exit anchors survive projection as boundary metadata,
+// while canonical condition calls become arm-row aliases rather than graph
+// rows. This covers the Package 19 contract end to end.
+const anchored = method(
+  "anchored-entry", "Example.anchored:void()",
+  [
+    { id: "g-entry", type: "structure", structureGroupId: "g", structureRole: "entry" },
+    { id: "condition", type: "call", code: "ready()" },
+    { id: "decision", type: "structure", structureGroupId: "g", structureRole: "decision" },
+    { id: "body", type: "call", branchArms: [{ groupId: "g", armLabel: "if" }] },
+    { id: "g-exit", type: "structure", structureGroupId: "g", structureRole: "exit" },
+    { id: "after", type: "call" },
+  ],
+  [
+    { from: "anchored-entry", to: "g-entry", type: "sequence" },
+    { from: "g-entry", to: "condition", type: "sequence" },
+    { from: "condition", to: "decision", type: "sequence" },
+    { from: "decision", to: "body", type: "sequence", branchRequirements: [{ groupId: "g", armLabel: "if" }] },
+    { from: "body", to: "g-exit", type: "sequence", branchRequirements: [{ groupId: "g", armLabel: "if" }] },
+    { from: "g-exit", to: "after", type: "sequence" },
+  ],
+  {}, [],
+);
+anchored.branchGroups = [{
+  id: "g", kind: "IF", entryNodeId: "g-entry", exitNodeId: "g-exit",
+  conditionStages: [{ id: "stage-1", nodeIds: ["condition"], decisionNodeId: "decision" }],
+  arms: [
+    { label: "if", empty: false, conditionStages: [{ stageId: "stage-1", nodeIds: ["condition"], outcome: true }], exits: [{ kind: "continues", destinationNodeId: "g-exit" }] },
+    { label: "else", empty: true, conditionStages: [{ stageId: "stage-1", nodeIds: ["condition"], outcome: false }], exits: [{ kind: "continues", destinationNodeId: "g-exit" }] },
+  ],
+}];
+const anchoredBundle: GraphBundle = {
+  methodsByEntryId: { "anchored-entry": anchored },
+  operationsById: { anchored: { id: "anchored", rootEntryId: "anchored-entry", reachableMethodEntryIds: ["anchored-entry"] } },
+  callersByEntryId: { "anchored-entry": [] }, operationIdsByMethodEntryId: { "anchored-entry": ["anchored"] },
+};
+const anchoredProjection = projectVisibleGraph(anchoredBundle, "anchored", new Set())!;
+const anchoredInstance = "operation:anchored/root:anchored-entry";
+const anchoredGroup = anchoredProjection.branchGroups[0];
+assert.equal(anchoredProjection.nodes.some((node) => node.definitionNodeId === "condition"), false);
+assert.deepEqual(anchoredGroup.entryPredecessorIds, [`${anchoredInstance}:anchored-entry`]);
+assert.deepEqual(anchoredGroup.entrySuccessorIds, [`${anchoredInstance}:body`]);
+assert.deepEqual(anchoredGroup.exitPredecessorIds, [`${anchoredInstance}:body`]);
+assert.deepEqual(anchoredGroup.continuationIds, [`${anchoredInstance}:after`]);
+assert.equal(anchoredGroup.conditionStages?.[0].code, "ready()");
 
 console.log("filtered projection checks passed");

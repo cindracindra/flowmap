@@ -1,6 +1,7 @@
 import type { GraphBundle } from "../types/filteredGraph";
 import type { LoopKind } from "../types/flowmap";
 import type { VisibleNode } from "./filteredGraphProjection";
+import { instanceNodeId } from "./filteredGraphProjection";
 
 export interface VisibleLoopMembership {
   definitionLoopId: string;
@@ -8,6 +9,8 @@ export interface VisibleLoopMembership {
   kind?: LoopKind;
   conditionCode?: string;
   line?: number;
+  entryNodeId?: string;
+  exitNodeId?: string;
   label: string;
 }
 
@@ -29,6 +32,12 @@ export function visibleNodeLoops(
       kind: group?.kind,
       conditionCode: group?.conditionCode,
       line: group?.line,
+      entryNodeId: group?.entryNodeId
+        ? instanceNodeId(node.instanceId, group.entryNodeId)
+        : undefined,
+      exitNodeId: group?.exitNodeId
+        ? instanceNodeId(node.instanceId, group.exitNodeId)
+        : undefined,
       label: group?.conditionCode ? `${kindLabel}: ${group.conditionCode}` : kindLabel,
     };
   });

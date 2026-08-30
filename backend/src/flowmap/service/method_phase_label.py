@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import json
 import re
 import sys
@@ -19,6 +20,7 @@ _RETRY_SUFFIX = (
     "containing 2-6 whitespace-separated tokens and never more than 6."
 )
 _BATCH_SIZES = (8, 4, 1)
+_MAX_CONCURRENT_REQUESTS = 4
 
 
 def _issue(message: str) -> None:
@@ -78,7 +80,10 @@ def _parse_labels(raw: str, requested_ids: set[str]) -> dict[str, str]:
         subject_id = item.get("id")
         raw_label = item.get("label")
         if subject_id not in requested_ids:
-            _issue(f"unknown response id {subject_id!r}; ignored")
+            _issue(
+                f"unknown response id {subject_id!r}; ignored; "
+                f"expected one of {sorted(requested_ids)!r}"
+            )
             continue
         if subject_id in labels:
             _issue(f"duplicate response id {subject_id!r}; ignored")
@@ -99,6 +104,54 @@ def _chunks(subjects: list[LabelSubject], size: int):
         yield subjects[start:start + size]
 
 
+def _label_chunk(
+    client: LLMClient,
+    chunk: list[LabelSubject],
+    attempt: int,
+) -> dict[str, str]:
+    batch: MethodPhaseLabelRequest = {
+        "schemaVersion": "method-phase-label-v1",
+        "subjects": chunk,
+    }
+    try:
+        raw = client.complete(
+            role="small",
+            system=(
+                _LABEL_METHOD_PHASES_SYSTEM_PROMPT
+                if attempt == 0
+                else _LABEL_METHOD_PHASES_SYSTEM_PROMPT + _RETRY_SUFFIX
+            ),
+            user=json.dumps(batch, ensure_ascii=False),
+            # Long correlation IDs make the JSON considerably larger than the
+            # labels themselves. Reserve enough output for complete objects
+            # even when every label uses six words.
+            max_tokens=max(512, min(2048, 128 * len(chunk))),
+            json_object=True,
+            call_site="label_method_phases",
+        )
+    except LLMError as exc:
+        _issue(f"provider error on attempt {attempt + 1}: {exc}")
+        return {}
+    return _parse_labels(raw, {subject["id"] for subject in chunk})
+
+
+def _label_chunks_concurrently(
+    client: LLMClient,
+    chunks: list[list[LabelSubject]],
+    attempt: int,
+) -> list[dict[str, str]]:
+    if len(chunks) == 1:
+        return [_label_chunk(client, chunks[0], attempt)]
+
+    worker_count = min(_MAX_CONCURRENT_REQUESTS, len(chunks))
+    with ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [
+            executor.submit(_label_chunk, client, chunk, attempt)
+            for chunk in chunks
+        ]
+        return [future.result() for future in futures]
+
+
 def label_method_phases(
     client: LLMClient,
     request: MethodPhaseLabelRequest,
@@ -116,32 +169,9 @@ def label_method_phases(
     resolved: dict[str, str] = {}
     pending = subjects
     for attempt, batch_size in enumerate(_BATCH_SIZES):
-        for chunk in _chunks(pending, batch_size):
-            batch: MethodPhaseLabelRequest = {
-                "schemaVersion": "method-phase-label-v1",
-                "subjects": chunk,
-            }
-            try:
-                raw = client.complete(
-                    role="small",
-                    system=(
-                        _LABEL_METHOD_PHASES_SYSTEM_PROMPT
-                        if attempt == 0
-                        else _LABEL_METHOD_PHASES_SYSTEM_PROMPT + _RETRY_SUFFIX
-                    ),
-                    user=json.dumps(batch, ensure_ascii=False),
-                    # Long correlation IDs make the JSON considerably larger
-                    # than the labels themselves. Reserve enough output for
-                    # complete objects even when every label uses six words.
-                    max_tokens=max(512, min(2048, 128 * len(chunk))),
-                    json_object=True,
-                    call_site="label_method_phases",
-                )
-            except LLMError as exc:
-                _issue(f"provider error on attempt {attempt + 1}: {exc}")
-                continue
-            requested_ids = {subject["id"] for subject in chunk}
-            resolved.update(_parse_labels(raw, requested_ids))
+        chunks = list(_chunks(pending, batch_size))
+        for labels in _label_chunks_concurrently(client, chunks, attempt):
+            resolved.update(labels)
 
         unresolved_ids = {subject["id"] for subject in pending} - resolved.keys()
         if not unresolved_ids:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from domain.phase_topology import graph_call_sequence_pairs
 from model import Graph
 
 
@@ -14,25 +15,9 @@ def build_phase_data_flow_questions(graph: Graph) -> dict[str, list[str]]:
     ``graph``. Keys and source lists are sorted to keep requests and evaluation
     artifacts deterministic.
     """
-    nodes_by_id = {node.id: node for node in graph.nodes}
     sources_by_target: dict[str, set[str]] = {}
-
-    for edge in graph.edges:
-        if (
-            edge.type != "sequence"
-            or edge.returnFrom is not None
-            or edge.loopBack
-        ):
-            continue
-
-        source = nodes_by_id.get(edge.source)
-        target = nodes_by_id.get(edge.target)
-        if source is None or target is None:
-            continue
-        if source.type != "call" or target.type != "call":
-            continue
-
-        sources_by_target.setdefault(target.id, set()).add(source.id)
+    for source, target in graph_call_sequence_pairs(graph):
+        sources_by_target.setdefault(target, set()).add(source)
 
     return {
         target_id: sorted(sources_by_target[target_id])

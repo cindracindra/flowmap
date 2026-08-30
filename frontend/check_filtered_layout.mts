@@ -65,10 +65,13 @@ const projection: VisibleGraphProjection = {
     kind: "IF",
     line: 1,
     selectedArmLabel: "if",
-    branchPointIds: [`${rootInstance}:entry`],
+    entryPredecessorIds: [`${rootInstance}:entry`],
+    entrySuccessorIds: [`${rootInstance}:call-1`],
+    exitPredecessorIds: [`${rootInstance}:call-1`],
+    continuationIds: [`${rootInstance}:call-2`],
     arms: [
-      { label: "if", firstCallId: `${rootInstance}:call-1`, empty: false },
-      { label: "else", empty: true, terminus: "continues" },
+      { label: "if", empty: false, exits: [{ kind: "continues" }] },
+      { label: "else", empty: true, exits: [{ kind: "continues" }] },
     ],
   }],
   exits: [],
@@ -103,10 +106,11 @@ const terminalProjection: VisibleGraphProjection = {
   branchGroups: [{
     id: `${terminalInstance}/branch:g2`, instanceId: terminalInstance,
     definitionBranchId: "g2", kind: "IF", selectedArmLabel: "if",
-    branchPointIds: [`${terminalInstance}:entry`],
+    entryPredecessorIds: [`${terminalInstance}:entry`], entrySuccessorIds: [`${terminalInstance}:return`],
+    exitPredecessorIds: [], continuationIds: [],
     arms: [
-      { label: "if", empty: true, terminus: "return" },
-      { label: "else", empty: true, terminus: "continues" },
+      { label: "if", empty: true, exits: [{ kind: "return" }] },
+      { label: "else", empty: true, exits: [{ kind: "continues" }] },
     ],
   }],
   exits: [{
@@ -138,10 +142,11 @@ const emptyProjection: VisibleGraphProjection = {
   branchGroups: [{
     id: `${emptyInstance}/branch:g3`, instanceId: emptyInstance,
     definitionBranchId: "g3", kind: "IF", selectedArmLabel: "else",
-    branchPointIds: [`${emptyInstance}:entry`],
+    entryPredecessorIds: [`${emptyInstance}:entry`], entrySuccessorIds: [`${emptyInstance}:after`],
+    exitPredecessorIds: [], continuationIds: [`${emptyInstance}:after`],
     arms: [
-      { label: "if", empty: false, terminus: "return" },
-      { label: "else", empty: true, terminus: "continues", targetIds: [`${emptyInstance}:after`] },
+      { label: "if", empty: false, exits: [{ kind: "return" }] },
+      { label: "else", empty: true, exits: [{ kind: "continues" }] },
     ],
   }],
   exits: [],
@@ -190,6 +195,38 @@ assert(catchY("catch-head") < catchY("catch-body"));
 assert(catchY("catch-body") < catchY("publish"), "catch body must precede its shared continuation");
 assert(catchY("publish") < catchY("return"), "method exit must follow the shared continuation");
 
+// A hidden inline conditional can leave a short bypass and a longer visible
+// call path that converge at one operation. The join must wait for the longer
+// path instead of being emitted immediately by a preorder traversal.
+const ternaryInstance = "operation:test/root:hidden-ternary";
+const ternaryProjection: VisibleGraphProjection = {
+  rootId: `${ternaryInstance}:fork`,
+  nodes: [
+    node(`${ternaryInstance}:fork`, ternaryInstance, 0, "fork"),
+    node(`${ternaryInstance}:construct`, ternaryInstance, 0, "construct"),
+    node(`${ternaryInstance}:throw`, ternaryInstance, 0, "throw", {
+      node: { id: "throw", type: "exit", exitKind: "throw" },
+    }),
+    node(`${ternaryInstance}:get-class`, ternaryInstance, 0, "get-class"),
+    node(`${ternaryInstance}:get-name`, ternaryInstance, 0, "get-name"),
+  ],
+  edges: [
+    // The backend may encounter the ternary's short/null route first.
+    { from: `${ternaryInstance}:fork`, to: `${ternaryInstance}:construct`, type: "sequence", kind: "sequence" },
+    { from: `${ternaryInstance}:fork`, to: `${ternaryInstance}:get-class`, type: "sequence", kind: "sequence" },
+    { from: `${ternaryInstance}:get-class`, to: `${ternaryInstance}:get-name`, type: "sequence", kind: "sequence" },
+    { from: `${ternaryInstance}:get-name`, to: `${ternaryInstance}:construct`, type: "sequence", kind: "sequence" },
+    { from: `${ternaryInstance}:construct`, to: `${ternaryInstance}:throw`, type: "sequence", kind: "sequence" },
+  ],
+  branchGroups: [],
+  exits: [],
+};
+const ternaryLayout = layoutFilteredGraph(ternaryProjection);
+const ternaryY = (suffix: string) => ternaryLayout.positions.get(`${ternaryInstance}:${suffix}`)!.y;
+assert(ternaryY("get-class") < ternaryY("get-name"));
+assert(ternaryY("get-name") < ternaryY("construct"), "a convergence must follow every visible incoming path");
+assert(ternaryY("construct") < ternaryY("throw"));
+
 const expandedForkInstance = "operation:test/root:expanded-fork";
 const expandedForkChild = `${expandedForkInstance}/call:branch-call/target:0:child`;
 const expandedForkProjection: VisibleGraphProjection = {
@@ -217,8 +254,10 @@ const expandedForkProjection: VisibleGraphProjection = {
   branchGroups: [{
     id: `${expandedForkInstance}/branch:g4`, instanceId: expandedForkInstance,
     definitionBranchId: "g4", kind: "TRY", selectedArmLabel: "else",
-    branchPointIds: [`${expandedForkInstance}:branch-call`],
-    arms: [{ label: "else", empty: true, terminus: "continues", targetIds: [`${expandedForkInstance}:after`] }],
+    entryPredecessorIds: [`${expandedForkInstance}:branch-call`],
+    entrySuccessorIds: [`${expandedForkInstance}:after`], exitPredecessorIds: [],
+    continuationIds: [`${expandedForkInstance}:after`],
+    arms: [{ label: "else", empty: true, exits: [{ kind: "continues" }] }],
   }],
   exits: [],
 };
@@ -266,14 +305,16 @@ const nestedTryProjection: VisibleGraphProjection = {
     {
       id: tryGroupId, instanceId: nestedTryInstance, definitionBranchId: "outer-try",
       kind: "TRY", line: 10, selectedArmLabel: "noCatch",
-      branchPointIds: [`${nestedTryInstance}:try-fork`],
-      arms: [{ label: "noCatch", empty: true, terminus: "continues", targetIds: [`${nestedTryInstance}:after`] }],
+      entryPredecessorIds: [`${nestedTryInstance}:try-fork`], entrySuccessorIds: [`${nestedTryInstance}:if-fork`],
+      exitPredecessorIds: [], continuationIds: [`${nestedTryInstance}:after`],
+      arms: [{ label: "noCatch", empty: true, exits: [{ kind: "continues" }] }],
     },
     {
       id: innerGroupId, instanceId: nestedTryInstance, definitionBranchId: "inner-if",
       kind: "IF", line: 12, selectedArmLabel: "if",
-      branchPointIds: [`${nestedTryInstance}:if-fork`],
-      arms: [{ label: "if", empty: false, terminus: "continues", firstCallId: `${nestedTryInstance}:if-body` }],
+      entryPredecessorIds: [`${nestedTryInstance}:if-fork`], entrySuccessorIds: [`${nestedTryInstance}:if-body`],
+      exitPredecessorIds: [`${nestedTryInstance}:if-body`], continuationIds: [`${nestedTryInstance}:after`],
+      arms: [{ label: "if", empty: false, exits: [{ kind: "continues" }] }],
     },
   ],
   exits: [],
@@ -300,6 +341,7 @@ for (const branch of nestedTryLayout.branches) {
 // authoritative, while source location decides which DFS successor is laid
 // out first.
 const conditionInstance = "operation:test/root:add-item";
+const conditionGroup = `${conditionInstance}/branch:condition`;
 const conditionProjection: VisibleGraphProjection = {
   rootId: `${conditionInstance}:entry`,
   nodes: [
@@ -308,6 +350,7 @@ const conditionProjection: VisibleGraphProjection = {
     }),
     node(`${conditionInstance}:get-cart`, conditionInstance, 0, "get-cart", {
       node: { id: "get-cart", type: "call", code: "getCart(session)", line: 101 },
+      branchRequirements: [{ groupId: conditionGroup, armLabel: "if" }],
     }),
     node(`${conditionInstance}:return`, conditionInstance, 0, "return", {
       node: { id: "return", type: "exit", exitKind: "return", line: 110 },
@@ -320,14 +363,28 @@ const conditionProjection: VisibleGraphProjection = {
     }),
   ],
   edges: [
-    { from: `${conditionInstance}:entry`, to: `${conditionInstance}:get-cart`, type: "sequence", kind: "sequence" },
+    { from: `${conditionInstance}:entry`, to: `${conditionInstance}:get-cart`, type: "sequence", kind: "sequence",
+      branchRequirements: [{ groupId: conditionGroup, armLabel: "if" }] },
     { from: `${conditionInstance}:entry`, to: `${conditionInstance}:trim`, type: "sequence", kind: "sequence" },
     { from: `${conditionInstance}:get-cart`, to: `${conditionInstance}:return`, type: "sequence", kind: "sequence" },
     { from: `${conditionInstance}:trim`, to: `${conditionInstance}:is-empty`, type: "sequence", kind: "sequence" },
-    { from: `${conditionInstance}:is-empty`, to: `${conditionInstance}:get-cart`, type: "sequence", kind: "sequence" },
+    { from: `${conditionInstance}:is-empty`, to: `${conditionInstance}:get-cart`, type: "sequence", kind: "sequence",
+      branchRequirements: [{ groupId: conditionGroup, armLabel: "if" }] },
     { from: `${conditionInstance}:is-empty`, to: `${conditionInstance}:trim`, type: "sequence", kind: "sequence" },
   ],
-  branchGroups: [],
+  branchGroups: [{
+    id: conditionGroup,
+    instanceId: conditionInstance,
+    definitionBranchId: "condition",
+    kind: "IF",
+    selectedArmLabel: "if",
+    entryPredecessorIds: [`${conditionInstance}:entry`], entrySuccessorIds: [`${conditionInstance}:get-cart`],
+    exitPredecessorIds: [`${conditionInstance}:get-cart`], continuationIds: [],
+    arms: [
+      { label: "if", empty: false, exits: [{ kind: "continues" }] },
+      { label: "else", empty: true, exits: [{ kind: "return" }] },
+    ],
+  }],
   exits: [],
 };
 
@@ -336,5 +393,157 @@ const conditionY = (id: string) => conditionLayout.positions.get(`${conditionIns
 assert(conditionY("trim") < conditionY("is-empty"), "nested condition calls retain CFG order");
 assert(conditionY("is-empty") < conditionY("get-cart"), "earlier condition route wins a DFS successor tie");
 assert(conditionY("get-cart") < conditionY("return"), "selected body remains before its return");
+assert(
+  conditionLayout.branches[0].y > conditionY("entry")
+    && conditionLayout.branches[0].y < conditionY("get-cart"),
+  "branch controls are anchored at structure entry, before the selected body",
+);
+
+// Projection has already bridged structural decisions while retaining their
+// explicit entry boundary as panel metadata.
+const decisionsInstance = "operation:test/root:decisions";
+const outerDecisionGroup = `${decisionsInstance}/branch:outer`;
+const innerDecisionGroup = `${decisionsInstance}/branch:inner`;
+const decisionsProjection: VisibleGraphProjection = {
+  rootId: `${decisionsInstance}:entry`,
+  nodes: [
+    node(`${decisionsInstance}:entry`, decisionsInstance, 0, "entry"),
+    node(`${decisionsInstance}:compare`, decisionsInstance, 0, "compare", {
+      node: { id: "compare", type: "call", code: "compareTo(value)", line: 11 },
+      branchRequirements: [{ groupId: outerDecisionGroup, armLabel: "if" }],
+    }),
+    node(`${decisionsInstance}:return`, decisionsInstance, 0, "return", {
+      node: { id: "return", type: "exit", exitKind: "return", code: "return value", line: 13 },
+      branchRequirements: [
+        { groupId: outerDecisionGroup, armLabel: "if" },
+        { groupId: innerDecisionGroup, armLabel: "if" },
+      ],
+    }),
+  ],
+  edges: [
+    { from: `${decisionsInstance}:entry`, to: `${decisionsInstance}:compare`, type: "sequence", kind: "sequence",
+      branchRequirements: [{ groupId: outerDecisionGroup, armLabel: "if" }] },
+    { from: `${decisionsInstance}:compare`, to: `${decisionsInstance}:return`, type: "sequence", kind: "sequence",
+      branchRequirements: [
+        { groupId: outerDecisionGroup, armLabel: "if" },
+        { groupId: innerDecisionGroup, armLabel: "if" },
+      ] },
+  ],
+  branchGroups: [
+    {
+      id: outerDecisionGroup, instanceId: decisionsInstance, definitionBranchId: "outer",
+      kind: "IF", selectedArmLabel: "if", entryPredecessorIds: [`${decisionsInstance}:entry`],
+      entrySuccessorIds: [`${decisionsInstance}:compare`], exitPredecessorIds: [`${decisionsInstance}:compare`], continuationIds: [],
+      arms: [
+        { label: "if", empty: false, exits: [{ kind: "continues" }] },
+        { label: "else", empty: true, exits: [{ kind: "continues" }] },
+      ],
+    },
+    {
+      id: innerDecisionGroup, instanceId: decisionsInstance, definitionBranchId: "inner",
+      kind: "IF", selectedArmLabel: "if", entryPredecessorIds: [`${decisionsInstance}:compare`],
+      entrySuccessorIds: [], exitPredecessorIds: [], continuationIds: [],
+      enclosingRequirements: [{ groupId: outerDecisionGroup, armLabel: "if" }],
+      arms: [
+        { label: "if", empty: true, exits: [{ kind: "return" }] },
+        { label: "else", empty: true, exits: [{ kind: "continues" }] },
+      ],
+    },
+  ],
+  exits: [{
+    instanceId: decisionsInstance, sourceNodeId: `${decisionsInstance}:return`, kind: "return",
+    branchRequirements: [
+      { groupId: outerDecisionGroup, armLabel: "if" },
+      { groupId: innerDecisionGroup, armLabel: "if" },
+    ],
+  }],
+};
+const decisionsLayout = layoutFilteredGraph(decisionsProjection);
+const decisionsY = (id: string) => decisionsLayout.positions.get(`${decisionsInstance}:${id}`)!.y;
+assert(decisionsY("entry") < decisionsY("compare"));
+assert(decisionsY("compare") < decisionsY("return"));
+assert(decisionsLayout.height < 1000, "consecutive branch panels must not create runaway empty height");
+const nestedDecisionPanels = new Map(
+  decisionsLayout.branches.map((branch) => [branch.group.id, branch]),
+);
+const outerDecisionPanel = nestedDecisionPanels.get(outerDecisionGroup)!;
+const innerDecisionPanel = nestedDecisionPanels.get(innerDecisionGroup)!;
+assert(innerDecisionPanel, "reachable empty nested branch must retain a compact panel");
+assert(outerDecisionPanel.x <= innerDecisionPanel.x);
+assert(outerDecisionPanel.y <= innerDecisionPanel.y);
+assert(
+  innerDecisionPanel.y >= outerDecisionPanel.y + 46 + 10,
+  "nested panel controls must be placed below the parent controls",
+);
+assert(
+  outerDecisionPanel.x + outerDecisionPanel.width
+    >= innerDecisionPanel.x + innerDecisionPanel.width,
+  "outer panel must contain the empty inner panel horizontally",
+);
+assert(
+  outerDecisionPanel.y + outerDecisionPanel.height
+    >= innerDecisionPanel.y + innerDecisionPanel.height,
+  "outer panel must contain the empty inner panel vertically",
+);
+
+const elseIfInstance = "operation:test/root:else-if";
+const elseIfGroup = `${elseIfInstance}/branch:chain`;
+const elseIfProjection: VisibleGraphProjection = {
+  rootId: `${elseIfInstance}:entry`,
+  nodes: [
+    node(`${elseIfInstance}:entry`, elseIfInstance, 0, "entry"),
+    node(`${elseIfInstance}:body`, elseIfInstance, 0, "body", {
+      branchRequirements: [{ groupId: elseIfGroup, armLabel: "elseif2" }],
+    }),
+    node(`${elseIfInstance}:after`, elseIfInstance, 0, "after"),
+  ],
+  edges: [
+    { from: `${elseIfInstance}:entry`, to: `${elseIfInstance}:body`, type: "sequence", kind: "sequence",
+      branchRequirements: [{ groupId: elseIfGroup, armLabel: "elseif2" }] },
+    { from: `${elseIfInstance}:body`, to: `${elseIfInstance}:after`, type: "sequence", kind: "sequence" },
+  ],
+  branchGroups: [{
+    id: elseIfGroup, instanceId: elseIfInstance, definitionBranchId: "chain",
+    kind: "IF", selectedArmLabel: "elseif2",
+    entryPredecessorIds: [`${elseIfInstance}:entry`],
+    entrySuccessorIds: [`${elseIfInstance}:body`],
+    exitPredecessorIds: [`${elseIfInstance}:body`],
+    continuationIds: [`${elseIfInstance}:after`],
+    conditionStages: [
+      { id: "s1", nodeIds: [], code: "first()" },
+      { id: "s2", nodeIds: [], code: "second()" },
+      { id: "s3", nodeIds: [], code: "third()" },
+    ],
+    arms: [
+      { label: "if", empty: false, conditionStages: [{ stageId: "s1", nodeIds: [], outcome: true }] },
+      { label: "elseif1", empty: false, conditionStages: [
+        { stageId: "s1", nodeIds: [], outcome: false },
+        { stageId: "s2", nodeIds: [], outcome: true },
+      ] },
+      { label: "elseif2", empty: false, conditionStages: [
+        { stageId: "s1", nodeIds: [], outcome: false },
+        { stageId: "s2", nodeIds: [], outcome: false },
+        { stageId: "s3", nodeIds: [], outcome: true },
+      ] },
+      { label: "else", empty: true, conditionStages: [
+        { stageId: "s1", nodeIds: [], outcome: false },
+        { stageId: "s2", nodeIds: [], outcome: false },
+        { stageId: "s3", nodeIds: [], outcome: false },
+      ], exits: [{ kind: "continues" }] },
+    ],
+  }],
+  exits: [],
+};
+const elseIfLayout = layoutFilteredGraph(elseIfProjection);
+const elseIfPanel = elseIfLayout.branches[0];
+assert.equal(
+  elseIfPanel.armRows.find((row) => row.arm.label === "elseif2")?.conditionPath,
+  "first() ✗ → second() ✗ → third() ✓",
+);
+assert(
+  elseIfLayout.positions.get(`${elseIfInstance}:after`)!.y
+    >= elseIfPanel.y + elseIfPanel.height + 12,
+  "else-if continuation must remain below its complete panel",
+);
 
 console.log("filtered graph layout checks passed");

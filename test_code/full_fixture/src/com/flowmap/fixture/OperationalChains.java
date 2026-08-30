@@ -1,6 +1,7 @@
 package com.flowmap.fixture;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Fixture project for processor/inter_cfg_full.sc -- method names mirror
@@ -21,6 +22,7 @@ import java.util.List;
  * unusedMethod() is a true orphan: nothing calls it, it calls nothing.
  */
 public class OperationalChains {
+    private String currentValue;
 
     public void doA() {
         doHelper();
@@ -43,6 +45,37 @@ public class OperationalChains {
         unequalDistanceBranch(false);
         normalPathAfterThrowGuard(false);
         consecutiveEmptyTerminalBranches(false, false, new RuntimeException("failure"));
+        nestedIdentifierBranches(true, false, true);
+        visibleCallBeforeCallFreeNestedBranchShape(true, false);
+        consecutiveIdentifierBranches(false, true);
+        whileLoopShape(false);
+        doWhileLoopShape(false);
+        doWhileCallConditionShape();
+        forLoopShape(2);
+        forLoopWithUpdateCallShape(2);
+        enhancedForLoopShape(List.of("loop"));
+        enhancedForWithFilteredPreheaderShape(new String[] {"loop"});
+        loopWithBranchShape(false, true);
+        loopWithBranchThenWorkShape(false, true);
+        loopWithNestedBranchTailShape(false, true, false);
+        nestedLoopShape(false, false);
+        consecutiveLoopShape(false, false);
+        loopWithBreakShape(false, false);
+        tryCatchShape(false);
+        tryMultipleCatchShape(0);
+        tryFinallyNestedStructureShape(false, false);
+        tryReturnFinallyShape(false);
+        tryThrowCatchFinallyShape(false);
+        tryThrowFromCatchFinallyShape(false);
+        tryFinallyOverridesReturnShape(false);
+        branchThenTryInlineEntryShape(false);
+        tryLoopBreakFinallyShape(false, false);
+        threeArmConvergingShape(false, false);
+        threeArmWithReturnShape(false, false);
+        allTerminalBranchShape(false, new IllegalStateException("terminal"));
+        filteredEmptyLoopShape(false);
+        nestedConsecutiveEmptyGroupsShape(false, false, false);
+        loopWithSwitchBreakShape(false, 0);
         List.of("lambda").forEach(value -> doInner());
     }
 
@@ -65,6 +98,14 @@ public class OperationalChains {
     private void shortCircuitCallConditionReturn() {
         doInner();
         if (hasRole() || isOwner()) {
+            return;
+        }
+        doX();
+    }
+
+    private void shortCircuitAndConditionReturn() {
+        doInner();
+        if (hasRole() && isOwner()) {
             return;
         }
         doX();
@@ -100,6 +141,21 @@ public class OperationalChains {
         return wrapper(helper());
     }
 
+    private void inlineArgumentOrderShape() {
+        wrapperTwo(helperA(), helperB());
+    }
+
+    private void nestedInlineArgumentOrderShape() {
+        wrapperTwo(wrapper(helperA()), helperB());
+    }
+
+    private void inlineOrderAfterLoopShape(boolean running) {
+        while (running) {
+            doX();
+        }
+        wrapperTwo(helperA(), helperB());
+    }
+
     private void helperThenReturn() {
         helper();
         return;
@@ -119,6 +175,10 @@ public class OperationalChains {
 
     private int wrapper(int value) {
         return value;
+    }
+
+    private int wrapperTwo(int left, int right) {
+        return left + right;
     }
 
     private void branchWithCalls(boolean condition) {
@@ -210,6 +270,431 @@ public class OperationalChains {
         }
         if (second) {
             return;
+        }
+        doHelper();
+    }
+
+    private void nestedIdentifierBranches(
+            boolean first, boolean second, boolean nested) {
+        if (first) {
+            if (nested) {
+                doX();
+            }
+        } else if (second) {
+            if (nested) {
+                doInner();
+            }
+        } else {
+            return;
+        }
+        doHelper();
+    }
+
+    private void visibleCallBeforeCallFreeNestedBranchShape(
+            boolean outer, boolean inner) {
+        if (outer) {
+            doX();
+            if (inner) {
+                doInner();
+            }
+        }
+        doHelper();
+    }
+
+    private void whileLoopShape(boolean repeat) {
+        while (repeat) {
+            doInner();
+        }
+        doX();
+    }
+
+    private void doWhileLoopShape(boolean repeat) {
+        do {
+            doInner();
+        } while (repeat);
+        doX();
+    }
+
+    private void doWhileCallConditionShape() {
+        do {
+            doInner();
+        } while (hasRole());
+        doX();
+    }
+
+    private void forLoopShape(int count) {
+        for (int index = 0; index < count; index++) {
+            doInner();
+        }
+        doX();
+    }
+
+    private void forLoopWithUpdateCallShape(int count) {
+        for (int index = 0; index < count; index = advance(index)) {
+            doInner();
+        }
+        doX();
+    }
+
+    private int advance(int value) {
+        return value + 1;
+    }
+
+    private void enhancedForLoopShape(List<String> values) {
+        for (String value : values) {
+            doInner();
+        }
+        doX();
+    }
+
+    private void enhancedForWithFilteredPreheaderShape(String... values) {
+        Objects.requireNonNull(values);
+        for (String value : values) {
+            currentValue = value.trim();
+        }
+        doX();
+    }
+
+    private void loopWithBranchShape(boolean repeat, boolean choose) {
+        while (repeat) {
+            if (choose) {
+                doInner();
+            } else {
+                doHelper();
+            }
+        }
+        doX();
+    }
+
+    private void loopWithBranchThenWorkShape(boolean repeat, boolean choose) {
+        while (repeat) {
+            if (choose) {
+                doInner();
+            } else {
+                doHelper();
+            }
+            doY();
+        }
+        doX();
+    }
+
+    private void loopWithNestedBranchTailShape(
+            boolean repeat, boolean outer, boolean inner) {
+        while (repeat) {
+            if (outer) {
+                if (inner) {
+                    doInner();
+                } else {
+                    doHelper();
+                }
+            } else {
+                doY();
+            }
+        }
+        doX();
+    }
+
+    private void nestedLoopShape(boolean outer, boolean inner) {
+        while (outer) {
+            while (inner) {
+                doInner();
+            }
+            doY();
+        }
+        doX();
+    }
+
+    private void consecutiveLoopShape(boolean first, boolean second) {
+        while (first) {
+            doInner();
+        }
+        while (second) {
+            doY();
+        }
+        doX();
+    }
+
+    private void loopWithBreakShape(boolean repeat, boolean stop) {
+        while (repeat) {
+            if (stop) {
+                break;
+            }
+            doInner();
+        }
+        doX();
+    }
+
+    private void tryCatchShape(boolean fail) {
+        try {
+            doInner();
+            if (fail) {
+                throw new IllegalArgumentException("try failure");
+            }
+            doHelper();
+        } catch (IllegalArgumentException failure) {
+            doY();
+        }
+        doX();
+    }
+
+    private void tryMultipleCatchShape(int mode) {
+        try {
+            doInner();
+            if (mode == 1) {
+                throw new IllegalArgumentException("first");
+            }
+            if (mode == 2) {
+                throw new IllegalStateException("second");
+            }
+            doHelper();
+        } catch (IllegalArgumentException failure) {
+            doX();
+        } catch (IllegalStateException failure) {
+            doY();
+        }
+        doInner();
+    }
+
+    private void tryFinallyNestedStructureShape(boolean choose, boolean repeat) {
+        try {
+            if (choose) {
+                while (repeat) {
+                    doInner();
+                }
+            } else {
+                doHelper();
+            }
+            doY();
+        } catch (IllegalArgumentException failure) {
+            if (choose) {
+                doX();
+            }
+        } finally {
+            doInner();
+        }
+        doHelper();
+    }
+
+    private void tryReturnFinallyShape(boolean done) {
+        try {
+            doInner();
+            if (done) {
+                return;
+            }
+            doHelper();
+        } finally {
+            doX();
+        }
+        doY();
+    }
+
+    private void tryThrowCatchFinallyShape(boolean fail) {
+        try {
+            if (fail) {
+                throw new IllegalArgumentException("caught");
+            }
+            doInner();
+        } catch (IllegalArgumentException failure) {
+            doHelper();
+        } finally {
+            doX();
+        }
+        doY();
+    }
+
+    private void tryThrowFromCatchFinallyShape(boolean fail) {
+        try {
+            doInner();
+            if (fail) {
+                throw new IllegalArgumentException("caught");
+            }
+        } catch (IllegalArgumentException failure) {
+            throw new IllegalStateException("replacement");
+        } finally {
+            doX();
+        }
+        doHelper();
+    }
+
+    private void tryFinallyOverridesReturnShape(boolean done) {
+        try {
+            if (done) {
+                return;
+            }
+            doInner();
+        } finally {
+            if (done) {
+                throw new IllegalStateException("override");
+            }
+            doX();
+        }
+        doHelper();
+    }
+
+    private void branchThenTryInlineEntryShape(boolean stop) {
+        if (stop) {
+            return;
+        }
+        try {
+            wrapperTwo(helperA(), helperB());
+        } catch (RuntimeException error) {
+            doX();
+        }
+        doY();
+    }
+
+    private void tryLoopBreakFinallyShape(boolean stop, boolean cleanup) {
+        try {
+            while (cleanup) {
+                if (stop) {
+                    break;
+                }
+                doX();
+            }
+        } finally {
+            if (cleanup) {
+                doY();
+            }
+        }
+        doHelper();
+    }
+
+    private void threeArmConvergingShape(boolean first, boolean second) {
+        if (first) {
+            doX();
+        } else if (second) {
+            doInner();
+        } else {
+            doHelper();
+        }
+        doY();
+    }
+
+    private void threeArmWithReturnShape(boolean first, boolean second) {
+        if (first) {
+            doX();
+        } else if (second) {
+            doInner();
+        } else {
+            return;
+        }
+        doHelper();
+    }
+
+    private void allTerminalBranchShape(
+            boolean chooseReturn, RuntimeException failure) {
+        if (chooseReturn) {
+            return;
+        } else {
+            throw failure;
+        }
+    }
+
+    private void filteredEmptyLoopShape(boolean repeat) {
+        while (repeat) {
+            int ignored = 1;
+            ignored++;
+        }
+        doX();
+    }
+
+    private void nestedConsecutiveEmptyGroupsShape(
+            boolean outer, boolean inner, boolean later) {
+        if (outer) {
+            if (inner) {
+                int ignored = 1;
+                ignored++;
+            }
+        }
+        if (later) {
+            int ignored = 2;
+            ignored++;
+        }
+        doX();
+    }
+
+    private void loopWithContinueShape(boolean repeat, boolean skip) {
+        while (repeat) {
+            if (skip) {
+                continue;
+            }
+            doInner();
+        }
+        doX();
+    }
+
+    private void nestedLoopTransferShape(
+            boolean outer, boolean inner, boolean stop, boolean skip) {
+        while (outer) {
+            while (inner) {
+                if (stop) {
+                    break;
+                }
+                if (skip) {
+                    continue;
+                }
+                doInner();
+            }
+            doY();
+        }
+        doX();
+    }
+
+    private void loopWithSwitchBreakShape(boolean repeat, int mode) {
+        while (repeat) {
+            switch (mode) {
+                case 0:
+                    doInner();
+                    break;
+                default:
+                    doHelper();
+            }
+            doY();
+        }
+        doX();
+    }
+
+    private void branchThenLoopShape(boolean choose, boolean repeat) {
+        if (choose) {
+            doInner();
+        } else {
+            doHelper();
+        }
+        while (repeat) {
+            doY();
+        }
+        doX();
+    }
+
+    private void loopThenBranchShape(boolean repeat, boolean choose) {
+        while (repeat) {
+            doInner();
+        }
+        if (choose) {
+            doY();
+        } else {
+            doHelper();
+        }
+        doX();
+    }
+
+    private void branchContainingLoopShape(boolean choose, boolean repeat) {
+        if (choose) {
+            while (repeat) {
+                doInner();
+            }
+        } else {
+            doHelper();
+        }
+        doX();
+    }
+
+    private void consecutiveIdentifierBranches(boolean first, boolean second) {
+        if (first) {
+            doX();
+        }
+        if (second) {
+            doInner();
         }
         doHelper();
     }

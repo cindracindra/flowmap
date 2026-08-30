@@ -31,9 +31,3 @@ export function sortTopics(topics: TopicCluster[]): TopicCluster[] {
     return b.member_full_names.length - a.member_full_names.length;
   });
 }
-
-export function splitClassFullName(fullName: string): { pkg: string; shortName: string } {
-  const segments = fullName.split(".");
-  const shortName = segments.pop() ?? fullName;
-  return { pkg: segments.join(".") || "(default package)", shortName };
-}

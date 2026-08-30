@@ -5,12 +5,12 @@ from typing import Any, Literal
 
 from .branch import BranchArmRef
 
-NodeType = Literal["entry", "call", "leaf", "exit"]
+NodeType = Literal["entry", "call", "structure", "transfer", "leaf", "exit"]
 
 MethodExitKind = Literal["return", "throw", "fallthrough"]
+TransferKind = Literal["break", "continue"]
 
-Terminus = Literal["throw", "return", "fallthrough", "continues"]
-
+StructureRole = Literal["entry", "exit", "decision"]
 
 @dataclass(slots=True)
 class Node:
@@ -28,10 +28,23 @@ class Node:
     # call only: source text of the call expression.
     code: str | None = None
 
-    # entry, call: source line number (-1 if Joern couldn't resolve one).
+    # structure only: stable ownership and role for explicit control-flow
+    # anchors.
+    structureGroupId: str | None = None
+    structureRole: StructureRole | None = None
+
+    # Structural transfer only: structure whose exit anchor receives it.
+    # Kept separate from lexical loopIds because labeled transfers may target
+    # an outer structure rather than the nearest enclosing one.
+    targetStructureGroupId: str | None = None
+    # type="transfer" only. Kept distinct from method exitKind so
+    # control transfer is never mistaken for method termination.
+    transferKind: TransferKind | None = None
+
+    # entry, call, branch: source line number (-1 if unresolved).
     line: int | None = None
 
-    # entry, call: source file containing the method/call. 
+    # entry, call: source file containing the method/call.
     sourceFile: str | None = None
 
     # entry only: True for Joern auto-generated default constructor.
@@ -41,19 +54,8 @@ class Node:
     # resolved (currently always "unresolved" -- see inter_cfg.sc).
     reason: str | None = None
 
-    # flatten_intermethod_cfg only: pre-clone id this node was copied from.
-    origId: str | None = None
-
-    # filter_intermethod_cfg only: True iff `terminus == "throw"` for this
-    # node.
+    # True when extraction proves this call is on a terminal throw route.
     deadEnd: bool | None = None
-
-    # call only: set only when this call's own forward cfgNext walk found 
-    # no further call - "throw" (non-return), "return" (an explicit `return`
-    # statement) and "fallthrough" (the method's own implicit end, no
-    # return keyword). Absent/None when call had a real successor and isn't 
-    # a terminus at all.
-    terminus: Terminus | None = None
 
     # extraction only: authoritative method-local control-flow exit. Explicit
     # RETURN and throw exits retain their source construct; fallthrough is the
@@ -68,8 +70,11 @@ class Node:
     # Source loops whose body contains this node.
     loopIds: list[str] = field(default_factory=list)
 
-    # TODO: to be removed
-    depth: int | None = None
+    def __post_init__(self) -> None:
+        if self.type not in {"entry", "call", "structure", "transfer", "leaf", "exit"}:
+            raise ValueError(f"Unsupported node type {self.type!r}")
+        if self.structureRole not in {None, "entry", "exit", "decision"}:
+            raise ValueError(f"Unsupported structure role {self.structureRole!r}")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Node:
@@ -79,17 +84,18 @@ class Node:
             calleeFullName=data.get("calleeFullName"),
             callerMethod=data.get("callerMethod"),
             code=data.get("code"),
+            structureGroupId=data.get("structureGroupId"),
+            structureRole=data.get("structureRole"),
+            targetStructureGroupId=data.get("targetStructureGroupId"),
+            transferKind=data.get("transferKind"),
             line=data.get("line"),
             sourceFile=data.get("sourceFile"),
             implicitConstructor=data.get("implicitConstructor"),
             reason=data.get("reason"),
-            origId=data.get("origId"),
             deadEnd=data.get("deadEnd"),
-            terminus=data.get("terminus"),
             exitKind=data.get("exitKind"),
             branchArms=[BranchArmRef.from_dict(t) for t in data.get("branchArms", [])],
             loopIds=list(data.get("loopIds", [])),
-            depth=data.get("depth"),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -98,14 +104,15 @@ class Node:
             ("calleeFullName", self.calleeFullName),
             ("callerMethod", self.callerMethod),
             ("code", self.code),
+            ("structureGroupId", self.structureGroupId),
+            ("structureRole", self.structureRole),
+            ("targetStructureGroupId", self.targetStructureGroupId),
+            ("transferKind", self.transferKind),
             ("line", self.line),
             ("sourceFile", self.sourceFile),
             ("implicitConstructor", self.implicitConstructor),
             ("reason", self.reason),
-            ("origId", self.origId),
-            ("terminus", self.terminus),
             ("exitKind", self.exitKind),
-            ("depth", self.depth),
         ):
             if value is not None:
                 result[name] = value

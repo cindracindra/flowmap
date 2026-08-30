@@ -1,5 +1,4 @@
 import type {
-  ArmTerminus,
   BranchRequirement,
   FlowEdge,
   FlowNode,
@@ -44,21 +43,31 @@ export interface VisibleBranchRequirement {
 }
 
 export interface VisibleArmExit {
-  kind: "return" | "throw" | "continues";
-  frontierIds?: InstanceNodeId[];
-  targetIds?: InstanceNodeId[];
-  branchRequirements?: VisibleBranchRequirement[];
+  kind: "return" | "throw" | "break" | "continue" | "continues";
+  destinationNodeId?: InstanceNodeId;
+}
+
+export interface VisibleConditionStage {
+  id: string;
+  nodeIds: InstanceNodeId[];
+  decisionNodeId?: InstanceNodeId;
+  /** Canonical condition text retained after its graph node becomes an alias. */
+  code?: string;
+}
+
+export interface VisibleArmConditionStage {
+  stageId: string;
+  nodeIds: InstanceNodeId[];
+  outcome: boolean;
 }
 
 export interface VisibleBranchArm {
   label: string;
-  firstCallId?: InstanceNodeId;
   empty: boolean;
-  terminus?: ArmTerminus;
-  exits?: VisibleArmExit[];
+  exits: VisibleArmExit[];
   conditionCode?: string;
+  conditionStages?: VisibleArmConditionStage[];
   exceptionType?: string;
-  targetIds?: InstanceNodeId[];
 }
 
 export interface VisibleBranchGroup {
@@ -68,10 +77,19 @@ export interface VisibleBranchGroup {
   kind: string;
   method?: string;
   line?: number;
+  entryNodeId?: InstanceNodeId;
+  exitNodeId?: InstanceNodeId;
+  conditionStages?: VisibleConditionStage[];
   arms: VisibleBranchArm[];
   selectedArmLabel: string;
-  branchPointIds?: InstanceNodeId[];
-  convergesAt?: InstanceNodeId;
+  enclosingRequirements?: VisibleBranchRequirement[];
+  /** Visible topology immediately around the hidden structural anchors. */
+  entryPredecessorIds: InstanceNodeId[];
+  entrySuccessorIds: InstanceNodeId[];
+  exitPredecessorIds: InstanceNodeId[];
+  continuationIds: InstanceNodeId[];
+  /** Call-site anchor used only by synthetic dispatch selectors. */
+  dispatchAnchorId?: InstanceNodeId;
 }
 
 export interface VisibleMethodExit {
@@ -141,28 +159,43 @@ function instantiateBranchGroups(
       line: group.line,
       arms: group.arms.map((arm) => ({
         label: arm.label,
-        firstCallId: arm.firstCallId
-          ? instanceNodeId(instanceId, arm.firstCallId)
-          : undefined,
         empty: arm.empty,
-        terminus: arm.terminus,
-        exits: arm.exits?.map((exit) => ({
+        exits: arm.exits.map((exit) => ({
           kind: exit.kind,
-          frontierIds: rewriteNodeIds(exit.frontierIds),
-          targetIds: rewriteNodeIds(exit.targetIds),
-          branchRequirements: exit.branchRequirements
-            ? instantiateRequirements(instanceId, exit.branchRequirements)
+          destinationNodeId: exit.destinationNodeId
+            ? instanceNodeId(instanceId, exit.destinationNodeId)
             : undefined,
         })),
         conditionCode: arm.conditionCode,
+        conditionStages: arm.conditionStages?.map((stage) => ({
+          stageId: stage.stageId,
+          nodeIds: rewriteNodeIds(stage.nodeIds) ?? [],
+          outcome: stage.outcome,
+        })),
         exceptionType: arm.exceptionType,
-        targetIds: rewriteNodeIds(arm.targetIds),
       })),
       selectedArmLabel: selectedArm?.label ?? "",
-      branchPointIds: rewriteNodeIds(group.branchPointIds),
-      convergesAt: group.convergesAt
-        ? instanceNodeId(instanceId, group.convergesAt)
+      entryNodeId: group.entryNodeId
+        ? instanceNodeId(instanceId, group.entryNodeId)
         : undefined,
+      exitNodeId: group.exitNodeId
+        ? instanceNodeId(instanceId, group.exitNodeId)
+        : undefined,
+      conditionStages: group.conditionStages?.map((stage) => ({
+        id: stage.id,
+        nodeIds: rewriteNodeIds(stage.nodeIds) ?? [],
+        decisionNodeId: stage.decisionNodeId
+          ? instanceNodeId(instanceId, stage.decisionNodeId)
+          : undefined,
+      })),
+      enclosingRequirements: instantiateRequirements(
+        instanceId,
+        group.enclosingRequirements,
+      ),
+      entryPredecessorIds: [],
+      entrySuccessorIds: [],
+      exitPredecessorIds: [],
+      continuationIds: [],
     };
   });
 }
@@ -174,6 +207,65 @@ function requirementsMatch(
   return (requirements ?? []).every(
     (requirement) => selectedArms.get(requirement.groupId) === requirement.armLabel,
   );
+}
+
+function mergedBranchRequirements(
+  incoming: readonly VisibleBranchRequirement[] | undefined,
+  outgoing: readonly VisibleBranchRequirement[] | undefined,
+): VisibleBranchRequirement[] | null {
+  const byGroup = new Map<string, string>();
+  for (const requirement of [...(incoming ?? []), ...(outgoing ?? [])]) {
+    const existing = byGroup.get(requirement.groupId);
+    if (existing !== undefined && existing !== requirement.armLabel) return null;
+    byGroup.set(requirement.groupId, requirement.armLabel);
+  }
+  return [...byGroup].map(([groupId, armLabel]) => ({ groupId, armLabel }));
+}
+
+/** Bridge invisible control-structure nodes without changing route semantics. */
+function bridgeHiddenNodes(
+  nodes: readonly VisibleNode[],
+  sourceEdges: readonly VisibleEdge[],
+  hiddenNodeIds: ReadonlySet<string>,
+): { nodes: VisibleNode[]; edges: VisibleEdge[] } {
+  let edges = [...sourceEdges];
+  for (const hiddenNodeId of hiddenNodeIds) {
+    const incoming = edges.filter((edge) => edge.to === hiddenNodeId);
+    const outgoing = edges.filter((edge) => edge.from === hiddenNodeId);
+    edges = edges.filter((edge) =>
+      edge.from !== hiddenNodeId && edge.to !== hiddenNodeId);
+
+    for (const before of incoming) {
+      for (const after of outgoing) {
+        const branchRequirements = mergedBranchRequirements(
+          before.branchRequirements,
+          after.branchRequirements,
+        );
+        if (branchRequirements === null || before.from === after.to) continue;
+        edges.push({
+          ...after,
+          from: before.from,
+          to: after.to,
+          type: "sequence",
+          kind: "sequence",
+          branchRequirements,
+        });
+      }
+    }
+  }
+
+  const uniqueEdges = new Map<string, VisibleEdge>();
+  for (const edge of edges) {
+    const requirements = (edge.branchRequirements ?? [])
+      .map((requirement) => `${requirement.groupId}:${requirement.armLabel}`)
+      .sort()
+      .join("|");
+    uniqueEdges.set(`${edge.from}->${edge.to}:${edge.kind}:${requirements}`, edge);
+  }
+  return {
+    nodes: nodes.filter((node) => !hiddenNodeIds.has(node.id)),
+    edges: [...uniqueEdges.values()],
+  };
 }
 
 function phasesByNode(method: MethodDefinition, instanceId: string): Map<string, VisiblePhase> {
@@ -216,6 +308,38 @@ export function projectVisibleGraph(
   const resolvedBranchArms = new Map<BranchInstanceId, string>();
   const emittedNodes = new Set<string>();
 
+  const transitiveRetainedPhaseKeys = (
+    methodEntryId: string,
+    instanceId: string,
+    activeMethods: ReadonlySet<string>,
+  ): Set<string> => {
+    const method = bundle.methodsByEntryId[methodEntryId];
+    if (!method) return new Set();
+    const phaseKeys = new Set(
+      method.phases.map((phase) => `${methodEntryId}:${phase.id}`),
+    );
+    for (const retainedCallNodeId of method.retainedCallNodeIds) {
+      const call = method.calls[retainedCallNodeId];
+      const targets = call?.targetEntryIds ?? [];
+      const retainedCallId = callInstanceId(instanceId, retainedCallNodeId);
+      const requestedTarget = selectedTargetByCallInstanceId.get(retainedCallId);
+      const selectedTarget = targets.includes(requestedTarget ?? "")
+        ? requestedTarget!
+        : targets[0];
+      if (!selectedTarget || activeMethods.has(selectedTarget)) continue;
+      const targetIndex = targets.indexOf(selectedTarget);
+      const childInstanceId = `${retainedCallId}/target:${targetIndex}:${selectedTarget}`;
+      const childActiveMethods = new Set(activeMethods);
+      childActiveMethods.add(selectedTarget);
+      for (const phaseKey of transitiveRetainedPhaseKeys(
+        selectedTarget,
+        childInstanceId,
+        childActiveMethods,
+      )) phaseKeys.add(phaseKey);
+    }
+    return phaseKeys;
+  };
+
   const instantiate = (
     methodEntryId: string,
     instanceId: string,
@@ -231,7 +355,6 @@ export function projectVisibleGraph(
       [method.entry, ...method.nodes],
       method.sequenceEdges,
       method.entryId,
-      (node) => node.line,
     );
 
     const instanceBranchGroups = instantiateBranchGroups(
@@ -284,7 +407,11 @@ export function projectVisibleGraph(
         expanded: targets.length > 0 && expandedCallInstanceIds.has(callId),
         recursiveCutoff,
         retainedCalleePhaseCount: retainedCalls.has(node.id) && selectedTarget
-          ? bundle.methodsByEntryId[selectedTarget]?.phases.length
+          ? transitiveRetainedPhaseKeys(
+              selectedTarget,
+              `${callId}/target:${targets.indexOf(selectedTarget)}:${selectedTarget}`,
+              new Set([...activeMethods, selectedTarget]),
+            ).size
           : undefined,
         branchRequirements,
       };
@@ -299,24 +426,21 @@ export function projectVisibleGraph(
           kind: "DISPATCH",
           method: method.methodFullName,
           line: node.line,
-          arms: targets.map((targetEntryId, targetIndex) => {
+          arms: targets.map((targetEntryId) => {
             const callee = bundle.methodsByEntryId[targetEntryId];
-            const childInstanceId = `${callId}/target:${targetIndex}:${targetEntryId}`;
             return {
               label: targetEntryId,
-              firstCallId: callee
-                ? instanceNodeId(childInstanceId, callee.entryId)
-                : undefined,
               empty: !callee,
-              terminus: "continues",
-              targetIds: callee
-                ? [instanceNodeId(childInstanceId, callee.entryId)]
-                : [],
+              exits: [{ kind: "continues" as const }],
               conditionCode: callee?.methodFullName,
             };
           }),
           selectedArmLabel: selectedTarget,
-          branchPointIds: [id],
+          entryPredecessorIds: [],
+          entrySuccessorIds: [],
+          exitPredecessorIds: [],
+          continuationIds: [],
+          dispatchAnchorId: id,
         });
       }
       for (const [targetIndex, targetEntryId] of targets.entries()) {
@@ -363,14 +487,78 @@ export function projectVisibleGraph(
   // describe containment for branch panels, but must not independently hide
   // a node: an empty arm may continue through an edge whose source is also
   // the non-empty arm's structural branch point. A root-forward walk over
-  // allowed edges matches the anchored graph's visibility semantics and
+  // allowed edges matches the selected root-forward route's visibility and
   // keeps common flow after convergence reachable.
   const requirementFilteredEdges = edges.filter((edge) =>
     emittedNodes.has(edge.from)
     && emittedNodes.has(edge.to)
     && requirementsMatch(edge.branchRequirements, resolvedBranchArms));
-  const outgoing = new Map<string, string[]>();
+  const structureNodeIds = new Set(
+    nodes
+      .filter((node) => node.node.type === "structure")
+      .map((node) => node.id),
+  );
+  const conditionAliasNodeIds = new Set(
+    branchGroups.flatMap((group) =>
+      (group.conditionStages ?? []).flatMap((stage) => stage.nodeIds)),
+  );
+  const hiddenNodeIds = new Set([...structureNodeIds, ...conditionAliasNodeIds]);
+  const sourceNodeById = new Map(nodes.map((node) => [node.id, node]));
+  for (const group of branchGroups) {
+    for (const stage of group.conditionStages ?? []) {
+      stage.code = stage.nodeIds
+        .map((nodeId) => sourceNodeById.get(nodeId)?.node.code)
+        .find((code): code is string => Boolean(code));
+    }
+  }
+  const incomingByNode = new Map<string, string[]>();
+  const outgoingByNode = new Map<string, string[]>();
   for (const edge of requirementFilteredEdges) {
+    const incoming = incomingByNode.get(edge.to);
+    if (incoming) incoming.push(edge.from);
+    else incomingByNode.set(edge.to, [edge.from]);
+    const outgoing = outgoingByNode.get(edge.from);
+    if (outgoing) outgoing.push(edge.to);
+    else outgoingByNode.set(edge.from, [edge.to]);
+  }
+  const visibleBoundary = (
+    startId: string,
+    adjacency: ReadonlyMap<string, string[]>,
+  ): string[] => {
+    const result = new Set<string>();
+    const visited = new Set<string>();
+    const pending = [...(adjacency.get(startId) ?? [])];
+    while (pending.length > 0) {
+      const nodeId = pending.pop()!;
+      if (visited.has(nodeId)) continue;
+      visited.add(nodeId);
+      if (hiddenNodeIds.has(nodeId)) {
+        pending.push(...(adjacency.get(nodeId) ?? []));
+      } else {
+        result.add(nodeId);
+      }
+    }
+    return [...result];
+  };
+  const bridgedBranchGroups = branchGroups.map((group) => ({
+    ...group,
+    entryPredecessorIds: group.entryNodeId
+      ? visibleBoundary(group.entryNodeId, incomingByNode)
+      : [],
+    entrySuccessorIds: group.entryNodeId
+      ? visibleBoundary(group.entryNodeId, outgoingByNode)
+      : [],
+    exitPredecessorIds: group.exitNodeId
+      ? visibleBoundary(group.exitNodeId, incomingByNode)
+      : [],
+    continuationIds: group.exitNodeId
+      ? visibleBoundary(group.exitNodeId, outgoingByNode)
+      : [],
+  }));
+  const bridged = bridgeHiddenNodes(nodes, requirementFilteredEdges, hiddenNodeIds);
+  const bridgedNodeIds = new Set(bridged.nodes.map((node) => node.id));
+  const outgoing = new Map<string, string[]>();
+  for (const edge of bridged.edges) {
     const targets = outgoing.get(edge.from);
     if (targets) targets.push(edge.to);
     else outgoing.set(edge.from, [edge.to]);
@@ -380,12 +568,12 @@ export function projectVisibleGraph(
   const pending = [rootId];
   while (pending.length > 0) {
     const nodeId = pending.pop()!;
-    if (reachableNodeIds.has(nodeId) || !emittedNodes.has(nodeId)) continue;
+    if (reachableNodeIds.has(nodeId) || !bridgedNodeIds.has(nodeId)) continue;
     reachableNodeIds.add(nodeId);
     pending.push(...(outgoing.get(nodeId) ?? []));
   }
-  const visibleNodes = nodes.filter((node) => reachableNodeIds.has(node.id));
-  const visibleEdges = requirementFilteredEdges.filter((edge) =>
+  const visibleNodes = bridged.nodes.filter((node) => reachableNodeIds.has(node.id));
+  const visibleEdges = bridged.edges.filter((edge) =>
     reachableNodeIds.has(edge.from) && reachableNodeIds.has(edge.to));
   // Entry/exit nodes are structural and have no backend phase membership.
   // Attach them to the phase that actually executes beside them after branch
@@ -412,7 +600,7 @@ export function projectVisibleGraph(
     rootId,
     nodes: visibleNodes,
     edges: visibleEdges,
-    branchGroups,
+    branchGroups: bridgedBranchGroups,
     exits: visibleExits,
   };
 }

@@ -67,6 +67,29 @@ def test_direct_data_flow_is_related() -> None:
     assert "direct-data-flow" in decision.evidence
 
 
+def test_structure_anchor_does_not_hide_sequence_adjacency() -> None:
+    subject = Graph.from_dict({
+        "nodes": [
+            {"id": "a", "type": "call", "callerMethod": "run"},
+            {"id": "anchor", "type": "structure", "callerMethod": "run"},
+            {"id": "b", "type": "call", "callerMethod": "run"},
+        ],
+        "edges": [
+            {"from": "a", "to": "anchor", "type": "sequence"},
+            {"from": "anchor", "to": "b", "type": "sequence"},
+        ],
+        "semanticFeatures": {
+            "a": feature(inputs=("order",)),
+            "b": feature(inputs=("order",)),
+        },
+    })
+
+    decision = evaluate_relationship(subject, "a", "b")
+
+    assert decision.verdict == "RELATED"
+    assert "shared-input" in decision.evidence
+
+
 def test_shared_input_receiver_argument_and_field_effects_are_positive_evidence() -> None:
     subject = graph(
         {

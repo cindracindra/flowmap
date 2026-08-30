@@ -43,7 +43,11 @@ export default function FilteredGraphDetails({ node, bundle, onCollapse }: Filte
     ? "implicit return"
     : node?.node.exitKind === "return"
       ? "explicit return"
-      : "dead end";
+    : node?.node.transferKind === "break"
+      ? "break"
+      : node?.node.transferKind === "continue"
+          ? "continue"
+          : "dead end";
 
   return (
     <Flex direction="column" width="300px" flexShrink="0" style={{ borderLeft: "1px solid var(--gray-a5)", background: "var(--color-panel-solid)" }}>
@@ -65,7 +69,7 @@ export default function FilteredGraphDetails({ node, bundle, onCollapse }: Filte
           <Box><Text size="1" color="gray" as="div">Operations</Text><Text size="2" style={{ fontFamily: MONO }}>{operationLabel}</Text></Box>
           <Box><Text size="1" color="gray" as="div">Owning method</Text><Text size="1" style={{ fontFamily: MONO }}>{method ? compactMethodSignature(method.methodFullName) : node.methodEntryId}</Text></Box>
           <Box><Text size="1" color="gray" as="div">Source</Text><Text size="1" style={{ fontFamily: MONO }}>{node.node.sourceFile ?? "unknown"}{node.node.line ? `:${node.node.line}` : ""}</Text></Box>
-          {node.node.exitKind && <Box><Text size="1" color="gray" as="div">Exit</Text><Badge color="gray">{exitLabel}</Badge></Box>}
+          {(node.node.exitKind || node.node.transferKind) && <Box><Text size="1" color="gray" as="div">{node.node.transferKind ? "Transfer" : "Exit"}</Text><Badge color="gray">{exitLabel}</Badge></Box>}
           {node.phase && <Box><Text size="1" color="gray" as="div">Method-local phase</Text><Text size="1">{node.phase.label ?? `Phase ${node.phase.index + 1}`}</Text></Box>}
           {loops.length > 0 && <Box>
             <Text size="1" color="gray" as="div" mb="1">Loops</Text>

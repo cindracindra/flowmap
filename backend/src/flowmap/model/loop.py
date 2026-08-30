@@ -13,6 +13,8 @@ class LoopGroup:
 
     id: str
     kind: LoopKind
+    entryNodeId: str
+    exitNodeId: str
     method: str | None = None
     line: int | None = None
     conditionCode: str | None = None
@@ -22,6 +24,8 @@ class LoopGroup:
         return cls(
             id=data["id"],
             kind=data["kind"],
+            entryNodeId=data["entryNodeId"],
+            exitNodeId=data["exitNodeId"],
             method=data.get("method"),
             line=data.get("line"),
             conditionCode=data.get("conditionCode"),
@@ -35,4 +39,6 @@ class LoopGroup:
             result["line"] = self.line
         if self.conditionCode is not None:
             result["conditionCode"] = self.conditionCode
+        result["entryNodeId"] = self.entryNodeId
+        result["exitNodeId"] = self.exitNodeId
         return result

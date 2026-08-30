@@ -44,7 +44,7 @@ from domain.opseq_orchestration import has_operation_body
 from domain.phase_orchestration import analyse_codebase_phases
 from domain.phase_data_flow import build_phase_data_flow_questions
 from domain.method_phase_label import label_method_analysis
-from domain.method_branch_routing import prepare_all_method_branch_routes
+from domain.method_structure_validation import validate_all_method_structures
 from domain.method_scoping import build_method_definitions
 from service.phase import resolve_phase_gate_batch
 from service.method_phase_label import label_method_phases as label_method_phase_batch
@@ -126,10 +126,7 @@ def root_method_full_names(graph: Graph) -> dict[str, str]:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate FlowMap analysis artifacts.")
     default_eval_output = (
-        PROJECT_ROOT
-        / "data"
-        / "code_eval"
-        / "results"
+        OUTPUT_DIR.parent
         / f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
     )
     parser.add_argument(
@@ -159,7 +156,7 @@ def parse_args() -> argparse.Namespace:
         metavar="PATH",
         help=(
             "Record structured stage and LLM telemetry. If PATH is omitted, "
-            "write a timestamped file under data/code_eval/results/."
+            "write a timestamped file beside the configured output directory."
         ),
     )
     return parser.parse_args()
@@ -309,7 +306,7 @@ if __name__ == "__main__":
 
     # Build reusable method topology once for graph-bundle export.
     with timed("Method definition construction", recorder):
-        methods_by_entry_id = prepare_all_method_branch_routes(
+        methods_by_entry_id = validate_all_method_structures(
             build_method_definitions(filtered_cfg)
         )
 

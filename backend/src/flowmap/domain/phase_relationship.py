@@ -6,6 +6,7 @@ from math import ceil
 import re
 from typing import Iterable, Literal
 
+from domain.phase_topology import graph_call_sequence_pairs
 from model import Graph, NodeSemanticFeatures
 
 
@@ -92,13 +93,7 @@ def _semantic_arguments(features: NodeSemanticFeatures) -> set[str]:
 
 
 def _plain_sequence_adjacency(graph: Graph, source: str, target: str) -> bool:
-    return any(
-        edge.type == "sequence"
-        and edge.returnFrom is None
-        and edge.source == source
-        and edge.target == target
-        for edge in graph.edges
-    )
+    return (source, target) in set(graph_call_sequence_pairs(graph))
 
 
 def _direct_data_relationship(graph: Graph, left: str, right: str) -> bool:
@@ -237,12 +232,9 @@ def evaluate_region_relationship(
     left = set(left_node_ids)
     right = set(right_node_ids)
     frontier_pairs = [
-        (edge.source, edge.target)
-        for edge in graph.edges
-        if edge.type == "sequence"
-        and edge.returnFrom is None
-        and edge.source in left
-        and edge.target in right
+        (source, target)
+        for source, target in graph_call_sequence_pairs(graph)
+        if source in left and target in right
     ]
     if not frontier_pairs:
         return RelationshipDecision(
@@ -510,4 +502,3 @@ def evaluate_region_cohesion(
     if both_observed and disjoint:
         return CohesionDecision("INCOMPATIBLE", 1.0 - score, ("disjoint-region-identity",))
     return CohesionDecision("UNKNOWN", score, evidence or ("no-region-overlap",))
-

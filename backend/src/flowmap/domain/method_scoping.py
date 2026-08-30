@@ -71,4 +71,3 @@ def build_method_definitions(filtered_graph: Graph) -> dict[str, MethodDefinitio
         )
 
     return definitions
-

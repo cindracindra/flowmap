@@ -1,4 +1,4 @@
 {
-  "sourceDir": "../project_b/src/main",
-  "outputDir": "../generated/project_b/output"
+  "sourceDir": "../evaluation/codebase/gson/gson/src/main",
+  "outputDir": "../evaluation/results/gson/cold_3/output"
 }

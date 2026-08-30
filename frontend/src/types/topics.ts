@@ -17,13 +17,6 @@ export interface TopicCluster {
   llm_label?: string;
 }
 
-// Mirrors backend/src/flowmap/model/topic_assignment.py. One operation can
-// be assigned to more than one topic when the backend uses top-k matching.
-export interface TopicAssignment {
-  label: number;
-  similarity: number;
-}
-
 export interface TopicOperation {
   id: string;
   label: string;

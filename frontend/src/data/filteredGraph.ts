@@ -2,8 +2,6 @@ import { graphBundleRaw } from "virtual:flowmap-data";
 
 import type {
   GraphBundle,
-  MethodDefinition,
-  OperationDefinition,
 } from "../types/filteredGraph";
 
 function record(value: unknown, field: string): Record<string, unknown> {
@@ -83,42 +81,4 @@ export function loadGraphBundle(raw: unknown): GraphBundle {
   return raw as GraphBundle;
 }
 
-export interface FilteredGraphData {
-  bundle: GraphBundle;
-  methodsByEntryId: ReadonlyMap<string, MethodDefinition>;
-  operationsById: ReadonlyMap<string, OperationDefinition>;
-  callersByEntryId: ReadonlyMap<string, readonly string[]>;
-  operationIdsByMethodEntryId: ReadonlyMap<string, readonly string[]>;
-}
-
-export function indexGraphBundle(bundle: GraphBundle): FilteredGraphData {
-  return {
-    bundle,
-    methodsByEntryId: new Map(Object.entries(bundle.methodsByEntryId)),
-    operationsById: new Map(Object.entries(bundle.operationsById)),
-    callersByEntryId: new Map(Object.entries(bundle.callersByEntryId)),
-    operationIdsByMethodEntryId: new Map(
-      Object.entries(bundle.operationIdsByMethodEntryId),
-    ),
-  };
-}
-
 export const GRAPH_BUNDLE = loadGraphBundle(graphBundleRaw);
-export const FILTERED_GRAPH_DATA = indexGraphBundle(GRAPH_BUNDLE);
-
-export function methodDefinition(entryId: string): MethodDefinition | undefined {
-  return FILTERED_GRAPH_DATA.methodsByEntryId.get(entryId);
-}
-
-export function operationDefinition(operationId: string): OperationDefinition | undefined {
-  return FILTERED_GRAPH_DATA.operationsById.get(operationId);
-}
-
-export function callerEntryIds(entryId: string): readonly string[] {
-  return FILTERED_GRAPH_DATA.callersByEntryId.get(entryId) ?? [];
-}
-
-export function operationIdsForMethod(entryId: string): readonly string[] {
-  return FILTERED_GRAPH_DATA.operationIdsByMethodEntryId.get(entryId) ?? [];
-}
-
