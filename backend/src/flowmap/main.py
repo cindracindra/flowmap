@@ -29,26 +29,33 @@ from service.cfg import (
 )
 from service.topic import (
     extract_class_and_method_documents,
-    label_cluster,
+    label_clusters,
     discover_topics_whole_corpus,
-    classify_operation,
-    label_opseq,
+)
+from service.operation_sequence import (
+    classify_operation_topics,
+    label_operation_sequences_with_llm,
 )
 
-from domain.topic_modelling import (
+from domain.topic_discovery import (
+    FLOWMAP_PRESETS,
     discover_topics_with_centroids,
     extract_readme_documents,
+    flowmap_config_for_preset,
 )
-from domain.cfg_slicing import filter_and_classify_roots_and_orphans, slice_from_root
-from domain.opseq_orchestration import has_operation_body
-from domain.phase_orchestration import analyse_codebase_phases
+from domain.cfg_slicing import filter_and_classify_roots_and_orphans
+from domain.operation_sequence import (
+    assign_operation_sequences_to_topics,
+    discover_operation_sequences,
+    label_operation_sequences,
+)
+from domain.execution_phase import execution_phase_analysis
 from domain.phase_data_flow import build_phase_data_flow_questions
 from domain.method_phase_label import label_method_analysis
 from domain.method_structure_validation import validate_all_method_structures
 from domain.method_scoping import build_method_definitions
-from service.phase import resolve_phase_gate_batch
+from service.phase import resolve_execution_phase_gate_batch
 from service.method_phase_label import label_method_phases as label_method_phase_batch
-from domain.opseq_clustering import assign_operation_topics_batch
 from model import Graph
 from presentation import build_graph_bundle, serialize_graph_bundle
 from data.code_eval import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
@@ -141,6 +148,15 @@ def parse_args() -> argparse.Namespace:
         help="Re-extract cpg.bin even when a cached artifact already exists.",
     )
     parser.add_argument(
+        "--flowmap-preset",
+        choices=tuple(FLOWMAP_PRESETS),
+        default="balanced",
+        help=(
+            "Topic granularity: fine creates more/smaller topics, balanced "
+            "uses thesis defaults, and coarse creates fewer/larger topics."
+        ),
+    )
+    parser.add_argument(
         "--whole-corpus-topics",
         action="store_true",
         help=(
@@ -194,6 +210,7 @@ if __name__ == "__main__":
             "provider": args.provider,
             "force_cpg": args.force_cpg,
             "whole_corpus_topics": args.whole_corpus_topics,
+            "flowmap_preset": args.flowmap_preset,
             "source_dir": str(SOURCE_DIR),
             "output_dir": str(OUTPUT_DIR),
         })
@@ -206,6 +223,9 @@ if __name__ == "__main__":
     client = get_client(
         args.provider,
         telemetry_sink=recorder.record_llm_call if recorder is not None else None,
+        batch_telemetry_sink=(
+            recorder.record_llm_batch if recorder is not None else None
+        ),
     )
 
     # 1. Reuse the cached CPG unless the caller explicitly invalidates it.
@@ -296,8 +316,9 @@ if __name__ == "__main__":
         topic_discovery = discover_topics_with_centroids(
             class_docs,
             readme_docs,
+            config=flowmap_config_for_preset(args.flowmap_preset),
             label_fn=functools.partial(
-                label_cluster, client, class_by_full_name=class_by_full_name
+                label_clusters, client, class_by_full_name=class_by_full_name
             ),
             whole_corpus_fn=functools.partial(discover_topics_whole_corpus, client),
             force_whole_corpus=args.whole_corpus_topics,
@@ -312,11 +333,13 @@ if __name__ == "__main__":
 
     # Method analysis and method labelling are independent operations.
     with timed("Method-level phase analysis", recorder):
-        phase_gate_resolver = functools.partial(resolve_phase_gate_batch, client)
-        phase_analysis = analyse_codebase_phases(
+        phase_gate_resolver = functools.partial(
+            resolve_execution_phase_gate_batch, client
+        )
+        phase_analysis = execution_phase_analysis(
             filtered_cfg,
-            phase_gate_resolver,
             methods_by_entry_id,
+            phase_gate_resolver,
         )
 
     with timed("Method-level phase labelling", recorder):
@@ -332,14 +355,7 @@ if __name__ == "__main__":
         output_stats=operation_output_stats,
     ):
         root_methods = root_method_full_names(filtered_cfg)
-        opseqs: dict[str, Graph] = {}
-        for root_id in filtered_cfg.roots:
-            opseq = slice_from_root(filtered_cfg, root_id)
-            if not has_operation_body(opseq):
-                raise ValueError(
-                    f"classified root {root_id!r} has no executable operation body"
-                )
-            opseqs[root_id] = opseq
+        opseqs = discover_operation_sequences(filtered_cfg)
         operation_output_stats["operations"] = len(opseqs)
         operation_output_stats["total_nodes"] = sum(len(graph.nodes) for graph in opseqs.values())
         operation_output_stats["total_edges"] = sum(len(graph.edges) for graph in opseqs.values())
@@ -349,33 +365,21 @@ if __name__ == "__main__":
         "Operation topic assignment and naming", recorder,
         input_stats={"operations": len(opseqs), "topics": len(topic_clusters)},
     ):
-        formed_by_llm = not any(
-            cluster.statistical_terms for cluster in topic_clusters
-        )
-        opseq_topic_assignment = assign_operation_topics_batch(
+        opseq_topic_assignment = assign_operation_sequences_to_topics(
             opseqs,
             topic_clusters,
             method_docs,
             topic_discovery.centroids,
-            formed_by_llm=formed_by_llm,
-            classify_fn=functools.partial(classify_operation, client),
+            classify_fn=functools.partial(classify_operation_topics, client),
         )
-        clusters_by_label = {cluster.label: cluster for cluster in topic_clusters}
-        opseq_labeler = functools.partial(label_opseq, client)
-        opseq_labels: dict[str, str | None] = {}
-        for root_id, opseq in opseqs.items():
-            assignments = opseq_topic_assignment[root_id]
-            assigned_cluster = (
-                clusters_by_label.get(assignments[0].label)
-                if assignments else None
-            )
-            try:
-                opseq_labels[root_id] = opseq_labeler(
-                    opseq, assigned_cluster, method_docs
-                )
-            except RuntimeError as exc:
-                print(f"label_opseq failed for {root_id!r}: {exc!r}")
-                opseq_labels[root_id] = None
+        opseq_labels = label_operation_sequences(
+            opseqs,
+            opseq_topic_assignment,
+            topic_clusters,
+            label_fn=functools.partial(
+                label_operation_sequences_with_llm, client
+            ),
+        )
 
     # Build and export every artifact only after all analysis is complete.
     with timed("Artifact construction and export", recorder):

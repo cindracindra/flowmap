@@ -6,8 +6,8 @@ import {
   branchArmText,
   branchArmToggleLabel,
   branchArmToggleWidth,
+  DISPATCH_SELECTOR_WIDTH,
   dispatchArmLabel,
-  dispatchArmWidth,
   visibleNodeLabel,
 } from "../../lib/filteredGraphLayout";
 import type {
@@ -77,46 +77,49 @@ function FilteredGraphSvgComponent({
       {projection.branchGroups.filter((group) => group.kind === "DISPATCH").map((group) => {
         const anchor = group.dispatchAnchorId ? positions.get(group.dispatchAnchorId) : undefined;
         if (!anchor) return null;
-        const labels = group.arms.map(dispatchArmLabel);
-        const widths = group.arms.map(dispatchArmWidth);
         const selectorX = anchor.x;
-        let cursorX = selectorX + 58;
-        const y = anchor.y + 28;
+        const y = anchor.y - 43;
         const color = "var(--panel-polymorphic)";
         return (
-          <g key={`dispatch-controls:${group.id}`}>
-            <text x={selectorX} y={y + 14} fontSize="10" fontWeight="600"
-              fontFamily={MONO} fill={color}>dispatch</text>
-            {group.arms.map((arm, index) => {
-              const label = labels[index];
-              const buttonWidth = widths[index];
-              const buttonX = cursorX;
-              cursorX += buttonWidth + 6;
+          <foreignObject key={`dispatch-controls:${group.id}`} x={selectorX} y={y}
+            width={DISPATCH_SELECTOR_WIDTH} height="35">
+            <div style={{
+              boxSizing: "border-box", display: "flex", alignItems: "center", gap: 6,
+              width: "100%", height: 30, padding: "3px 5px 3px 0",
+              fontFamily: MONO,
+            }}>
+              <span style={{ flex: "0 0 auto", color, fontSize: 10, fontWeight: 600 }}>dispatch</span>
+              <div className="dispatch-target-scroll" aria-label="Dynamic dispatch targets" style={{
+                display: "flex", gap: 6, minWidth: 0, overflowX: "auto", overflowY: "hidden",
+                scrollbarWidth: "none",
+              }} onWheel={(event) => {
+                if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+                event.currentTarget.scrollLeft += event.deltaY;
+                event.stopPropagation();
+              }}>
+              {group.arms.map((arm) => {
+              const label = dispatchArmLabel(arm);
               const selected = arm.label === group.selectedArmLabel;
               return (
-                <g key={arm.label} role="button" tabIndex={0}
+                <button key={arm.label} type="button"
                   aria-label={`Dispatch to ${label}`} aria-pressed={selected}
                   onClick={(event) => {
                     event.stopPropagation();
                     onSelectBranchArm(group.id, arm.label, group.kind);
                   }}
-                  onKeyDown={(event) => {
-                    if (event.key !== "Enter" && event.key !== " ") return;
-                    event.preventDefault();
-                    onSelectBranchArm(group.id, arm.label, group.kind);
-                  }} style={{ cursor: "pointer" }}>
-                  <title>{arm.conditionCode ?? arm.label}</title>
-                  <rect x={buttonX} y={y} width={buttonWidth} height="22" rx="11"
-                    fill={color} fillOpacity={selected ? 0.3 : 0.08}
-                    stroke={color} strokeOpacity={selected ? 1 : 0.55}
-                    strokeWidth={selected ? 1.8 : 1} />
-                  <text x={buttonX + buttonWidth / 2} y={y + 14.5} textAnchor="middle"
-                    fontSize="10" fontWeight={selected ? "600" : "400"} fontFamily={MONO}
-                    fill="var(--canvas-foreground)" pointerEvents="none">{label}</text>
-                </g>
+                  title={arm.conditionCode ?? arm.label}
+                  style={{
+                    flex: "0 0 auto", height: 22, padding: "0 11px", borderRadius: 11,
+                    border: `${selected ? 1.8 : 1}px solid ${color}`,
+                    background: selected ? "color-mix(in srgb, var(--panel-polymorphic) 30%, transparent)" : "transparent",
+                    color: "var(--canvas-foreground)", fontFamily: MONO, fontSize: 10,
+                    fontWeight: selected ? 600 : 400, cursor: "pointer", whiteSpace: "nowrap",
+                  }}>{label}</button>
               );
             })}
-          </g>
+              </div>
+            </div>
+          </foreignObject>
         );
       })}
       {projection.nodes.map((node) => {
@@ -210,6 +213,7 @@ function FilteredGraphSvgComponent({
       <style>{`
         .filtered-graph-node:hover > .filtered-graph-node-hover { opacity: 1; }
         .branch-arm-toggle:hover > .branch-arm-tooltip { opacity: 1; }
+        .dispatch-target-scroll::-webkit-scrollbar { display: none; }
       `}</style>
     </svg>
   );

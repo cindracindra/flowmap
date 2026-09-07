@@ -6,13 +6,23 @@ from pathlib import Path
 FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
 sys.path.insert(0, str(FLOWMAP_SRC))
 
-from domain.phase_structure import (  # noqa: E402
+from domain.execution_phase.structure import (  # noqa: E402
     BranchStructure,
     LinearStructure,
-    build_method_structures,
+    MethodStructure,
+    build_method_structures as build_structures_from_definitions,
 )
 from domain.method_scoping import build_method_definitions  # noqa: E402
 from model import Graph  # noqa: E402
+
+
+def build_method_structures(
+    graph: Graph,
+    excluded=None,
+    method_definitions=None,
+):
+    definitions = method_definitions or build_method_definitions(graph)
+    return build_structures_from_definitions(definitions, excluded)
 
 
 def _nested_branch_graph() -> Graph:
@@ -62,22 +72,30 @@ def _nested_branch_graph() -> Graph:
 def test_builds_nested_branch_structures_from_node_tags() -> None:
     method = build_method_structures(_nested_branch_graph())["entry"]
 
-    assert method.structures[0] == LinearStructure(("pre",))
-    outer = method.structures[1]
-    assert isinstance(outer, BranchStructure)
-    assert outer.groupId == "outer"
-    assert len(outer.arms) == 2
-
-    assert outer.arms[0][0] == LinearStructure(("outer_a",))
-    inner = outer.arms[0][1]
-    assert isinstance(inner, BranchStructure)
-    assert inner.groupId == "inner"
-    assert inner.arms == (
-        (LinearStructure(("inner_a",)),),
-        (LinearStructure(("inner_b",)),),
+    expected = MethodStructure(
+        "entry",
+        (
+            LinearStructure(("pre",)),
+            BranchStructure(
+                "outer",
+                (
+                    (
+                        LinearStructure(("outer_a",)),
+                        BranchStructure(
+                            "inner",
+                            (
+                                (LinearStructure(("inner_a",)),),
+                                (LinearStructure(("inner_b",)),),
+                            ),
+                        ),
+                    ),
+                    (LinearStructure(("outer_b",)),),
+                ),
+            ),
+            LinearStructure(("join", "after")),
+        ),
     )
-    assert outer.arms[1] == (LinearStructure(("outer_b",)),)
-    assert method.structures[2] == LinearStructure(("join", "after"))
+    assert method == expected
 
 
 def test_excluded_nodes_are_absent_but_still_split_the_structure() -> None:
@@ -155,8 +173,10 @@ def test_methods_are_kept_separate() -> None:
 
     structures = build_method_structures(graph)
 
-    assert structures["caller"].structures == (LinearStructure(("call",)),)
-    assert structures["callee"].structures == (LinearStructure(("inside",)),)
+    assert structures == {
+        "caller": MethodStructure("caller", (LinearStructure(("call",)),)),
+        "callee": MethodStructure("callee", (LinearStructure(("inside",)),)),
+    }
 
 
 def test_prebuilt_method_definitions_preserve_structure_output() -> None:
@@ -203,16 +223,14 @@ def test_structural_branch_nodes_do_not_enter_or_split_phase_structures() -> Non
 
     structure = build_method_structures(graph)["entry"]
 
-    assert all(
-        "decision" not in item.nodeIds
-        for item in structure.structures
-        if isinstance(item, LinearStructure)
+    assert structure == MethodStructure(
+        "entry",
+        (
+            LinearStructure(("before",)),
+            BranchStructure("g1", ((LinearStructure(("work",)),),)),
+            LinearStructure(("after",)),
+        ),
     )
-    assert structure.structures[0] == LinearStructure(("before",))
-    branch = structure.structures[1]
-    assert isinstance(branch, BranchStructure)
-    assert branch.arms == ((LinearStructure(("work",)),),)
-    assert structure.structures[2] == LinearStructure(("after",))
 
 
 def test_loop_anchors_and_transfer_do_not_split_call_sequence() -> None:

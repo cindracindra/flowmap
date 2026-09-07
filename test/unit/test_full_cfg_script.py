@@ -12,6 +12,16 @@ SCRIPT = (
 )
 
 
+def test_semantic_field_access_classifies_occurrences_not_names() -> None:
+    source = SCRIPT.read_text(encoding="utf-8")
+
+    assert "val writtenFieldNodeIds" in source
+    assert ".filter(field => writtenFieldNodeIds.contains(field.id))" in source
+    assert ".filterNot(field => writtenFieldNodeIds.contains(field.id))" in source
+    assert "argumentFields ++ calleeFieldsRead" in source
+    assert ".distinct.filterNot(writtenFields.contains)" not in source
+
+
 def test_method_entry_ignores_parallel_synthetic_method_return() -> None:
     source = SCRIPT.read_text(encoding="utf-8")
 

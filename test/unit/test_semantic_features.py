@@ -8,7 +8,7 @@ sys.path.insert(0, str(FLOWMAP_SRC))
 
 from domain.cfg_filtering import filter_noise_cfg
 from domain.cfg_slicing import slice_from_root
-from model import Graph, NodeSemanticFeatures, Phase, Transition
+from model import Graph, NodeSemanticFeatures, Phase, UnresolvedGate
 
 
 def _graph_with_features() -> Graph:
@@ -103,24 +103,28 @@ def test_filter_removes_features_for_filtered_call_nodes() -> None:
     assert set(filtered.semanticFeatures) == {"kept"}
 
 
-def test_optional_phase_and_boundary_metadata_round_trip() -> None:
+def test_phase_membership_identity_and_label_round_trip() -> None:
     phase = Phase(
         id="phase-1",
         label="Submit order",
         nodes=["call"],
-        structuralAnchors=["branch-1"],
-        opened_by=Transition(
-            subject="previous",
-            reason="gate",
-            level=1,
-            boundaryType="branch-entry",
-            decidedBy="systematic",
-            confidence=0.9,
-            evidence=["shared-order-input"],
-        ),
     )
 
     assert Phase.from_dict(phase.to_dict()).to_dict() == phase.to_dict()
+
+
+def test_unresolved_gate_uses_stable_structural_subject_ids() -> None:
+    gate = UnresolvedGate(
+        id="gate-1",
+        left_id="left-call",
+        right_id="retained-call",
+        confidence=0.4,
+        evidence=("missing semantic identity",),
+        kind="structure-boundary",
+    )
+
+    assert gate.left_id == "left-call"
+    assert gate.right_id == "retained-call"
 
 
 def test_empty_semantic_feature_serializes_without_placeholder_noise() -> None:

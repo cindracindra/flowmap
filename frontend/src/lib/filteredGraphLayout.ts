@@ -43,6 +43,7 @@ export const FILTERED_COLUMN_WIDTH = 260;
 export const FILTERED_ROW_HEIGHT = 78;
 export const FILTERED_PAD_X = 80;
 export const FILTERED_PAD_Y = 58;
+export const DISPATCH_SELECTOR_WIDTH = 360;
 
 const BRANCH_REGION_PAD = 30;
 const EMPTY_BRANCH_HEIGHT = 46;
@@ -267,7 +268,10 @@ function buildBranchCandidates(
       selectedArmByGroup.get(requirement.groupId) === requirement.armLabel)) return [];
     const selectedArm = group.arms.find((arm) => arm.label === group.selectedArmLabel);
     if (!selectedArm) return [];
-    const forkEntry = group.entryPredecessorIds
+    const forkIds = group.kind === "TRY"
+      ? group.decisionPredecessorIds
+      : group.entryPredecessorIds;
+    const forkEntry = forkIds
       .map((id) => ({ id, point: positions.get(id) }))
       .filter((entry): entry is { id: string; point: GraphPoint } => entry.point !== undefined)
       // A short-circuit condition can leave several visible predecessors for
@@ -297,21 +301,22 @@ function buildBranchCandidates(
 
     const routeEdges = selectedRouteEdges(projection, group);
     const ownedNodeIds = ownedNodesForBranch(projection, group);
-    // A shared surviving predecessor does not make a later branch reachable.
+    // The visible structural boundary is the reachability proof for the
+    // control itself. Do not drop the panel merely because the selected arm
+    // has no surviving operation or continuation: terminal TRY catch arms
+    // commonly end in a return/throw whose node has already been bridged out.
     const selectedTargetIds = group.continuationIds;
-    if (
-      !selectedArm.empty
-      &&
-      ownedNodeIds.size === 0
-      && routeEdges.length === 0
-      && !selectedTargetIds.some((id) => positions.has(id))
-    ) return [];
 
     const firstOwnedId = [...ownedNodeIds]
       .filter((id) => positions.has(id))
       .sort((left, right) => positions.get(left)!.y - positions.get(right)!.y)[0];
     const effectiveHeadId = firstOwnedId
-      ?? group.entrySuccessorIds.find((id) => positions.has(id))
+      // For IF, the entry successor is the selected branch body. For TRY it
+      // is the first protected-body operation, which is upstream of catch
+      // dispatch and must never pull the panel back into the try body.
+      ?? (group.kind === "TRY"
+        ? undefined
+        : group.entrySuccessorIds.find((id) => positions.has(id)))
       ?? selectedTargetIds.find((id) => positions.has(id))
       ?? routeEdges.map((edge) => edge.to).find((id) => positions.has(id));
     const head = effectiveHeadId ? positions.get(effectiveHeadId) : undefined;
@@ -320,7 +325,7 @@ function buildBranchCandidates(
       const point = positions.get(id);
       return point ? [point] : [];
     });
-    const compactEmpty = selectedArm.empty && ownedPoints.length === 0;
+    const compactEmpty = ownedPoints.length === 0;
     const minimumHeight = EMPTY_BRANCH_HEIGHT;
     const minOwnedX = ownedPoints.length > 0
       ? Math.min(...ownedPoints.map((point) => point.x))
@@ -676,13 +681,7 @@ export function layoutFilteredGraph(projection: VisibleGraphProjection): Filtere
     if (group.kind !== "DISPATCH") return [];
     const anchor = group.dispatchAnchorId ? positions.get(group.dispatchAnchorId) : undefined;
     if (!anchor) return [];
-    // Must mirror FilteredGraphSvg: label starts at anchor.x, pills begin 58
-    // pixels later, and each pill is separated by a 6-pixel gap.
-    const pillsWidth = group.arms.reduce(
-      (total, arm, index) => total + dispatchArmWidth(arm) + (index > 0 ? 6 : 0),
-      0,
-    );
-    return [anchor.x + 58 + pillsWidth];
+    return [anchor.x + DISPATCH_SELECTOR_WIDTH];
   });
   const width = Math.max(
     FILTERED_PAD_X * 2 + (maxDepth + 1) * FILTERED_COLUMN_WIDTH,

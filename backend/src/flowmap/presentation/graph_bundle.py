@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from domain.method_structure_validation import validate_all_method_structures
 from domain.method_scoping import build_method_definitions
-from domain.phase_segmentation import Analysis
+from domain.execution_phase.orchestration import ExecutionPhaseAnalysis
 from model import Graph, MethodDefinition
 
 from .operation_definition import OperationDefinition
@@ -16,7 +16,7 @@ class GraphBundle:
     operationsById: dict[str, OperationDefinition]
     callersByEntryId: dict[str, list[str]]
     operationIdsByMethodEntryId: dict[str, list[str]]
-    phaseAnalysis: Analysis
+    phaseAnalysis: ExecutionPhaseAnalysis
 
 
 def _operation_root_ids(graph: Graph) -> list[str]:
@@ -53,7 +53,7 @@ def _reachable_method_ids(
 
 def build_graph_bundle(
     filtered_graph: Graph,
-    phase_analysis: Analysis,
+    phase_analysis: ExecutionPhaseAnalysis,
     methods: dict[str, MethodDefinition] | None = None,
 ) -> GraphBundle:
     """Combine canonical method topology with completed method analysis."""

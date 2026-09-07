@@ -6,7 +6,7 @@ from pathlib import Path
 FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
 sys.path.insert(0, str(FLOWMAP_SRC))
 
-from domain.phase_exclusion import find_excluded_operations  # noqa: E402
+from domain.execution_phase.exclusion import find_excluded_operations  # noqa: E402
 from model import Graph  # noqa: E402
 
 
@@ -54,14 +54,16 @@ def _guard_graph(*, compensating_work: bool = False) -> Graph:
 
 def test_exception_constructor_in_a_throwing_arm_is_excluded_as_a_mechanic() -> None:
     # Both rules select it; the more specific reason wins.
-    assert find_excluded_operations(_guard_graph())["exception"] == "exception-mechanic"
+    assert find_excluded_operations(_guard_graph()) == {
+        "exception": "exception-mechanic"
+    }
 
 
 def test_operations_outside_the_throwing_arm_are_untouched() -> None:
     excluded = find_excluded_operations(_guard_graph())
 
-    assert "commit" not in excluded
-    assert "check" not in excluded          # the condition stays an ordinary operation
+    # The condition and post-branch commit stay ordinary operations.
+    assert excluded == {"exception": "exception-mechanic"}
 
 
 def test_compensating_work_in_a_throwing_arm_is_excluded_by_the_blanket_rule() -> None:
@@ -70,11 +72,13 @@ def test_compensating_work_in_a_throwing_arm_is_excluded_by_the_blanket_rule() -
     # the arm rule does not, in exchange for needing no data-flow test.
     excluded = find_excluded_operations(_guard_graph(compensating_work=True))
 
-    assert excluded["freeze"] == "in-throwing-arm"
-    assert excluded["exception"] == "exception-mechanic"
+    assert excluded == {
+        "freeze": "in-throwing-arm",
+        "exception": "exception-mechanic",
+    }
 
 
-def test_unconditional_throw_has_no_arm_and_still_excludes_its_constructor() -> None:
+def test_unconditional_throw_without_an_arm_is_not_inferred_from_dead_end() -> None:
     graph = Graph.from_dict({
         "nodes": [
             {"id": "entry", "type": "entry", "calleeFullName": "fail"},
@@ -87,7 +91,7 @@ def test_unconditional_throw_has_no_arm_and_still_excludes_its_constructor() -> 
         "edges": [{"from": "entry", "to": "exception", "type": "sequence"}],
     })
 
-    assert find_excluded_operations(graph) == {"exception": "exception-mechanic"}
+    assert find_excluded_operations(graph) == {}
 
 
 def test_exception_object_that_is_not_a_dead_end_is_kept() -> None:
@@ -169,6 +173,29 @@ def test_a_node_in_a_nested_arm_is_excluded_when_any_of_its_arms_throws() -> Non
     assert find_excluded_operations(graph) == {"nested": "in-throwing-arm"}
 
 
+def test_nested_node_is_excluded_when_its_enclosing_outer_arm_throws() -> None:
+    graph = Graph.from_dict({
+        "nodes": [{
+            "id": "nested", "type": "call", "calleeFullName": "Service.work",
+            "callerMethod": "run",
+            "branchArms": [
+                {"groupId": "outer", "armLabel": "if"},
+                {"groupId": "inner", "armLabel": "if"},
+            ],
+        }],
+        "edges": [],
+        "branchGroups": [
+            {"id": "outer", "kind": "IF", "method": "run", "entryNodeId": "entry",
+             "arms": [{"label": "if", "empty": False, "exits": [{"kind": "throw"}]}]},
+            {"id": "inner", "kind": "IF", "method": "run", "entryNodeId": "entry",
+             "arms": [{"label": "if", "empty": False,
+                       "exits": [{"kind": "continues"}]}]},
+        ],
+    })
+
+    assert find_excluded_operations(graph) == {"nested": "in-throwing-arm"}
+
+
 def test_nested_throw_path_does_not_make_the_whole_outer_arm_throwing() -> None:
     graph = Graph.from_dict({
         "nodes": [{
@@ -213,12 +240,17 @@ def test_entries_and_leaves_are_never_excluded() -> None:
     assert find_excluded_operations(graph) == {}
 
 
-def test_receiver_type_identifies_the_exception_when_the_callee_is_unresolved() -> None:
+def test_receiver_type_identifies_an_exception_inside_a_throwing_arm() -> None:
     graph = Graph.from_dict({
         "nodes": [{
             "id": "exception", "type": "call", "callerMethod": "fail", "deadEnd": True,
+            "branchArms": [{"groupId": "guard", "armLabel": "if"}],
         }],
         "edges": [],
+        "branchGroups": [{
+            "id": "guard", "kind": "IF", "method": "fail", "entryNodeId": "entry",
+            "arms": [{"label": "if", "empty": False, "exits": [{"kind": "throw"}]}],
+        }],
         "semanticFeatures": {
             "exception": {"receiverType": "org.example.InsufficientFundsException"},
         },
@@ -227,8 +259,7 @@ def test_receiver_type_identifies_the_exception_when_the_callee_is_unresolved() 
     assert find_excluded_operations(graph) == {"exception": "exception-mechanic"}
 
 
-def test_throwing_arm_is_derived_from_filtered_node_information() -> None:
-    """Stage 1 must not require BranchGroup metadata on the filtered graph."""
+def test_dead_end_nodes_do_not_substitute_for_branch_arm_exit_metadata() -> None:
     graph = Graph.from_dict({
         "nodes": [
             {
@@ -249,13 +280,10 @@ def test_throwing_arm_is_derived_from_filtered_node_information() -> None:
         "edges": [],
     })
 
-    assert find_excluded_operations(graph) == {
-        "refund": "in-throwing-arm",
-        "exception": "exception-mechanic",
-    }
+    assert find_excluded_operations(graph) == {}
 
 
-def test_node_derived_throw_excludes_only_the_innermost_arm() -> None:
+def test_dead_end_in_nested_arm_does_not_infer_a_throwing_arm() -> None:
     graph = Graph.from_dict({
         "nodes": [
             {
@@ -283,7 +311,4 @@ def test_node_derived_throw_excludes_only_the_innermost_arm() -> None:
         "edges": [],
     })
 
-    assert find_excluded_operations(graph) == {
-        "inner_cleanup": "in-throwing-arm",
-        "exception": "exception-mechanic",
-    }
+    assert find_excluded_operations(graph) == {}

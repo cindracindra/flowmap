@@ -56,14 +56,14 @@ export const NODE_STYLES: Record<NodeType, NodeVisualStyle> = {
   transfer: {
     label: "Control transfer",
     explanation: "Transfers control to a containing structure exit.",
-    fill: "var(--gray-4)",
-    stroke: "var(--gray-9)",
+    fill: "var(--node-transfer-fill)",
+    stroke: "var(--node-transfer-stroke)",
     radius: 8,
     shape: "circle",
   },
 };
 
-export const NODE_TYPES: NodeType[] = ["entry", "call", "leaf", "exit", "transfer"];
+export const NODE_TYPES: NodeType[] = ["entry", "call", "leaf", "transfer", "exit"];
 
 export const EXIT_NODE_STYLES: Record<MethodExitKind, NodeVisualStyle> = {
   return: {
@@ -90,14 +90,10 @@ export const TRANSFER_NODE_STYLES: Record<TransferKind, NodeVisualStyle> = {
   break: {
     ...NODE_STYLES.transfer,
     label: "Break",
-    fill: "var(--gray-4)",
-    stroke: "var(--gray-9)",
   },
   continue: {
     ...NODE_STYLES.transfer,
     label: "Continue",
-    fill: "var(--gray-4)",
-    stroke: "var(--gray-9)",
   },
 };
 

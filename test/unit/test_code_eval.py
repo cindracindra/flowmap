@@ -6,6 +6,7 @@ import unittest
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
 
 from model import Edge, Graph, Node  # noqa: E402
@@ -42,11 +43,21 @@ class StatsTests(unittest.TestCase):
             "duration_seconds": 0.1, "success": True, "prompt_characters": 10,
             "response_characters": 2,
         })
+        recorder.record_llm_batch({
+            "call_site": "label", "requested_items": 2, "resolved_items": 1,
+            "unresolved_items": 1, "oversized_items": 0, "attempts_used": 3,
+            "request_batches": 3, "retry_items": 2,
+            "parse_failures": {"malformed_json": 1, "missing_id": 1},
+        })
         with tempfile.TemporaryDirectory() as directory:
             output = recorder.write_json(Path(directory) / "run.json")
             payload = json.loads(output.read_text())
         self.assertEqual(payload["stages"][0]["output_stats"]["nodes"], 1)
         self.assertEqual(payload["llm_calls"][0]["call_site"], "label")
+        self.assertEqual(payload["llm_batches"][0]["unresolved_items"], 1)
+        self.assertEqual(
+            payload["llm_batches"][0]["parse_failures"]["malformed_json"], 1
+        )
 
 
 if __name__ == "__main__":

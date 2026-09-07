@@ -37,7 +37,7 @@ def test_groups_unique_sequence_sources_by_target_deterministically():
     }
 
 
-def test_excludes_edges_that_phase_relationship_does_not_compare():
+def test_excludes_edges_that_execution_phase_cohesion_does_not_compare():
     graph = _graph([
         Edge("entry", "a", "sequence"),
         Edge("a", "exit", "sequence"),

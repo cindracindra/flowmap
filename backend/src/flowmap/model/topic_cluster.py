@@ -17,6 +17,9 @@ class TopicCluster:
     # Optional human-readable label from LLM call) -- None when no LLM used.
     llm_label: str | None = None
 
+    # True if whole-corpus fallback was used to form this cluster, False otherwise.
+    fallback: bool = False
+
     # Paths of README/markdown docs whose inferred package overlaps this
     # cluster's member classes.
     readme_paths: list[str] = field(default_factory=list)
@@ -28,6 +31,7 @@ class TopicCluster:
             member_full_names=list(data.get("member_full_names", [])),
             statistical_terms=list(data.get("statistical_terms", [])),
             llm_label=data.get("llm_label"),
+            fallback=data.get("fallback", False),
             readme_paths=list(data.get("readme_paths", [])),
         )
 
@@ -36,6 +40,7 @@ class TopicCluster:
             "label": self.label,
             "member_full_names": list(self.member_full_names),
             "statistical_terms": list(self.statistical_terms),
+            "fallback": self.fallback,
             "readme_paths": list(self.readme_paths),
         }
         if self.llm_label is not None:

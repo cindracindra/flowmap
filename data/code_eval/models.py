@@ -64,6 +64,19 @@ class LLMCallRecord:
     error_type: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class LLMBatchRecord:
+    call_site: str
+    requested_items: int
+    resolved_items: int
+    unresolved_items: int
+    oversized_items: int
+    attempts_used: int
+    request_batches: int
+    retry_items: int
+    parse_failures: dict[str, int] = field(default_factory=dict)
+
+
 @dataclass(slots=True)
 class RunRecord:
     run_id: str
@@ -72,6 +85,7 @@ class RunRecord:
     manifest: dict[str, Any] = field(default_factory=dict)
     stages: list[StageRecord] = field(default_factory=list)
     llm_calls: list[LLMCallRecord] = field(default_factory=list)
+    llm_batches: list[LLMBatchRecord] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

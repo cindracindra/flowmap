@@ -15,13 +15,7 @@ from .loop import LoopGroup, LoopKind
 from .method_definition import MethodDefinition
 from .method_document import MethodDocument
 from .node import MethodExitKind, Node, NodeType, StructureRole, TransferKind
-from .phase import (
-    BoundaryType,
-    DecisionSource,
-    Phase,
-    Transition,
-    TransitionReason,
-)
+from .phase import GateKind, Phase, UnresolvedGate
 from .readme_document import ReadmeDocument
 from .semantic import NodeSemanticFeatures, OperationRole
 from .topic_assignment import TopicAssignment
@@ -48,10 +42,8 @@ __all__ = [
     "ArmConditionStage",
     "ExitKind",
     "Phase",
-    "Transition",
-    "TransitionReason",
-    "BoundaryType",
-    "DecisionSource",
+    "UnresolvedGate",
+    "GateKind",
     "NodeSemanticFeatures",
     "OperationRole",
     "ClassDocument",

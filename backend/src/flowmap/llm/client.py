@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal, Mapping
 
 from groq import Groq, GroqError
 from openai import OpenAI, OpenAIError
+
+from .settings import LLM_MAX_ATTEMPTS
+from .settings import LLM_MAX_CONCURRENT_REQUESTS
 
 Provider = Literal["groq", "together"]
 
@@ -16,7 +20,6 @@ PROVIDERS: tuple[Provider, ...] = ("groq", "together")
 # providers doesn't mean rewriting every call. "small" is the workhorse for
 # labeling and classification; "large" is reserved for whole-corpus reasoning.
 Role = Literal["small", "large"]
-
 _MODELS: dict[Provider, dict[Role, str]] = {
     "groq": {
         "small": "openai/gpt-oss-20b",
@@ -29,6 +32,7 @@ _MODELS: dict[Provider, dict[Role, str]] = {
 }
 
 _TOGETHER_BASE_URL = "https://api.together.xyz/v1"
+_REQUEST_SLOTS = threading.BoundedSemaphore(LLM_MAX_CONCURRENT_REQUESTS)
 
 _KEY_HELP: dict[Provider, str] = {
     "groq": (
@@ -61,6 +65,7 @@ class LLMClient:
     provider: Provider
     sdk: Any
     telemetry_sink: Callable[[Mapping[str, object]], None] | None = None
+    batch_telemetry_sink: Callable[[Mapping[str, object]], None] | None = None
 
     def model(self, role: Role) -> str:
         return _MODELS[self.provider][role]
@@ -106,7 +111,8 @@ class LLMClient:
 
         started = time.perf_counter()
         try:
-            response = self.sdk.chat.completions.create(**kwargs)
+            with _REQUEST_SLOTS:
+                response = self.sdk.chat.completions.create(**kwargs)
         except (GroqError, OpenAIError) as exc:
             self._record_telemetry(
                 call_site=call_site, role=role, duration=time.perf_counter() - started,
@@ -120,9 +126,18 @@ class LLMClient:
         )
         return content
 
-    def _record_telemetry(self, *, call_site: str, role: Role, duration: float,
-                          system: str, user: str, response_text: str,
-                          response: Any, error: BaseException | None) -> None:
+    def _record_telemetry(
+        self,
+        *,
+        call_site: str,
+        role: Role,
+        duration: float,
+        system: str,
+        user: str,
+        response_text: str,
+        response: Any,
+        error: BaseException | None,
+    ) -> None:
         if self.telemetry_sink is None:
             return
         usage = getattr(response, "usage", None) if response is not None else None
@@ -145,11 +160,21 @@ class LLMClient:
         except Exception:
             pass
 
+    def record_batch_report(self, event: Mapping[str, object]) -> None:
+        """Record logical item resolution without coupling policy to evaluation."""
+        if self.batch_telemetry_sink is None:
+            return
+        try:
+            self.batch_telemetry_sink(event)
+        except Exception:
+            pass
+
 
 def get_client(
-    provider: Provider = "groq",
+    provider: Provider = "together",
     *,
     telemetry_sink: Callable[[Mapping[str, object]], None] | None = None,
+    batch_telemetry_sink: Callable[[Mapping[str, object]], None] | None = None,
 ) -> LLMClient:
     """
     Construct a client for `provider`, reading its key from the environment
@@ -162,7 +187,12 @@ def get_client(
         )
     try:
         if provider == "groq":
-            return LLMClient(provider=provider, sdk=Groq(), telemetry_sink=telemetry_sink)
+            return LLMClient(
+                provider=provider,
+                sdk=Groq(),
+                telemetry_sink=telemetry_sink,
+                batch_telemetry_sink=batch_telemetry_sink,
+            )
         api_key = os.environ.get("TOGETHERAI_API_KEY")
         if not api_key:
             raise OpenAIError("TOGETHERAI_API_KEY is not set.")
@@ -170,6 +200,7 @@ def get_client(
             provider=provider,
             sdk=OpenAI(api_key=api_key, base_url=_TOGETHER_BASE_URL),
             telemetry_sink=telemetry_sink,
+            batch_telemetry_sink=batch_telemetry_sink,
         )
     except (GroqError, OpenAIError) as exc:
         raise RuntimeError(f"{exc} {_KEY_HELP[provider]}") from exc

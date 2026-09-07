@@ -3,7 +3,7 @@
 export interface TopicCluster {
   // HDBSCAN cluster id. -1 is the noise bucket: classes that fit no
   // cluster, not a topic in its own right. It is emitted like any other
-  // cluster (see topic_modelling.py's discover_topics) and carries neither
+  // cluster and carries neither
   // an LLM label nor c-TF-IDF terms, so the UI must name it itself.
   label: number;
   // ClassDocument.fullName of every class assigned to this cluster.

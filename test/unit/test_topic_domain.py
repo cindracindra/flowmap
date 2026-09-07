@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import sys
 import tempfile
 import unittest
@@ -11,23 +12,32 @@ import numpy as np
 # Repo root -- test/unit/ is two levels below it (see test_cfg.py's own
 # note on this same insertion).
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap")
+)
 
-from backend.src.flowmap.domain.topic_modelling import (  # noqa: E402
+from backend.src.flowmap.domain.topic_discovery import (  # noqa: E402
+    FLOWMAP_PRESETS,
+    FlowMapConfig,
     attach_readme_context,
+    build_class_embedding_document,
+    build_class_term_document,
+    calculate_ctfidf_scores,
     cluster_documents,
-    discover_topics,
     discover_topics_with_centroids,
     extract_readme_documents,
+    flowmap_config_for_preset,
     is_degenerate,
-    label_clusters_statistical,
+    extract_top_terms_by_cluster,
+    reduce_embeddings,
 )
-from backend.src.flowmap.domain.util import (  # noqa: E402
+from backend.src.flowmap.domain.topic_discovery import (  # noqa: E402
     embed_documents,
     get_embedding_model,
-    is_noise,
     preprocess_document,
     split_identifier,
 )
+from backend.src.flowmap.domain.util import is_noise  # noqa: E402
 from backend.src.flowmap.model import ClassDocument, ReadmeDocument, TopicCluster  # noqa: E402
 
 
@@ -85,8 +95,74 @@ class PreprocessDocumentTests(unittest.TestCase):
         )
 
 
+class BuildClassEmbeddingDocumentTests(unittest.TestCase):
+    def test_builds_compact_structured_functional_evidence(self):
+        doc = ClassDocument(
+            className="AccountService",
+            fullName="bank.AccountService",
+            package="bank",
+            filename="AccountService.java",
+            methodNames=["transferFunds", "get_balance", "transferFunds"],
+            memberNames=["accountRepository"],
+            identifiers=["sourceAccount", "destination-account"],
+            comments=["transfers money between customer accounts"],
+            literals=["insufficient balance"],
+        )
+
+        self.assertEqual(
+            build_class_embedding_document(doc),
+            "\n".join(
+                [
+                    "Class: account service",
+                    "Methods: transfer funds; get balance",
+                    "Members: account repository",
+                    "Identifiers: source account; destination account",
+                    "Comments: transfers money between customer accounts",
+                    "Messages: insufficient balance",
+                ]
+            ),
+        )
+        self.assertEqual(
+            build_class_term_document(doc),
+            " ".join(
+                [
+                    "account service",
+                    "transfer funds",
+                    "get balance",
+                    "account repository",
+                    "source account",
+                    "destination account",
+                    "transfers money between customer accounts",
+                    "insufficient balance",
+                ]
+            ),
+        )
+        for header in (
+            "class",
+            "methods",
+            "members",
+            "identifiers",
+            "comments",
+            "messages",
+        ):
+            self.assertNotIn(header, build_class_term_document(doc).split())
+
+    def test_omits_empty_categories_and_synthetic_values(self):
+        doc = ClassDocument(
+            className="<operator>.assignment",
+            fullName="pkg.Empty",
+            package="pkg",
+            filename="Empty.java",
+            methodNames=["<init>", "doA"],
+            comments=["", "   "],
+            literals=["Ready", "Ready"],
+        )
+
+        self.assertEqual(build_class_embedding_document(doc), "Messages: Ready")
+
+
 class EmbeddingModelCacheTests(unittest.TestCase):
-    @patch("backend.src.flowmap.domain.util.SentenceTransformer")
+    @patch("backend.src.flowmap.domain.topic_discovery.embeddings.SentenceTransformer")
     def test_reuses_one_model_instance_for_multiple_batches(self, model_class):
         model_class.return_value.encode.return_value = np.array([[1.0, 0.0]])
         get_embedding_model.cache_clear()
@@ -98,7 +174,20 @@ class EmbeddingModelCacheTests(unittest.TestCase):
         model_class.assert_called_once_with("test-model")
 
 
-class LabelClustersStatisticalTests(unittest.TestCase):
+class ExtractTopTermsByClusterTests(unittest.TestCase):
+    def test_ctfidf_normalizes_counts_and_truncates_average_length(self):
+        counts = np.array([[3, 1], [1, 2]])
+
+        scores = calculate_ctfidf_scores(counts)
+
+        # Cluster lengths are 4 and 3, so BERTopic truncates A=3.5 to A=3.
+        expected_term_frequency = np.array([[3 / 4, 1 / 4], [1 / 3, 2 / 3]])
+        expected_inverse_frequency = np.log(1 + 3 / np.array([4, 3]))
+        np.testing.assert_allclose(
+            scores,
+            expected_term_frequency * expected_inverse_frequency,
+        )
+
     def test_cluster_specific_terms_outrank_shared_terms(self):
         # "account" appears in every doc across both clusters -- max_df
         # would drop it outright; c-TF-IDF's own idf weighting should
@@ -111,7 +200,7 @@ class LabelClustersStatisticalTests(unittest.TestCase):
             "account payment refund",
         ]
         labels = [0, 0, 1, 1]
-        result = label_clusters_statistical(docs, labels, max_df=1.0, top_n=3)
+        result = extract_top_terms_by_cluster(docs, labels, max_df=1.0, top_n=3)
         self.assertIn(0, result)
         self.assertIn(1, result)
         self.assertIn("balance", result[0])
@@ -120,7 +209,9 @@ class LabelClustersStatisticalTests(unittest.TestCase):
         self.assertNotIn("balance", result[1])
 
     def test_noise_label_gets_its_own_entry(self):
-        result = label_clusters_statistical(["foo bar baz", "qux quux corge"], [-1, 0], max_df=1.0)
+        result = extract_top_terms_by_cluster(
+            ["foo bar baz", "qux quux corge"], [-1, 0], max_df=1.0
+        )
         self.assertIn(-1, result)
         self.assertIn(0, result)
 
@@ -129,7 +220,9 @@ class LabelClustersStatisticalTests(unittest.TestCase):
         # with only one document to count against -- a single-cluster
         # corpus (e.g. everything landed in HDBSCAN's noise bucket) must
         # still produce a label, not crash on the default max_df=0.85.
-        result = label_clusters_statistical(["foo bar baz"], [-1], max_df=0.85)
+        result = extract_top_terms_by_cluster(
+            ["foo bar baz"], [-1], max_df=0.85
+        )
         self.assertIn(-1, result)
         self.assertTrue(result[-1])
 
@@ -138,13 +231,50 @@ class ClusterDocumentsTests(unittest.TestCase):
     def test_single_sample_is_noise_not_an_error(self):
         # sklearn's HDBSCAN raises on n_samples < 2 unconditionally -- a
         # one-class corpus (or a single surviving doc after
-        # preprocess_document drops empty ones) must not crash discover_topics.
+        # preprocess_document drops empty ones) must not crash topic discovery.
         labels = cluster_documents(np.array([[0.1, 0.2, 0.3]]), min_cluster_size=2)
         self.assertEqual(list(labels), [-1])
 
     def test_empty_input_is_noise_not_an_error(self):
         labels = cluster_documents(np.empty((0, 3)), min_cluster_size=2)
         self.assertEqual(list(labels), [])
+
+
+class FlowMapConfigurationTests(unittest.TestCase):
+    def test_presets_expose_only_the_four_tuning_fields(self):
+        self.assertEqual(
+            dataclasses.asdict(flowmap_config_for_preset("balanced")),
+            {
+                "umap_n_components": 5,
+                "umap_n_neighbors": 5,
+                "min_cluster_size": 5,
+                "min_samples": 3,
+            },
+        )
+        self.assertEqual(FLOWMAP_PRESETS["fine"]["min_samples"], 1)
+        self.assertEqual(FLOWMAP_PRESETS["coarse"]["umap_n_components"], 10)
+
+    def test_reduction_uses_fixed_methodology_settings(self):
+        embeddings = np.ones((6, 8))
+        reduced = np.ones((6, 5))
+        mock_umap = MagicMock()
+        mock_umap.return_value.fit_transform.return_value = reduced
+
+        with patch.dict(sys.modules, {"umap": MagicMock(UMAP=mock_umap)}):
+            result = reduce_embeddings(embeddings, n_components=5, n_neighbors=5)
+
+        mock_umap.assert_called_once_with(
+            n_components=5,
+            n_neighbors=5,
+            min_dist=0.0,
+            metric="cosine",
+            random_state=11,
+        )
+        self.assertIs(result, reduced)
+
+    def test_reduction_rejects_neighbors_not_smaller_than_corpus(self):
+        with self.assertRaisesRegex(ValueError, "must be smaller"):
+            reduce_embeddings(np.ones((5, 8)), n_components=5, n_neighbors=5)
 
 
 class AttachReadmeContextTests(unittest.TestCase):
@@ -208,6 +338,21 @@ class ExtractReadmeDocumentsTests(unittest.TestCase):
             docs = extract_readme_documents(Path(tmp), [])
         self.assertEqual(docs, [])
 
+    def test_duplicate_readme_content_prefers_project_level_document(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "README.md").write_text("Shared   project documentation\n")
+            (root / "src/account").mkdir(parents=True)
+            (root / "src/account/README.md").write_text(
+                "shared project DOCUMENTATION"
+            )
+
+            docs = extract_readme_documents(root, [])
+
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0].path, "README.md")
+        self.assertEqual(docs[0].text, "Shared   project documentation\n")
+
 
 class IsDegenerateTests(unittest.TestCase):
     def test_too_few_classes_is_degenerate_regardless_of_clusters(self):
@@ -247,22 +392,30 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
     """
     embed_documents/cluster_documents are mocked throughout -- these tests
     are about the unconditional whole_corpus_fn fallback BRANCHING logic in
-    discover_topics, not about real embedding/clustering behaviour (already
+    discover_topics_with_centroids, not about real embedding/clustering
+    behaviour (already
     covered elsewhere), so they stay fast/hermetic (no real model download
     or HTTP call). The automatic fallback fires whenever whole_corpus_fn is
     supplied AND is_degenerate says so; force_whole_corpus bypasses that
     decision and always uses the supplied grouping function.
     """
 
-    def _class_documents(self, n, prefix="C", terms=("methodOne", "methodTwo")):
+    def _class_documents(self, n, prefix="C", methods=("methodOne", "methodTwo")):
         return [
-            ClassDocument(f"{prefix}{i}", f"pkg.{prefix}{i}", "pkg", f"{prefix}{i}.java", list(terms))
+            ClassDocument(
+                f"{prefix}{i}",
+                f"pkg.{prefix}{i}",
+                "pkg",
+                f"{prefix}{i}.java",
+                methodNames=list(methods),
+            )
             for i in range(n)
         ]
 
-    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
-    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
-    def test_falls_back_to_whole_corpus_when_degenerate(self, mock_embed, mock_cluster):
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
+    def test_falls_back_to_whole_corpus_when_degenerate(self, mock_embed, _mock_reduce, mock_cluster):
         classes = self._class_documents(5)  # below the floor -- always degenerate
         mock_embed.return_value = np.zeros((5, 3))
         mock_cluster.return_value = np.array([0, 0, 0, 0, 0])
@@ -274,33 +427,45 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
         ]
         whole_corpus_fn = MagicMock(return_value=whole_corpus_result)
 
-        result = discover_topics(classes, whole_corpus_fn=whole_corpus_fn)
+        result = discover_topics_with_centroids(
+            classes, whole_corpus_fn=whole_corpus_fn
+        ).clusters
 
         whole_corpus_fn.assert_called_once_with(classes, [])
         self.assertEqual(result[0].llm_label, "Everything")
+        self.assertTrue(result[0].fallback)
 
-    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
-    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
-    def test_keeps_clustering_result_when_not_degenerate(self, mock_embed, mock_cluster):
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
+    def test_keeps_clustering_result_when_not_degenerate(self, mock_embed, _mock_reduce, mock_cluster):
         # Two real, distinctly-worded groups, no noise -- genuinely not
         # degenerate, so whole_corpus_fn must NOT be consulted at all even
         # though it was supplied.
-        group_a = self._class_documents(20, prefix="A", terms=("accountService", "createAccount"))
-        group_b = self._class_documents(5, prefix="B", terms=("paymentGateway", "processPayment"))
+        group_a = self._class_documents(
+            20, prefix="A", methods=("accountService", "createAccount")
+        )
+        group_b = self._class_documents(
+            5, prefix="B", methods=("paymentGateway", "processPayment")
+        )
         classes = group_a + group_b
         mock_embed.return_value = np.zeros((25, 3))
         mock_cluster.return_value = np.array([0] * 20 + [1] * 5)
 
         whole_corpus_fn = MagicMock(return_value=[TopicCluster(label=0, member_full_names=[])])
 
-        result = discover_topics(classes, whole_corpus_fn=whole_corpus_fn)
+        result = discover_topics_with_centroids(
+            classes, whole_corpus_fn=whole_corpus_fn
+        ).clusters
 
         whole_corpus_fn.assert_not_called()
         self.assertEqual({c.label for c in result}, {0, 1})
+        self.assertTrue(all(not cluster.fallback for cluster in result))
 
-    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
-    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
-    def test_force_whole_corpus_bypasses_local_clustering(self, mock_embed, mock_cluster):
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
+    def test_force_whole_corpus_bypasses_local_clustering(self, mock_embed, mock_reduce, mock_cluster):
         classes = self._class_documents(25)
         mock_embed.return_value = np.ones((25, 2))
         whole_corpus_result = [
@@ -319,13 +484,15 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
         )
 
         mock_cluster.assert_not_called()
+        mock_reduce.assert_not_called()
         whole_corpus_fn.assert_called_once_with(classes, [])
         self.assertEqual(result.clusters[0].llm_label, "Forced grouping")
+        self.assertTrue(result.clusters[0].fallback)
         np.testing.assert_allclose(
             result.centroids[0], [2 ** -0.5, 2 ** -0.5]
         )
 
-    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
     def test_force_whole_corpus_requires_grouping_function(self, mock_embed):
         classes = self._class_documents(2)
         mock_embed.return_value = np.ones((2, 2))
@@ -333,10 +500,11 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "requires a whole_corpus_fn"):
             discover_topics_with_centroids(classes, force_whole_corpus=True)
 
-    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
-    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
     def test_omitting_whole_corpus_fn_keeps_clustering_result_even_if_degenerate(
-        self, mock_embed, mock_cluster
+        self, mock_embed, _mock_reduce, mock_cluster
     ):
         # The only opt-out: don't pass whole_corpus_fn. Even a fully
         # degenerate (all-noise) result is returned as-is, untouched.
@@ -344,13 +512,14 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
         mock_embed.return_value = np.zeros((5, 3))
         mock_cluster.return_value = np.array([-1, -1, -1, -1, -1])
 
-        result = discover_topics(classes)
+        result = discover_topics_with_centroids(classes).clusters
 
         self.assertEqual(result[0].label, -1)
 
-    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
-    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
-    def test_label_fn_skipped_when_whole_corpus_fn_used(self, mock_embed, mock_cluster):
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
+    def test_label_fn_skipped_when_whole_corpus_fn_used(self, mock_embed, _mock_reduce, mock_cluster):
         classes = self._class_documents(5)
         mock_embed.return_value = np.zeros((5, 3))
         mock_cluster.return_value = np.array([0, 0, 0, 0, 0])
@@ -358,21 +527,28 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
         whole_corpus_fn = MagicMock(return_value=[TopicCluster(label=0, member_full_names=[])])
         label_fn = MagicMock(return_value="should not be called")
 
-        discover_topics(classes, whole_corpus_fn=whole_corpus_fn, label_fn=label_fn)
+        discover_topics_with_centroids(
+            classes, whole_corpus_fn=whole_corpus_fn, label_fn=label_fn
+        )
 
         label_fn.assert_not_called()
 
-    @patch("backend.src.flowmap.domain.topic_modelling.cluster_documents")
-    @patch("backend.src.flowmap.domain.topic_modelling.embed_documents")
-    def test_centroids_reuse_the_discovery_embedding_batch(self, mock_embed, mock_cluster):
-        classes = self._class_documents(4)
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.cluster_documents")
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
+    @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
+    def test_centroids_reuse_the_discovery_embedding_batch(self, mock_embed, _mock_reduce, mock_cluster):
+        classes = (
+            self._class_documents(2, prefix="A", methods=("accountService",))
+            + self._class_documents(2, prefix="B", methods=("paymentGateway",))
+        )
         mock_embed.return_value = np.array(
             [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]]
         )
         mock_cluster.return_value = np.array([0, 0, 1, 1])
 
         result = discover_topics_with_centroids(
-            classes, min_cluster_size=2, max_df=1.0
+            classes,
+            config=FlowMapConfig(min_cluster_size=2, min_samples=1),
         )
 
         mock_embed.assert_called_once()

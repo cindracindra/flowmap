@@ -110,6 +110,7 @@ desktop.ini
 # Earlier experiments kept locally for reference, not part of the build.
 /old/
 /data/
+/evaluation/
 
 # ===========================================================================
 # Misc
@@ -117,3 +118,6 @@ desktop.ini
 *.log
 /tmp/
 *.md
+
+
+.test/

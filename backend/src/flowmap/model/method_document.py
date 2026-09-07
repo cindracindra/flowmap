@@ -6,12 +6,27 @@ from typing import Any
 
 @dataclass(slots=True)
 class MethodDocument:
+    methodName: str
     fullName: str
-    terms: list[str] = field(default_factory=list)
+    identifiers: list[str] = field(default_factory=list)
+    comments: list[str] = field(default_factory=list)
+    literals: list[str] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> MethodDocument:
-        return cls(fullName=data["fullName"], terms=list(data.get("terms", [])))
+        return cls(
+            methodName=data["methodName"],
+            fullName=data["fullName"],
+            identifiers=list(data.get("identifiers", [])),
+            comments=list(data.get("comments", [])),
+            literals=list(data.get("literals", [])),
+        )
 
     def to_dict(self) -> dict[str, Any]:
-        return {"fullName": self.fullName, "terms": list(self.terms)}
+        return {
+            "methodName": self.methodName,
+            "fullName": self.fullName,
+            "identifiers": list(self.identifiers),
+            "comments": list(self.comments),
+            "literals": list(self.literals),
+        }

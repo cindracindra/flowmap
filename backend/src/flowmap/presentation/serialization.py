@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from domain.phase_segmentation import MethodAnalysis
+from domain.execution_phase.method_analysis import MethodAnalysis
 from model import BranchRequirement, MethodDefinition
 
 from .graph_bundle import GraphBundle
@@ -81,7 +81,7 @@ def _serialize_method(
         },
         "phases": phases,
         "retainedCallNodeIds": (
-            [] if analysis is None else sorted(analysis.retainedCallIds)
+            [] if analysis is None else sorted(analysis.retained_call_ids)
         ),
     }
 
@@ -94,7 +94,7 @@ def serialize_graph_bundle(bundle: GraphBundle) -> dict[str, Any]:
         "methodsByEntryId": {
             entry_id: _serialize_method(
                 method,
-                bundle.phaseAnalysis.methods.get(entry_id),
+                bundle.phaseAnalysis.analyses_by_entry_id.get(entry_id),
                 entry_ids,
             )
             for entry_id, method in sorted(bundle.methodsByEntryId.items())

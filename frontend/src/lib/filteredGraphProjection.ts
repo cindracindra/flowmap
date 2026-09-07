@@ -86,6 +86,8 @@ export interface VisibleBranchGroup {
   /** Visible topology immediately around the hidden structural anchors. */
   entryPredecessorIds: InstanceNodeId[];
   entrySuccessorIds: InstanceNodeId[];
+  /** End of a TRY body, immediately before catch/no-catch selection. */
+  decisionPredecessorIds: InstanceNodeId[];
   exitPredecessorIds: InstanceNodeId[];
   continuationIds: InstanceNodeId[];
   /** Call-site anchor used only by synthetic dispatch selectors. */
@@ -194,6 +196,7 @@ function instantiateBranchGroups(
       ),
       entryPredecessorIds: [],
       entrySuccessorIds: [],
+      decisionPredecessorIds: [],
       exitPredecessorIds: [],
       continuationIds: [],
     };
@@ -419,6 +422,9 @@ export function projectVisibleGraph(
 
       if (!visibleNode.expanded) continue;
       if (targets.length > 1 && selectedTarget) {
+        const selectedTargetIndex = targets.indexOf(selectedTarget);
+        const selectedCallee = bundle.methodsByEntryId[selectedTarget];
+        const selectedCalleeInstanceId = `${callId}/target:${selectedTargetIndex}:${selectedTarget}`;
         branchGroups.push({
           id: callId,
           instanceId,
@@ -438,9 +444,12 @@ export function projectVisibleGraph(
           selectedArmLabel: selectedTarget,
           entryPredecessorIds: [],
           entrySuccessorIds: [],
+          decisionPredecessorIds: [],
           exitPredecessorIds: [],
           continuationIds: [],
-          dispatchAnchorId: id,
+          dispatchAnchorId: selectedCallee && !activeMethods.has(selectedTarget)
+            ? instanceNodeId(selectedCalleeInstanceId, selectedCallee.entryId)
+            : undefined,
         });
       }
       for (const [targetIndex, targetEntryId] of targets.entries()) {
@@ -513,6 +522,12 @@ export function projectVisibleGraph(
   }
   const incomingByNode = new Map<string, string[]>();
   const outgoingByNode = new Map<string, string[]>();
+  const unfilteredIncomingByNode = new Map<string, string[]>();
+  for (const edge of edges) {
+    const incoming = unfilteredIncomingByNode.get(edge.to);
+    if (incoming) incoming.push(edge.from);
+    else unfilteredIncomingByNode.set(edge.to, [edge.from]);
+  }
   for (const edge of requirementFilteredEdges) {
     const incoming = incomingByNode.get(edge.to);
     if (incoming) incoming.push(edge.from);
@@ -540,21 +555,45 @@ export function projectVisibleGraph(
     }
     return [...result];
   };
-  const bridgedBranchGroups = branchGroups.map((group) => ({
-    ...group,
-    entryPredecessorIds: group.entryNodeId
-      ? visibleBoundary(group.entryNodeId, incomingByNode)
-      : [],
-    entrySuccessorIds: group.entryNodeId
-      ? visibleBoundary(group.entryNodeId, outgoingByNode)
-      : [],
-    exitPredecessorIds: group.exitNodeId
-      ? visibleBoundary(group.exitNodeId, incomingByNode)
-      : [],
-    continuationIds: group.exitNodeId
-      ? visibleBoundary(group.exitNodeId, outgoingByNode)
-      : [],
-  }));
+  const tryDecisionNodeId = (group: VisibleBranchGroup): string | undefined => {
+    if (group.kind !== "TRY") return undefined;
+    const outcomesByStructuralSource = new Map<string, Set<string>>();
+    for (const edge of edges) {
+      if (!hiddenNodeIds.has(edge.from)) continue;
+      for (const requirement of edge.branchRequirements ?? []) {
+        if (requirement.groupId !== group.id) continue;
+        const outcomes = outcomesByStructuralSource.get(edge.from) ?? new Set<string>();
+        outcomes.add(requirement.armLabel);
+        outcomesByStructuralSource.set(edge.from, outcomes);
+      }
+    }
+    return [...outcomesByStructuralSource.entries()]
+      .sort((left, right) => right[1].size - left[1].size)[0]?.[0];
+  };
+  const bridgedBranchGroups = branchGroups.map((group) => {
+    const decisionNodeId = tryDecisionNodeId(group);
+    return {
+      ...group,
+      entryPredecessorIds: group.entryNodeId
+        ? visibleBoundary(group.entryNodeId, incomingByNode)
+        : [],
+      entrySuccessorIds: group.entryNodeId
+        ? visibleBoundary(group.entryNodeId, outgoingByNode)
+        : [],
+      // Catch dispatch is a definition-level boundary. Derive it before arm
+      // filtering so nested branch choices cannot move the TRY control back
+      // to its entry or make the anchor disappear.
+      decisionPredecessorIds: decisionNodeId
+        ? visibleBoundary(decisionNodeId, unfilteredIncomingByNode)
+        : [],
+      exitPredecessorIds: group.exitNodeId
+        ? visibleBoundary(group.exitNodeId, incomingByNode)
+        : [],
+      continuationIds: group.exitNodeId
+        ? visibleBoundary(group.exitNodeId, outgoingByNode)
+        : [],
+    };
+  });
   const bridged = bridgeHiddenNodes(nodes, requirementFilteredEdges, hiddenNodeIds);
   const bridgedNodeIds = new Set(bridged.nodes.map((node) => node.id));
   const outgoing = new Map<string, string[]>();

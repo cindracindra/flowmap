@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Mapping
 
-from .models import LLMCallRecord, RunRecord, StageRecord
+from .models import LLMBatchRecord, LLMCallRecord, RunRecord, StageRecord
 
 
 def _now() -> str:
@@ -63,6 +63,12 @@ class EvaluationRecorder:
     def record_llm_call(self, event: Mapping[str, object]) -> None:
         fields = {field.name for field in LLMCallRecord.__dataclass_fields__.values()}
         self.run.llm_calls.append(LLMCallRecord(**{
+            key: value for key, value in event.items() if key in fields
+        }))
+
+    def record_llm_batch(self, event: Mapping[str, object]) -> None:
+        fields = {field.name for field in LLMBatchRecord.__dataclass_fields__.values()}
+        self.run.llm_batches.append(LLMBatchRecord(**{
             key: value for key, value in event.items() if key in fields
         }))
 

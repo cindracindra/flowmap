@@ -17,6 +17,8 @@
     --node-call-stroke: #4AADA8;
     --node-leaf-fill: #16130E;
     --node-leaf-stroke: #8FB87A;
+    --node-transfer-fill: #11162A;
+    --node-transfer-stroke: #7C8FE0;
     --node-dead-end-stroke: #C0392B;
 
     /*

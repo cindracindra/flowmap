@@ -1,4 +1,4 @@
-"""Build stable method-phase labelling questions from completed analysis.
+"""Build stable execution-phase labelling questions from completed analysis.
 
 This module deliberately stops at the LLM boundary. It does not label phases,
 mutate ``Analysis``, or depend on flattened clone IDs. The existing flattened
@@ -11,44 +11,34 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Callable, Literal, TypedDict
 
-from domain.phase_segmentation import Analysis, callee_count, phase_count
-from model import Node, NodeSemanticFeatures, Phase
+from domain.execution_phase.method_analysis import effective_phase_count
+from domain.execution_phase.orchestration import ExecutionPhaseAnalysis
+from domain.execution_phase.resolution import operation_context, signature_payload
+from domain.execution_phase.semantic import SemanticSignature, build_core_signature
+from model import NodeSemanticFeatures, Phase
 
 
-class MethodEvidence(TypedDict):
-    entryId: str
-    fullName: str
-
-
-class OperationEvidence(TypedDict):
-    callNodeId: str
+class OperationEvidence(TypedDict, total=False):
     callee: str | None
     code: str | None
-    receiver: str | None
-    arguments: list[str]
-    inputs: list[str]
-    fieldsRead: list[str]
-    fieldsWritten: list[str]
-    domainTypes: list[str]
-    methodTerms: list[str]
 
 
 class PhaseEvidence(TypedDict):
     phaseId: str
-    method: MethodEvidence
+    method: str
     phaseIndex: int
     localPhaseCount: int
+    coreSignature: dict[str, list[str]]
     operations: list[OperationEvidence]
 
 
 class LabelSubject(TypedDict):
     id: str
-    phaseIds: list[str]
     phaseEvidence: list[PhaseEvidence]
 
 
 class MethodPhaseLabelRequest(TypedDict):
-    schemaVersion: Literal["method-phase-label-v1"]
+    schemaVersion: Literal["execution-phase-label-v2"]
     subjects: list[LabelSubject]
 
 
@@ -59,22 +49,16 @@ def _phase_id(entry_id: str, phase: Phase, index: int) -> str:
     return phase.id or f"{entry_id}:phase:{index + 1}"
 
 
-def _operation_evidence(
-    node: Node,
-    features: NodeSemanticFeatures | None,
-) -> OperationEvidence:
-    return {
-        "callNodeId": node.id,
-        "callee": node.calleeFullName,
-        "code": node.code,
-        "receiver": features.receiver if features else None,
-        "arguments": list(features.arguments) if features else [],
-        "inputs": list(features.inputIdentifiers) if features else [],
-        "fieldsRead": list(features.fieldsRead) if features else [],
-        "fieldsWritten": list(features.fieldsWritten) if features else [],
-        "domainTypes": list(features.domainTypes) if features else [],
-        "methodTerms": list(features.methodTerms) if features else [],
-    }
+def _phase_signature(
+    analysis: ExecutionPhaseAnalysis,
+    phase: Phase,
+) -> SemanticSignature:
+    return build_core_signature(
+        SemanticSignature.from_operation(
+            analysis.graph.semanticFeatures.get(node_id, NodeSemanticFeatures())
+        )
+        for node_id in phase.nodes
+    )
 
 
 class _DisjointPhases:
@@ -99,7 +83,7 @@ class _DisjointPhases:
         self.parent[second] = first
 
 
-def build_label_subjects(analysis: Analysis) -> MethodPhaseLabelRequest:
+def build_label_subjects(analysis: ExecutionPhaseAnalysis) -> MethodPhaseLabelRequest:
     """Return one self-contained label question per phase/equivalence group.
 
     A transparent equivalence is derived only from already-resolved structure:
@@ -117,7 +101,7 @@ def build_label_subjects(analysis: Analysis) -> MethodPhaseLabelRequest:
     phase_records: dict[str, tuple[str, int, Phase]] = {}
     phase_id_by_entry_and_index: dict[tuple[str, int], str] = {}
 
-    for entry_id, method in sorted(analysis.methods.items()):
+    for entry_id, method in sorted(analysis.analyses_by_entry_id.items()):
         for index, phase in enumerate(method.phases):
             phase_id = _phase_id(entry_id, phase, index)
             if phase_id in phase_records:
@@ -128,15 +112,25 @@ def build_label_subjects(analysis: Analysis) -> MethodPhaseLabelRequest:
     groups = _DisjointPhases(set(phase_records))
 
     for caller_phase_id, (entry_id, _, phase) in phase_records.items():
-        method = analysis.methods[entry_id]
+        method = analysis.analyses_by_entry_id[entry_id]
         if len(phase.nodes) != 1:
             continue
         call_id = phase.nodes[0]
-        if call_id in method.retainedCallIds or callee_count(analysis, call_id) != 1:
+        if (
+            call_id in method.retained_call_ids
+            or len(analysis.callee_entries_by_call_id.get(call_id, ())) != 1
+        ):
             continue
-        for target_entry_id in analysis.calleeEntries.get(call_id, ()):
-            target = analysis.methods.get(target_entry_id)
-            if target is None or phase_count(analysis, target_entry_id) != 1:
+        for target_entry_id in analysis.callee_entries_by_call_id.get(call_id, ()):
+            target = analysis.analyses_by_entry_id.get(target_entry_id)
+            if (
+                target is None
+                or effective_phase_count(
+                    target_entry_id,
+                    analysis.analyses_by_entry_id,
+                    analysis.callee_entries_by_call_id,
+                ) != 1
+            ):
                 continue
             # An effective count of one implies exactly one local phase after
             # retention rechecking. Keep the guard explicit for malformed data.
@@ -159,54 +153,56 @@ def build_label_subjects(analysis: Analysis) -> MethodPhaseLabelRequest:
         evidence: list[PhaseEvidence] = []
         for phase_id in phase_ids:
             entry_id, index, phase = phase_records[phase_id]
-            method = analysis.methods[entry_id]
+            method = analysis.analyses_by_entry_id[entry_id]
             entry = entry_nodes.get(entry_id)
             evidence.append({
                 "phaseId": phase_id,
-                "method": {
-                    "entryId": entry_id,
-                    "fullName": entry.calleeFullName if entry and entry.calleeFullName else entry_id,
-                },
+                "method": (
+                    entry.calleeFullName
+                    if entry and entry.calleeFullName
+                    else entry_id
+                ),
                 "phaseIndex": index + 1,
                 "localPhaseCount": len(method.phases),
+                "coreSignature": signature_payload(
+                    _phase_signature(analysis, phase)
+                ),
                 "operations": [
-                    _operation_evidence(node, analysis.graph.semanticFeatures.get(node_id))
+                    dict(operation_context(node))
                     for node_id in phase.nodes
                     if (node := nodes_by_id.get(node_id)) is not None
                 ],
             })
         subjects.append({
-            # Phase IDs remain authoritative in phaseIds. The LLM only needs a
-            # uniform opaque correlation key. Using different prefixes for
-            # singleton and grouped phases encouraged models to rewrite
-            # ``group-N`` as the generic ``subject-N`` in batch responses.
+            # The LLM only needs a uniform opaque correlation key. Using
+            # different prefixes for singleton and grouped phases encouraged
+            # models to rewrite ``group-N`` as the generic ``subject-N``.
             "id": f"item-{subject_number}",
-            "phaseIds": phase_ids,
             "phaseEvidence": evidence,
         })
 
     return {
-        "schemaVersion": "method-phase-label-v1",
+        "schemaVersion": "execution-phase-label-v2",
         "subjects": subjects,
     }
 
 
 def label_method_analysis(
-    analysis: Analysis,
+    analysis: ExecutionPhaseAnalysis,
     labeler: MethodPhaseBatchLabeler,
 ) -> int:
     """Run one method-level batch and attach returned labels by phase ID.
 
-    Subject IDs are the LLM response correlation keys. ``phaseIds`` remains
-    the authoritative assignment list, allowing one transparent-delegation
-    label to update every equivalent method phase.
+    Subject IDs are the LLM response correlation keys. Phase IDs are derived
+    from ``phaseEvidence``, allowing one transparent-delegation label to update
+    every equivalent execution phase.
     """
     request = build_label_subjects(analysis)
     if not request["subjects"]:
         return 0
     labels_by_subject_id = labeler(request)
     phases_by_id: dict[str, Phase] = {}
-    for entry_id, method in analysis.methods.items():
+    for entry_id, method in analysis.analyses_by_entry_id.items():
         for index, phase in enumerate(method.phases):
             phase_id = _phase_id(entry_id, phase, index)
             if phase_id in phases_by_id:
@@ -219,7 +215,8 @@ def label_method_analysis(
         label = labels_by_subject_id.get(subject["id"])
         if label is None:
             continue
-        for phase_id in subject["phaseIds"]:
+        for phase_evidence in subject["phaseEvidence"]:
+            phase_id = phase_evidence["phaseId"]
             phase = phases_by_id.get(phase_id)
             if phase is None:
                 raise ValueError(

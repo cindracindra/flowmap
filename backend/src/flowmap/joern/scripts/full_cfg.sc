@@ -328,15 +328,24 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       "<operator>.assignmentMultiplication",
       "<operator>.assignmentDivision"
     )
-    val writtenFields = calleeEntries.flatMap { callee =>
+    // Classify field occurrences rather than field names. A read-modify-write
+    // expression can contain distinct read and write occurrences of the same
+    // field, and both observations must be retained.
+    val writtenFieldNodeIds = calleeEntries.flatMap { callee =>
       callee.ast.isCall.l
         .filter(assignment => assignmentNames.contains(assignment.name))
         .flatMap(_.argument.l.filter(_.argumentIndex == 1))
-        .flatMap(lhs => lhs.start.ast.isFieldIdentifier.canonicalName.l)
-    }.distinct
-    val calleeFields = calleeEntries.flatMap(
-      callee => callee.ast.isFieldIdentifier.canonicalName.l
-    ).distinct.filterNot(writtenFields.contains)
+        .flatMap(lhs => lhs.start.ast.isFieldIdentifier.id.l)
+    }.toSet
+    val calleeFieldNodes = calleeEntries.flatMap(
+      callee => callee.ast.isFieldIdentifier.l
+    )
+    val writtenFields = calleeFieldNodes
+      .filter(field => writtenFieldNodeIds.contains(field.id))
+      .map(_.canonicalName).distinct
+    val calleeFieldsRead = calleeFieldNodes
+      .filterNot(field => writtenFieldNodeIds.contains(field.id))
+      .map(_.canonicalName).distinct
 
     val receiverCode = receiver.map(_.code).filter(readable)
     val receiverType = receiver.flatMap(expressionTypes(_).headOption).filter(usefulType)
@@ -352,7 +361,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val observed =
       (if (receiver.isEmpty || receiverCode.isDefined) List("receiver") else Nil) ++
       (if (argumentsObserved) List("arguments", "inputs") else Nil) ++
-      List("callsiteFields") ++
+      List("callsiteFields", "domainTypes", "methodTerms") ++
       (if (outputType.isDefined) List("output") else Nil) ++
       (if (calleeEntries.nonEmpty) List("calleeFields") else Nil)
 
@@ -360,7 +369,7 @@ def buildFullCodebaseCfg(): ujson.Obj = {
       "arguments" -> stringArray(argumentCodes),
       "argumentTypes" -> stringArray(argumentTypes),
       "inputIdentifiers" -> stringArray(identifiers),
-      "fieldsRead" -> stringArray((argumentFields ++ calleeFields).distinct),
+      "fieldsRead" -> stringArray((argumentFields ++ calleeFieldsRead).distinct),
       "fieldsWritten" -> stringArray(writtenFields),
       "domainTypes" -> stringArray(domainTypes),
       "methodTerms" -> stringArray(methodTerms),

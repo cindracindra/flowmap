@@ -50,15 +50,25 @@ def buildClassDocuments(
             .name.dedup.l
           val mLiterals = m.ast.isLiteral
             .filter(_.typeFullName == "java.lang.String")
-            .code.map(stripQuotes).l
-          val mInternalCalls = m.call.callee.filterNot(_.isExternal).fullName.dedup.l
+            .code.map(stripQuotes).dedup.l
+          val methodStartLine = m.lineNumber.getOrElse(-1)
+          val methodEndLine = m.lineNumberEnd.getOrElse(methodStartLine)
+          val mComments = cpg.file
+            .filter(_.name == td.filename)
+            .comment
+            .filter { comment =>
+              comment.lineNumber.exists { line =>
+                methodStartLine >= 0 && line >= methodStartLine && line <= methodEndLine
+              }
+            }
+            .code.dedup.l
 
           methodDocs += ujson.Obj(
+            "methodName" -> m.name,
             "fullName" -> m.fullName,
-            "terms" -> ujson.Arr(
-              (Seq(m.name) ++ mIdentifiers ++ mLiterals ++ mInternalCalls)
-                .map(ujson.Str(_)): _*
-            )
+            "identifiers" -> ujson.Arr(mIdentifiers.map(ujson.Str(_)): _*),
+            "comments" -> ujson.Arr(mComments.map(ujson.Str(_)): _*),
+            "literals" -> ujson.Arr(mLiterals.map(ujson.Str(_)): _*)
           )
         }
 
@@ -76,21 +86,6 @@ def buildClassDocuments(
         .filter(_.typeFullName == "java.lang.String")
         .code.map(stripQuotes).dedup.l
 
-      // Annotation names expose architectural role without reading the body:
-      // @Controller, @Repository, @Service, @Entity are stronger layer
-      // signals than any set of method names for placing a class in a
-      // functional area.
-      val annotations = td.annotation.name.dedup.l
-
-      val SKIP_INHERITS = Set(
-        "Object", "Serializable", "Cloneable", "Enum",
-        "Exception", "RuntimeException", "Throwable"
-      )
-      val inherits = td.inheritsFromTypeFullName
-        .map(_.split("\\.").last)
-        .filterNot(n => SKIP_INHERITS.contains(n) || isSynthetic(n))
-        .dedup.l
-
       ujson.Obj(
         "className"  -> td.name,
         "fullName"   -> td.fullName,
@@ -98,16 +93,9 @@ def buildClassDocuments(
         "filename"   -> td.filename,
         "methodNames" -> ujson.Arr(methods.map(ujson.Str(_)): _*),
         "memberNames" -> ujson.Arr(members.map(ujson.Str(_)): _*),
-        "annotations" -> ujson.Arr(annotations.map(ujson.Str(_)): _*),
-        "inherits"    -> ujson.Arr(inherits.map(ujson.Str(_)): _*),
         "identifiers" -> ujson.Arr(identifiers.map(ujson.Str(_)): _*),
         "comments"    -> ujson.Arr(comments.map(ujson.Str(_)): _*),
-        "literals"    -> ujson.Arr(literals.map(ujson.Str(_)): _*),
-        "terms"       -> ujson.Arr(
-          (Seq(td.name) ++ methods ++ members ++ annotations ++ inherits
-            ++ identifiers ++ comments ++ literals)
-            .map(ujson.Str(_)): _*
-        )
+        "literals"    -> ujson.Arr(literals.map(ujson.Str(_)): _*)
       )
     }
     .l
