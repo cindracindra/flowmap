@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import threading
 import time
 from dataclasses import dataclass
@@ -117,12 +118,14 @@ class LLMClient:
             self._record_telemetry(
                 call_site=call_site, role=role, duration=time.perf_counter() - started,
                 system=system, user=user, response_text="", response=None, error=exc,
+                temperature=temperature, reasoning_effort=reasoning_effort,
             )
             raise LLMError(f"{self.provider} call failed: {exc}") from exc
         content = response.choices[0].message.content or ""
         self._record_telemetry(
             call_site=call_site, role=role, duration=time.perf_counter() - started,
             system=system, user=user, response_text=content, response=response, error=None,
+            temperature=temperature, reasoning_effort=reasoning_effort,
         )
         return content
 
@@ -137,6 +140,8 @@ class LLMClient:
         response_text: str,
         response: Any,
         error: BaseException | None,
+        temperature: float,
+        reasoning_effort: str | None,
     ) -> None:
         if self.telemetry_sink is None:
             return
@@ -152,6 +157,11 @@ class LLMClient:
                 "duration_seconds": duration, "success": error is None,
                 "prompt_characters": len(system) + len(user),
                 "response_characters": len(response_text),
+                "prompt_sha256": hashlib.sha256(
+                    (system + "\0" + user).encode("utf-8")
+                ).hexdigest(),
+                "temperature": temperature,
+                "reasoning_effort": reasoning_effort,
                 "input_tokens": count("prompt_tokens"),
                 "output_tokens": count("completion_tokens"),
                 "total_tokens": count("total_tokens"),

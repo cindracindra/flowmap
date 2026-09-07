@@ -22,6 +22,8 @@ export interface MethodExitDefinition {
 export interface CallDefinition {
   callNodeId: string;
   targetEntryIds: string[];
+  /** Added to bundles that contain external or unresolved invoke targets. */
+  targetLeafIds?: string[];
   continuationIds: string[];
 }
 
@@ -51,6 +53,8 @@ export interface OperationDefinition {
 /** Backend payload shared by every operation sequence in one analysis. */
 export interface GraphBundle {
   methodsByEntryId: Record<string, MethodDefinition>;
+  /** External/unresolved targets are stored once and referenced by calls. */
+  leavesById?: Record<string, FlowNode>;
   operationsById: Record<string, OperationDefinition>;
   // Direct upstream method dependencies, expressed as entry IDs. Call-site
   // detail remains in each method's calls index.

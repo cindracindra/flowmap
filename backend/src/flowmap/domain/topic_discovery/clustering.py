@@ -50,6 +50,7 @@ def reduce_embeddings(
     *,
     n_components: int,
     n_neighbors: int,
+    random_state: int = DEFAULT_FLOWMAP_CONFIG["umap_random_state"],
 ) -> np.ndarray:
     """Apply deterministic cosine UMAP using the evaluation methodology."""
     if n_neighbors >= len(embeddings):
@@ -68,7 +69,7 @@ def reduce_embeddings(
         n_neighbors=n_neighbors,
         min_dist=DEFAULT_FLOWMAP_CONFIG["umap_min_dist"],
         metric="cosine",
-        random_state=DEFAULT_FLOWMAP_CONFIG["umap_random_state"],
+        random_state=random_state,
     ).fit_transform(embeddings)
 
 
@@ -89,7 +90,10 @@ def cluster_documents(
 
 
 def cluster_embedded_corpus(
-    corpus: EmbeddedCorpus, config: FlowMapConfig
+    corpus: EmbeddedCorpus,
+    config: FlowMapConfig,
+    *,
+    random_state: int = DEFAULT_FLOWMAP_CONFIG["umap_random_state"],
 ) -> np.ndarray:
     """Run the complete UMAP-to-HDBSCAN clustering process."""
     if len(corpus.embeddings) < config.min_cluster_size:
@@ -98,6 +102,7 @@ def cluster_embedded_corpus(
         corpus.embeddings,
         n_components=config.umap_n_components,
         n_neighbors=config.umap_n_neighbors,
+        random_state=random_state,
     )
     return cluster_documents(
         reduced,

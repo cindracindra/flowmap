@@ -51,7 +51,7 @@ export interface VisibleConditionStage {
   id: string;
   nodeIds: InstanceNodeId[];
   decisionNodeId?: InstanceNodeId;
-  /** Canonical condition text retained after its graph node becomes an alias. */
+  /** Canonical condition text shown alongside its executable condition nodes. */
   code?: string;
 }
 
@@ -386,6 +386,7 @@ export function projectVisibleGraph(
       const call = method.calls[node.id];
       const callId = callInstanceId(instanceId, node.id);
       const targets = call?.targetEntryIds ?? [];
+      const leafTargets = call?.targetLeafIds ?? [];
       const requestedTarget = selectedTargetByCallInstanceId.get(callId);
       const selectedTarget = targets.includes(requestedTarget ?? "")
         ? requestedTarget!
@@ -406,8 +407,9 @@ export function projectVisibleGraph(
         phase: inheritedPhase
           ?? phaseForNode.get(node.id),
         retainedCall: retainedCalls.has(node.id),
-        expandable: targets.length > 0,
-        expanded: targets.length > 0 && expandedCallInstanceIds.has(callId),
+        expandable: targets.length > 0 || leafTargets.length > 0,
+        expanded: (targets.length > 0 || leafTargets.length > 0)
+          && expandedCallInstanceIds.has(callId),
         recursiveCutoff,
         retainedCalleePhaseCount: retainedCalls.has(node.id) && selectedTarget
           ? transitiveRetainedPhaseKeys(
@@ -421,6 +423,38 @@ export function projectVisibleGraph(
       nodes.push(visibleNode);
 
       if (!visibleNode.expanded) continue;
+
+      // Leaves are terminal outbound targets. Their definition is shared in
+      // the bundle, but each expanded call gets its own visible instance.
+      for (const [leafIndex, leafId] of leafTargets.entries()) {
+        const leaf = bundle.leavesById?.[leafId];
+        if (!leaf) continue;
+        const leafInstanceId = `${callId}/leaf:${leafIndex}:${leafId}`;
+        const visibleLeafId = instanceNodeId(leafInstanceId, leafId);
+        if (!emittedNodes.has(visibleLeafId)) {
+          emittedNodes.add(visibleLeafId);
+          nodes.push({
+            id: visibleLeafId,
+            instanceId: leafInstanceId,
+            definitionNodeId: leafId,
+            methodEntryId,
+            depth: depth + 1,
+            node: leaf,
+            retainedCall: false,
+            expandable: false,
+            expanded: false,
+            recursiveCutoff: false,
+            branchRequirements,
+          });
+        }
+        edges.push({
+          from: id,
+          to: visibleLeafId,
+          type: "invoke",
+          kind: "invoke",
+        });
+      }
+
       if (targets.length > 1 && selectedTarget) {
         const selectedTargetIndex = targets.indexOf(selectedTarget);
         const selectedCallee = bundle.methodsByEntryId[selectedTarget];
@@ -507,11 +541,10 @@ export function projectVisibleGraph(
       .filter((node) => node.node.type === "structure")
       .map((node) => node.id),
   );
-  const conditionAliasNodeIds = new Set(
-    branchGroups.flatMap((group) =>
-      (group.conditionStages ?? []).flatMap((stage) => stage.nodeIds)),
-  );
-  const hiddenNodeIds = new Set([...structureNodeIds, ...conditionAliasNodeIds]);
+  // Condition calls are executable call sites and must remain visible. In
+  // particular, hiding them would make bridgeHiddenNodes bridge their invoke
+  // attachments as sequence edges to external leaves.
+  const hiddenNodeIds = structureNodeIds;
   const sourceNodeById = new Map(nodes.map((node) => [node.id, node]));
   for (const group of branchGroups) {
     for (const stage of group.conditionStages ?? []) {
@@ -555,7 +588,13 @@ export function projectVisibleGraph(
     }
     return [...result];
   };
-  const tryDecisionNodeId = (group: VisibleBranchGroup): string | undefined => {
+  const branchDecisionNodeId = (group: VisibleBranchGroup): string | undefined => {
+    const selectedArm = group.arms.find((arm) => arm.label === group.selectedArmLabel);
+    const selectedStageId = [...(selectedArm?.conditionStages ?? [])].reverse()[0]?.stageId;
+    const explicitDecision = selectedStageId
+      ? group.conditionStages?.find((stage) => stage.id === selectedStageId)?.decisionNodeId
+      : undefined;
+    if (explicitDecision) return explicitDecision;
     if (group.kind !== "TRY") return undefined;
     const outcomesByStructuralSource = new Map<string, Set<string>>();
     for (const edge of edges) {
@@ -571,7 +610,7 @@ export function projectVisibleGraph(
       .sort((left, right) => right[1].size - left[1].size)[0]?.[0];
   };
   const bridgedBranchGroups = branchGroups.map((group) => {
-    const decisionNodeId = tryDecisionNodeId(group);
+    const decisionNodeId = branchDecisionNodeId(group);
     return {
       ...group,
       entryPredecessorIds: group.entryNodeId

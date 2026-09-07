@@ -378,7 +378,8 @@ const conditionProjection: VisibleGraphProjection = {
     definitionBranchId: "condition",
     kind: "IF",
     selectedArmLabel: "if",
-    entryPredecessorIds: [`${conditionInstance}:entry`], entrySuccessorIds: [`${conditionInstance}:get-cart`],
+    entryPredecessorIds: [`${conditionInstance}:entry`], entrySuccessorIds: [`${conditionInstance}:trim`],
+    decisionPredecessorIds: [`${conditionInstance}:entry`, `${conditionInstance}:is-empty`],
     exitPredecessorIds: [`${conditionInstance}:get-cart`], continuationIds: [],
     arms: [
       { label: "if", empty: false, exits: [{ kind: "continues" }] },
@@ -394,9 +395,9 @@ assert(conditionY("trim") < conditionY("is-empty"), "nested condition calls reta
 assert(conditionY("is-empty") < conditionY("get-cart"), "earlier condition route wins a DFS successor tie");
 assert(conditionY("get-cart") < conditionY("return"), "selected body remains before its return");
 assert(
-  conditionLayout.branches[0].y > conditionY("entry")
+  conditionLayout.branches[0].y > conditionY("is-empty")
     && conditionLayout.branches[0].y < conditionY("get-cart"),
-  "branch controls are anchored at structure entry, before the selected body",
+  "branch controls follow the latest condition predecessor and precede the selected body",
 );
 
 // Projection has already bridged structural decisions while retaining their

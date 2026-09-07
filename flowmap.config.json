@@ -1,4 +1,4 @@
 {
   "sourceDir": "../evaluation/codebase/jpetstore-6/src/main",
-  "outputDir": "../evaluation/flowmap_result/jpetstore-6/cold_1/output"
+  "outputDir": "evaluation/results/jpetstore-6/smoke/run-03"
 }

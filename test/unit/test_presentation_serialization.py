@@ -14,7 +14,7 @@ from model import (
     MethodDefinition,
     Node,
 )
-from presentation.serialization import _serialize_method
+from presentation.serialization import _serialize_leaf, _serialize_method
 
 
 METHOD = "Example.run:void()"
@@ -70,7 +70,7 @@ def test_method_serialization_preserves_structure_contract_and_cfg_order() -> No
         )],
     )
 
-    serialized = _serialize_method(method, None, {"entry"})
+    serialized = _serialize_method(method, None, {"entry"}, set())
 
     assert serialized["calls"]["call"]["continuationIds"] == [
         "z_target", "a_target"
@@ -87,3 +87,44 @@ def test_method_serialization_preserves_structure_contract_and_cfg_order() -> No
     transfer = next(node for node in serialized["nodes"] if node["id"] == "break")
     assert transfer["transferKind"] == "break"
     assert transfer["targetStructureGroupId"] == "loop"
+
+
+def test_method_serialization_references_shared_leaves_without_copying_them() -> None:
+    entry = Node("entry", "entry", calleeFullName=METHOD)
+    method = MethodDefinition(
+        entryId="entry",
+        methodFullName=METHOD,
+        entry=entry,
+        nodes=[
+            Node("first", "call", callerMethod=METHOD),
+            Node("second", "call", callerMethod=METHOD),
+        ],
+        invokeEdges=[
+            Edge("first", "external", "invoke"),
+            Edge("second", "external", "invoke"),
+        ],
+    )
+
+    serialized = _serialize_method(method, None, {"entry"}, {"external"})
+
+    assert serialized["calls"]["first"]["targetLeafIds"] == ["external"]
+    assert serialized["calls"]["second"]["targetLeafIds"] == ["external"]
+    assert all(node["id"] != "external" for node in serialized["nodes"])
+
+
+def test_leaf_serialization_contains_only_compact_display_identity() -> None:
+    leaf = Node(
+        "external",
+        "leaf",
+        calleeFullName="com.example.client.External.send:java.lang.String(int)",
+        callerMethod=METHOD,
+        code="external.send(value)",
+        line=42,
+        sourceFile="Example.java",
+    )
+
+    assert _serialize_leaf(leaf) == {
+        "id": "external",
+        "type": "leaf",
+        "calleeFullName": "External.send",
+    }

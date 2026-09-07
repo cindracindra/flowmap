@@ -49,6 +49,7 @@ class StatsTests(unittest.TestCase):
             "request_batches": 3, "retry_items": 2,
             "parse_failures": {"malformed_json": 1, "missing_id": 1},
         })
+        recorder.finish(success=True)
         with tempfile.TemporaryDirectory() as directory:
             output = recorder.write_json(Path(directory) / "run.json")
             payload = json.loads(output.read_text())
@@ -58,6 +59,12 @@ class StatsTests(unittest.TestCase):
         self.assertEqual(
             payload["llm_batches"][0]["parse_failures"]["malformed_json"], 1
         )
+        self.assertTrue(payload["success"])
+        self.assertIsNotNone(payload["finished_at"])
+        self.assertEqual(payload["totals"]["llm_requests"], 1)
+        self.assertEqual(payload["totals"]["llm_retry_items"], 2)
+        self.assertIn("process_cpu_seconds", payload["stages"][0])
+        self.assertIn("peak_process_tree_rss_bytes", payload["stages"][0])
 
 
 if __name__ == "__main__":

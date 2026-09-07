@@ -2,7 +2,12 @@ import json
 import functools
 import argparse
 import atexit
+import hashlib
+import os
+import platform
+import subprocess
 from dataclasses import asdict
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 import sys
 from typing import Any
@@ -21,6 +26,7 @@ from datetime import datetime
 
 from llm.client import PROVIDERS, get_client
 from joern.joern_session import JoernSession
+from joern.util import find_joern
 from service.cpg import parse_project
 from service.cfg import (
     attach_targeted_data_edges,
@@ -64,8 +70,8 @@ from data.code_eval import EvaluationRecorder, collect_codebase_stats, collect_g
 with (PROJECT_ROOT / "flowmap.config.json").open() as config_file:
     FLOWMAP_CONFIG = json.load(config_file)
 
-SOURCE_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["sourceDir"]).resolve()
-OUTPUT_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["outputDir"]).resolve()
+DEFAULT_SOURCE_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["sourceDir"]).resolve()
+DEFAULT_OUTPUT_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["outputDir"]).resolve()
 
 
 def export_to_json(output_path: Path, content: Any) -> None:
@@ -132,10 +138,6 @@ def root_method_full_names(graph: Graph) -> dict[str, str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate FlowMap analysis artifacts.")
-    default_eval_output = (
-        OUTPUT_DIR.parent
-        / f"run-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
-    )
     parser.add_argument(
         "--provider",
         choices=PROVIDERS,
@@ -143,10 +145,53 @@ def parse_args() -> argparse.Namespace:
         help="LLM provider used for all model calls (default: groq).",
     )
     parser.add_argument(
+        "--source-dir",
+        type=Path,
+        default=DEFAULT_SOURCE_DIR,
+        help="Java source tree to analyse (default: flowmap.config.json).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help="Unique directory for this run's generated artifacts.",
+    )
+    parser.add_argument(
+        "--run-id",
+        help="Stable experiment run identifier (default: generated UUID).",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=11,
+        help="Random seed used by stochastic local analysis (default: 11).",
+    )
+    parser.add_argument(
+        "--joern-port",
+        type=int,
+        default=8080,
+        help="Port for the private Joern server process (default: 8080).",
+    )
+    parser.add_argument(
+        "--cpg-path",
+        type=Path,
+        help=("CPG cache path. Defaults to <output-dir>/cpg.bin; use an external "
+              "path to reuse one CPG across unique run directories."),
+    )
+    cpg_group = parser.add_mutually_exclusive_group()
+    cpg_group.add_argument(
+        "--reuse-cpg",
+        dest="force_cpg",
+        action="store_false",
+        help="Reuse --cpg-path when it exists (default).",
+    )
+    cpg_group.add_argument(
         "--force-cpg",
+        dest="force_cpg",
         action="store_true",
         help="Re-extract cpg.bin even when a cached artifact already exists.",
     )
+    parser.set_defaults(force_cpg=False)
     parser.add_argument(
         "--flowmap-preset",
         choices=tuple(FLOWMAP_PRESETS),
@@ -167,15 +212,140 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--eval-output",
         nargs="?",
-        const=str(default_eval_output),
+        const="__AUTO__",
         default=None,
         metavar="PATH",
         help=(
             "Record structured stage and LLM telemetry. If PATH is omitted, "
-            "write a timestamped file beside the configured output directory."
+            "write telemetry.json inside the selected output directory."
         ),
     )
     return parser.parse_args()
+
+
+_ARTIFACT_NAMES = {
+    "raw_cfg.json", "full_cfg.json", "graph_bundle.json", "topic_cluster.json",
+    "opseq_topic_assignment.json", "opseq_labels.json", "topic_operations.json",
+}
+
+
+def _prepare_paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
+    source_dir = args.source_dir.expanduser().resolve()
+    output_dir = args.output_dir.expanduser().resolve()
+    cpg_path = (
+        args.cpg_path.expanduser().resolve()
+        if args.cpg_path is not None
+        else output_dir / "cpg.bin"
+    )
+    if not source_dir.is_dir() or not any(source_dir.rglob("*.java")):
+        raise ValueError(f"source directory contains no Java files: {source_dir}")
+    existing = sorted(name for name in _ARTIFACT_NAMES if (output_dir / name).exists())
+    if existing:
+        raise FileExistsError(
+            f"output directory already contains FlowMap artifacts: {output_dir} "
+            f"({', '.join(existing)}). Use a unique --output-dir for every run."
+        )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cpg_path.parent.mkdir(parents=True, exist_ok=True)
+    return source_dir, output_dir, cpg_path
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _command_version(command: list[str]) -> str | None:
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    rendered = (result.stdout or result.stderr).strip()
+    return rendered.splitlines()[0] if rendered else None
+
+
+def _git_revision(path: Path) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return result.stdout.strip() or None
+
+
+def _git_dirty(path: Path) -> bool | None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "status", "--porcelain"],
+            check=True, capture_output=True, text=True, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return bool(result.stdout.strip())
+
+
+def _package_versions() -> dict[str, str | None]:
+    packages = ("numpy", "scikit-learn", "sentence-transformers", "umap-learn", "openai", "groq")
+    found: dict[str, str | None] = {}
+    for package in packages:
+        try:
+            found[package] = version(package)
+        except PackageNotFoundError:
+            found[package] = None
+    return found
+
+
+def _system_memory_bytes() -> int | None:
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (AttributeError, OSError, ValueError):
+        return None
+
+
+def _manifest(
+    args: argparse.Namespace, source_dir: Path, output_dir: Path, cpg_path: Path
+) -> dict[str, Any]:
+    prompt_path = PROJECT_ROOT / "backend/src/flowmap/llm/prompt.py"
+    config_payload = {
+        "flowmap_preset": args.flowmap_preset,
+        "whole_corpus_topics": args.whole_corpus_topics,
+        "seed": args.seed,
+    }
+    return {
+        "provider": args.provider,
+        "force_cpg": args.force_cpg,
+        "cpg_mode": "force" if args.force_cpg else "reuse",
+        "cpg_path": str(cpg_path),
+        "whole_corpus_topics": args.whole_corpus_topics,
+        "flowmap_preset": args.flowmap_preset,
+        "seed": args.seed,
+        "source_dir": str(source_dir),
+        "output_dir": str(output_dir),
+        "flowmap_git_revision": _git_revision(PROJECT_ROOT),
+        "flowmap_git_dirty": _git_dirty(PROJECT_ROOT),
+        "subject_git_revision": _git_revision(source_dir),
+        "subject_git_dirty": _git_dirty(source_dir),
+        "configuration_sha256": hashlib.sha256(
+            json.dumps(config_payload, sort_keys=True).encode()
+        ).hexdigest(),
+        "prompt_sha256": _sha256(prompt_path),
+        "temperature": 0,
+        "reasoning_effort": "low",
+        "llm_models": {
+            "small": "openai/gpt-oss-20b",
+            "large": "openai/gpt-oss-120b",
+        },
+        "joern_port": args.joern_port,
+        "java_version": _command_version(["java", "-version"]),
+        "joern_version": _command_version([find_joern(), "--version"]),
+        "command": sys.argv,
+        "machine": platform.machine(),
+        "processor": platform.processor(),
+        "logical_cpu_count": os.cpu_count(),
+        "system_memory_bytes": _system_memory_bytes(),
+        "package_versions": _package_versions(),
+    }
 
 
 @contextmanager
@@ -205,21 +375,25 @@ def timed(
 if __name__ == "__main__":
     load_dotenv()
     args = parse_args()
+    SOURCE_DIR, OUTPUT_DIR, cpg_output_path = _prepare_paths(args)
+    if args.eval_output == "__AUTO__":
+        args.eval_output = str(OUTPUT_DIR / "telemetry.json")
     recorder = (
-        EvaluationRecorder(manifest={
-            "provider": args.provider,
-            "force_cpg": args.force_cpg,
-            "whole_corpus_topics": args.whole_corpus_topics,
-            "flowmap_preset": args.flowmap_preset,
-            "source_dir": str(SOURCE_DIR),
-            "output_dir": str(OUTPUT_DIR),
-        })
+        EvaluationRecorder(
+            run_id=args.run_id,
+            manifest=_manifest(args, SOURCE_DIR, OUTPUT_DIR, cpg_output_path),
+        )
         if args.eval_output is not None else None
     )
+    partial_writer = None
     if recorder is not None:
         # Preserve partial telemetry on uncaught failures (including the failed
         # stage recorded by EvaluationRecorder.stage).
-        atexit.register(recorder.write_json, args.eval_output)
+        def write_partial() -> None:
+            recorder.finish(success=False)
+            recorder.write_json(args.eval_output)
+        partial_writer = write_partial
+        atexit.register(partial_writer)
     client = get_client(
         args.provider,
         telemetry_sink=recorder.record_llm_call if recorder is not None else None,
@@ -230,12 +404,15 @@ if __name__ == "__main__":
 
     # 1. Reuse the cached CPG unless the caller explicitly invalidates it.
     with timed("CPG preparation", recorder):
-        cpg_output_path = Path(OUTPUT_DIR) / "cpg.bin"
-        if args.force_cpg or not cpg_output_path.exists():
+        cpg_existed = cpg_output_path.exists()
+        if args.force_cpg or not cpg_existed:
             parse_project(SOURCE_DIR, cpg_output_path)
+        if recorder is not None:
+            recorder.run.manifest["cpg_sha256"] = _sha256(cpg_output_path)
+            recorder.run.manifest["cpg_rebuilt"] = args.force_cpg or not cpg_existed
 
     # 2–5. Keep Joern queries separate so structural CFG and DDG cost are visible.
-    session = JoernSession(port=8080)
+    session = JoernSession(port=args.joern_port)
     try:
         with timed("Joern startup and CPG load", recorder):
             session.start()
@@ -307,9 +484,11 @@ if __name__ == "__main__":
         )
 
     # Topics describe the codebase documents and do not depend on CFG slices.
+    topic_output_stats: dict[str, int | float | str | None] = {}
     with timed(
         "Topic clustering", recorder,
         input_stats={"classes": len(class_docs), "methods": len(method_docs)},
+        output_stats=topic_output_stats,
     ):
         readme_docs = extract_readme_documents(SOURCE_DIR, class_docs)
         class_by_full_name = {document.fullName: document for document in class_docs}
@@ -317,6 +496,7 @@ if __name__ == "__main__":
             class_docs,
             readme_docs,
             config=flowmap_config_for_preset(args.flowmap_preset),
+            random_state=args.seed,
             label_fn=functools.partial(
                 label_clusters, client, class_by_full_name=class_by_full_name
             ),
@@ -324,6 +504,18 @@ if __name__ == "__main__":
             force_whole_corpus=args.whole_corpus_topics,
         )
         topic_clusters = topic_discovery.clusters
+        noise_classes = sum(
+            len(cluster.member_full_names)
+            for cluster in topic_clusters if cluster.label == -1
+        )
+        topic_output_stats.update(
+            topics=sum(cluster.label != -1 for cluster in topic_clusters),
+            noise_classes=noise_classes,
+            coverage=(
+                0.0 if not class_docs else (len(class_docs) - noise_classes) / len(class_docs)
+            ),
+            whole_corpus_fallback=any(cluster.fallback for cluster in topic_clusters),
+        )
 
     # Build reusable method topology once for graph-bundle export.
     with timed("Method definition construction", recorder):
@@ -332,7 +524,10 @@ if __name__ == "__main__":
         )
 
     # Method analysis and method labelling are independent operations.
-    with timed("Method-level phase analysis", recorder):
+    phase_output_stats: dict[str, int | float | str | None] = {}
+    with timed(
+        "Method-level phase analysis", recorder, output_stats=phase_output_stats
+    ):
         phase_gate_resolver = functools.partial(
             resolve_execution_phase_gate_batch, client
         )
@@ -340,6 +535,18 @@ if __name__ == "__main__":
             filtered_cfg,
             methods_by_entry_id,
             phase_gate_resolver,
+        )
+        analyses = tuple(phase_analysis.analyses_by_entry_id.values())
+        phase_output_stats.update(
+            analysed_methods=len(analyses),
+            phases=sum(len(analysis.phases) for analysis in analyses),
+            phase_members=sum(
+                len(phase.nodes) for analysis in analyses for phase in analysis.phases
+            ),
+            retained_calls=sum(len(analysis.retained_call_ids) for analysis in analyses),
+            unresolved_gates=sum(len(analysis.unresolved_gates) for analysis in analyses),
+            unresolved_gate_questions=len(phase_analysis.unresolved_gate_questions),
+            excluded_operations=len(phase_analysis.excluded),
         )
 
     with timed("Method-level phase labelling", recorder):
@@ -361,9 +568,11 @@ if __name__ == "__main__":
         operation_output_stats["total_edges"] = sum(len(graph.edges) for graph in opseqs.values())
 
     # 11–12. Assign every operation to topics and generate its display name.
+    assignment_output_stats: dict[str, int | float | str | None] = {}
     with timed(
         "Operation topic assignment and naming", recorder,
         input_stats={"operations": len(opseqs), "topics": len(topic_clusters)},
+        output_stats=assignment_output_stats,
     ):
         opseq_topic_assignment = assign_operation_sequences_to_topics(
             opseqs,
@@ -379,6 +588,11 @@ if __name__ == "__main__":
             label_fn=functools.partial(
                 label_operation_sequences_with_llm, client
             ),
+        )
+        assignment_output_stats.update(
+            assigned_operations=sum(bool(items) for items in opseq_topic_assignment.values()),
+            unassigned_operations=sum(not items for items in opseq_topic_assignment.values()),
+            labelled_operations=sum(bool(label) for label in opseq_labels.values()),
         )
 
     # Build and export every artifact only after all analysis is complete.
@@ -418,6 +632,11 @@ if __name__ == "__main__":
         )
 
     if recorder is not None:
+        recorder.run.manifest["artifact_sha256"] = {
+            name: _sha256(OUTPUT_DIR / name) for name in sorted(_ARTIFACT_NAMES)
+        }
+        recorder.finish(success=True)
         evaluation_path = recorder.write_json(args.eval_output)
-        atexit.unregister(recorder.write_json)
+        if partial_writer is not None:
+            atexit.unregister(partial_writer)
         print(f"Evaluation telemetry written to {evaluation_path}")

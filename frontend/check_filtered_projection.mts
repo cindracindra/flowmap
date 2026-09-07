@@ -475,8 +475,7 @@ assert.deepEqual(
 );
 
 // Authoritative entry/exit anchors survive projection as boundary metadata,
-// while canonical condition calls become arm-row aliases rather than graph
-// rows. This covers the Package 19 contract end to end.
+// while executable condition calls remain graph rows.
 const anchored = method(
   "anchored-entry", "Example.anchored:void()",
   [
@@ -513,11 +512,95 @@ const anchoredBundle: GraphBundle = {
 const anchoredProjection = projectVisibleGraph(anchoredBundle, "anchored", new Set())!;
 const anchoredInstance = "operation:anchored/root:anchored-entry";
 const anchoredGroup = anchoredProjection.branchGroups[0];
-assert.equal(anchoredProjection.nodes.some((node) => node.definitionNodeId === "condition"), false);
+assert.equal(anchoredProjection.nodes.some((node) => node.definitionNodeId === "condition"), true);
 assert.deepEqual(anchoredGroup.entryPredecessorIds, [`${anchoredInstance}:anchored-entry`]);
-assert.deepEqual(anchoredGroup.entrySuccessorIds, [`${anchoredInstance}:body`]);
+assert.deepEqual(anchoredGroup.entrySuccessorIds, [`${anchoredInstance}:condition`]);
+assert.deepEqual(anchoredGroup.decisionPredecessorIds, [`${anchoredInstance}:condition`]);
 assert.deepEqual(anchoredGroup.exitPredecessorIds, [`${anchoredInstance}:body`]);
 assert.deepEqual(anchoredGroup.continuationIds, [`${anchoredInstance}:after`]);
 assert.equal(anchoredGroup.conditionStages?.[0].code, "ready()");
+
+// One shared leaf definition materialises independently beneath every call.
+const leafMethod = method(
+  "leaf-entry", "Example.leaves:void()",
+  [
+    { id: "first-external", type: "call" },
+    { id: "second-external", type: "call" },
+  ],
+  [
+    { from: "leaf-entry", to: "first-external", type: "sequence" },
+    { from: "first-external", to: "second-external", type: "sequence" },
+  ],
+  {
+    "first-external": {
+      callNodeId: "first-external", targetEntryIds: [],
+      targetLeafIds: ["shared-leaf"], continuationIds: ["second-external"],
+    },
+    "second-external": {
+      callNodeId: "second-external", targetEntryIds: [],
+      targetLeafIds: ["shared-leaf"], continuationIds: [],
+    },
+  },
+  [{ id: "leaf-phase", memberNodeIds: ["first-external", "second-external"] }],
+);
+leafMethod.branchGroups = [{
+  id: "leaf-condition",
+  kind: "IF",
+  entryNodeId: "leaf-entry",
+  conditionStages: [{
+    id: "leaf-condition:stage",
+    nodeIds: ["first-external", "second-external"],
+  }],
+  arms: [
+    { label: "if", empty: false, exits: [{ kind: "continues" }] },
+    { label: "else", empty: true, exits: [{ kind: "continues" }] },
+  ],
+}];
+const leafBundle: GraphBundle = {
+  methodsByEntryId: { "leaf-entry": leafMethod },
+  leavesById: {
+    "shared-leaf": {
+      id: "shared-leaf", type: "leaf", calleeFullName: "External.send:void()",
+    },
+  },
+  operationsById: {
+    leaves: { id: "leaves", rootEntryId: "leaf-entry", reachableMethodEntryIds: ["leaf-entry"] },
+  },
+  callersByEntryId: { "leaf-entry": [] },
+  operationIdsByMethodEntryId: { "leaf-entry": ["leaves"] },
+};
+const collapsedLeafProjection = projectVisibleGraph(leafBundle, "leaves", new Set())!;
+assert.equal(collapsedLeafProjection.nodes.some((node) => node.node.type === "leaf"), false);
+assert.equal(collapsedLeafProjection.edges.some((edge) => edge.kind === "invoke"), false);
+assert(collapsedLeafProjection.nodes
+  .filter((node) => node.node.type === "call")
+  .every((node) => node.expandable && !node.expanded));
+const leafRootInstance = "operation:leaves/root:leaf-entry";
+const leafProjection = projectVisibleGraph(leafBundle, "leaves", new Set([
+  callInstanceId(leafRootInstance, "first-external"),
+  callInstanceId(leafRootInstance, "second-external"),
+]))!;
+const visibleLeaves = leafProjection.nodes.filter((node) => node.node.type === "leaf");
+assert.equal(
+  leafProjection.nodes.filter((node) => node.node.type === "call").length,
+  2,
+  "condition call sites remain visible",
+);
+assert.equal(visibleLeaves.length, 2);
+assert.notEqual(visibleLeaves[0].id, visibleLeaves[1].id);
+assert(visibleLeaves.every((node) => !node.expandable && node.phase === undefined));
+const leafNodeById = new Map(leafProjection.nodes.map((node) => [node.id, node]));
+for (const leaf of visibleLeaves) {
+  const touchingEdges = leafProjection.edges.filter((edge) =>
+    edge.from === leaf.id || edge.to === leaf.id);
+  assert.equal(touchingEdges.length, 1, "a leaf has exactly one call-site attachment");
+  assert.equal(touchingEdges[0].kind, "invoke", "no sequence edge may touch a leaf");
+  assert.equal(touchingEdges[0].to, leaf.id);
+  assert.equal(
+    leafNodeById.get(touchingEdges[0].from)?.node.type,
+    "call",
+    "only a call node may connect to a leaf",
+  );
+}
 
 console.log("filtered projection checks passed");

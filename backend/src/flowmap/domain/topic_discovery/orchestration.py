@@ -8,7 +8,7 @@ import numpy as np
 from model import ClassDocument, ReadmeDocument, TopicCluster
 
 from .clustering import cluster_embedded_corpus, embed_class_documents
-from .config import FlowMapConfig
+from .config import DEFAULT_FLOWMAP_CONFIG, FlowMapConfig
 from .context import attach_readme_context, centroids_from_embeddings
 from .labeling import ClusterLabelFn, apply_cluster_labels, build_clusters_with_top_terms
 
@@ -71,6 +71,7 @@ def discover_topics_with_centroids(
     label_fn: ClusterLabelFn | None = None,
     whole_corpus_fn: WholeCorpusGroupingFn | None = None,
     force_whole_corpus: bool = False,
+    random_state: int = DEFAULT_FLOWMAP_CONFIG["umap_random_state"],
 ) -> TopicDiscoveryResult:
     """Orchestrate embedding, clustering, labeling, fallback, and enrichment."""
     settings = config or FlowMapConfig()
@@ -90,7 +91,9 @@ def discover_topics_with_centroids(
             corpus.embeddings,
         )
 
-    cluster_ids = cluster_embedded_corpus(corpus, settings)
+    cluster_ids = cluster_embedded_corpus(
+        corpus, settings, random_state=random_state
+    )
     clusters = build_clusters_with_top_terms(
         corpus.classes,
         corpus.term_texts,

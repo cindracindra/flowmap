@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from domain.method_structure_validation import validate_all_method_structures
 from domain.method_scoping import build_method_definitions
 from domain.execution_phase.orchestration import ExecutionPhaseAnalysis
-from model import Graph, MethodDefinition
+from model import Graph, MethodDefinition, Node
 
 from .operation_definition import OperationDefinition
 
@@ -13,6 +13,7 @@ from .operation_definition import OperationDefinition
 @dataclass(slots=True)
 class GraphBundle:
     methodsByEntryId: dict[str, MethodDefinition]
+    leavesById: dict[str, Node]
     operationsById: dict[str, OperationDefinition]
     callersByEntryId: dict[str, list[str]]
     operationIdsByMethodEntryId: dict[str, list[str]]
@@ -96,6 +97,11 @@ def build_graph_bundle(
 
     return GraphBundle(
         methodsByEntryId=methods,
+        leavesById={
+            node.id: node
+            for node in filtered_graph.nodes
+            if node.type == "leaf"
+        },
         operationsById=operations,
         callersByEntryId={
             entry_id: sorted(callers)

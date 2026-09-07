@@ -22,6 +22,10 @@ function stringArray(value: unknown, field: string): string[] {
 export function loadGraphBundle(raw: unknown): GraphBundle {
   const bundle = record(raw, "root");
   const methods = record(bundle.methodsByEntryId, "methodsByEntryId");
+  // Older generated bundles predate the shared leaf registry.
+  const leaves = bundle.leavesById === undefined
+    ? {}
+    : record(bundle.leavesById, "leavesById");
   const operations = record(bundle.operationsById, "operationsById");
   const callers = record(bundle.callersByEntryId, "callersByEntryId");
   const operationMembership = record(
@@ -31,12 +35,30 @@ export function loadGraphBundle(raw: unknown): GraphBundle {
   const methodIds = new Set(Object.keys(methods));
   const operationIds = new Set(Object.keys(operations));
 
+  for (const [leafId, rawLeaf] of Object.entries(leaves)) {
+    const leaf = record(rawLeaf, `leavesById.${leafId}`);
+    if (leaf.id !== leafId || leaf.type !== "leaf") {
+      throw new Error(`[flowmap] leaf key ${leafId} has inconsistent identity`);
+    }
+  }
+
   for (const [entryId, rawMethod] of Object.entries(methods)) {
     const method = record(rawMethod, `methodsByEntryId.${entryId}`);
     if (method.entryId !== entryId) {
       throw new Error(`[flowmap] method key ${entryId} does not match its entryId`);
     }
-    record(method.calls, `methodsByEntryId.${entryId}.calls`);
+    const calls = record(method.calls, `methodsByEntryId.${entryId}.calls`);
+    for (const [callId, rawCall] of Object.entries(calls)) {
+      const call = record(rawCall, `methodsByEntryId.${entryId}.calls.${callId}`);
+      for (const leafId of stringArray(
+        call.targetLeafIds ?? [],
+        `methodsByEntryId.${entryId}.calls.${callId}.targetLeafIds`,
+      )) {
+        if (!(leafId in leaves)) {
+          throw new Error(`[flowmap] call ${callId} references missing leaf ${leafId}`);
+        }
+      }
+    }
     stringArray(method.retainedCallNodeIds, `methodsByEntryId.${entryId}.retainedCallNodeIds`);
     if (!Array.isArray(method.nodes) || !Array.isArray(method.sequenceEdges)
       || !Array.isArray(method.exits) || !Array.isArray(method.phases)) {

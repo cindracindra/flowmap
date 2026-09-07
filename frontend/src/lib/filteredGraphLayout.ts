@@ -268,7 +268,10 @@ function buildBranchCandidates(
       selectedArmByGroup.get(requirement.groupId) === requirement.armLabel)) return [];
     const selectedArm = group.arms.find((arm) => arm.label === group.selectedArmLabel);
     if (!selectedArm) return [];
-    const forkIds = group.kind === "TRY"
+    // Controls belong after condition evaluation. Prefer the visible
+    // predecessors of the decision anchor for both IF and TRY, falling back
+    // to the structure-entry boundary only when no decision is available.
+    const forkIds = group.decisionPredecessorIds.length > 0
       ? group.decisionPredecessorIds
       : group.entryPredecessorIds;
     const forkEntry = forkIds

@@ -42,6 +42,8 @@ class StageRecord:
     name: str
     started_at: str
     duration_seconds: float
+    process_cpu_seconds: float
+    peak_process_tree_rss_bytes: int | None
     success: bool
     input_stats: dict[str, int | float | str | None] = field(default_factory=dict)
     output_stats: dict[str, int | float | str | None] = field(default_factory=dict)
@@ -58,6 +60,9 @@ class LLMCallRecord:
     success: bool
     prompt_characters: int
     response_characters: int
+    prompt_sha256: str | None = None
+    temperature: float | None = None
+    reasoning_effort: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
@@ -81,11 +86,16 @@ class LLMBatchRecord:
 class RunRecord:
     run_id: str
     started_at: str
+    finished_at: str | None = None
+    duration_seconds: float | None = None
+    success: bool | None = None
+    peak_process_tree_rss_bytes: int | None = None
     codebase: CodebaseStats | None = None
     manifest: dict[str, Any] = field(default_factory=dict)
     stages: list[StageRecord] = field(default_factory=list)
     llm_calls: list[LLMCallRecord] = field(default_factory=list)
     llm_batches: list[LLMBatchRecord] = field(default_factory=list)
+    totals: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from domain.execution_phase.method_analysis import MethodAnalysis
-from model import BranchRequirement, MethodDefinition
+from model import BranchRequirement, MethodDefinition, Node
 
 from .graph_bundle import GraphBundle
 
@@ -12,23 +12,42 @@ def _ordered_unique(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def _serialize_leaf(leaf: Node) -> dict[str, Any]:
+    """Serialize only the terminal target identity needed for display."""
+    payload: dict[str, Any] = {"id": leaf.id, "type": "leaf"}
+    if leaf.calleeFullName:
+        signature_free = leaf.calleeFullName.split(":", 1)[0]
+        parts = signature_free.rsplit(".", 2)
+        payload["calleeFullName"] = (
+            ".".join(parts[-2:]) if len(parts) >= 2 else signature_free
+        )
+    elif leaf.reason:
+        payload["reason"] = leaf.reason
+    return payload
+
+
 def _serialize_method(
     method: MethodDefinition,
     analysis: MethodAnalysis | None,
     internal_entry_ids: set[str],
+    leaf_ids: set[str],
 ) -> dict[str, Any]:
     sequence_targets: dict[str, list[str]] = {}
     for edge in method.sequenceEdges:
         sequence_targets.setdefault(edge.source, []).append(edge.target)
     invoke_targets: dict[str, list[str]] = {}
+    leaf_targets: dict[str, list[str]] = {}
     for edge in method.invokeEdges:
         if edge.target in internal_entry_ids:
             invoke_targets.setdefault(edge.source, []).append(edge.target)
+        elif edge.target in leaf_ids:
+            leaf_targets.setdefault(edge.source, []).append(edge.target)
 
     calls = {
         node.id: {
             "callNodeId": node.id,
             "targetEntryIds": sorted(set(invoke_targets.get(node.id, ()))),
+            "targetLeafIds": sorted(set(leaf_targets.get(node.id, ()))),
             # Sequence edge encounter order is the canonical projected CFG
             # successor order. Deduplicate without replacing it by ID order.
             "continuationIds": _ordered_unique(
@@ -90,14 +109,20 @@ def serialize_graph_bundle(bundle: GraphBundle) -> dict[str, Any]:
     """Combine domain topology and analysis into the public JSON payload."""
 
     entry_ids = set(bundle.methodsByEntryId)
+    leaf_ids = set(bundle.leavesById)
     return {
         "methodsByEntryId": {
             entry_id: _serialize_method(
                 method,
                 bundle.phaseAnalysis.analyses_by_entry_id.get(entry_id),
                 entry_ids,
+                leaf_ids,
             )
             for entry_id, method in sorted(bundle.methodsByEntryId.items())
+        },
+        "leavesById": {
+            leaf_id: _serialize_leaf(leaf)
+            for leaf_id, leaf in sorted(bundle.leavesById.items())
         },
         "operationsById": {
             operation_id: operation.to_dict()

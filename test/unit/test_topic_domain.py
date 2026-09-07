@@ -276,6 +276,18 @@ class FlowMapConfigurationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "must be smaller"):
             reduce_embeddings(np.ones((5, 8)), n_components=5, n_neighbors=5)
 
+    def test_reduction_accepts_experiment_seed(self):
+        embeddings = np.ones((6, 8))
+        mock_umap = MagicMock()
+        mock_umap.return_value.fit_transform.return_value = np.ones((6, 5))
+
+        with patch.dict(sys.modules, {"umap": MagicMock(UMAP=mock_umap)}):
+            reduce_embeddings(
+                embeddings, n_components=5, n_neighbors=5, random_state=77
+            )
+
+        self.assertEqual(mock_umap.call_args.kwargs["random_state"], 77)
+
 
 class AttachReadmeContextTests(unittest.TestCase):
     def _classes(self):
