@@ -26,26 +26,25 @@ from service.phase import resolve_execution_phase_gate_batch  # noqa: E402
 from execution_phase_test_support import method_analysis_snapshot  # noqa: E402
 
 
-def _expected_prompt_payload(*, direct_flow: bool = True) -> dict:
+def _expected_prompt_payload() -> dict:
     missing = [
         "arguments",
-        "domain_types",
-        "fields_read",
-        "fields_written",
-        "method_terms",
-        "output_types",
+        "domainTypes",
+        "fieldsRead",
+        "fieldsWritten",
+        "methodTerms",
+        "outputTypes",
     ]
     return {
         "gateId": "validate-reserve",
         "method": "Checkout.submit",
         "boundaryKind": "operation-boundary",
         "systematicAssessment": {
-            "reasonCode": "INSUFFICIENT_EVIDENCE",
-            "confidence": 0.4,
-            "positiveEvidence": [],
-            "contradictoryEvidence": [],
+            "status": "insufficient evidence",
+            "observedSemanticOverlap": {},
+            "supportingEvidence": [],
+            "coreIdentityFullyObservedAndDisjoint": False,
             "missingObservations": {"left": missing, "right": missing},
-            "directFlowAcrossBoundary": direct_flow,
         },
         "leftGroup": {
             "coreSignature": {"receivers": ["validator"], "inputs": ["order"]},
@@ -101,14 +100,13 @@ def test_build_gate_question_uses_current_phase_context() -> None:
         gate,
         method,
         analysis,
-        frozenset({("validate", "reserve")}),
     )
 
     assert question is not None
     assert question.to_prompt_payload() == _expected_prompt_payload()
 
 
-def test_gate_direct_flow_uses_only_the_recorded_frontier_pair() -> None:
+def test_gate_payload_omits_direct_flow_assessment() -> None:
     method = _method()
     gate = UnresolvedGate("middle-reserve", "middle", "reserve", 0.4)
     analysis = MethodAnalysis(
@@ -121,11 +119,10 @@ def test_gate_direct_flow_uses_only_the_recorded_frontier_pair() -> None:
         gate,
         method,
         analysis,
-        frozenset({("validate", "reserve")}),
     )
 
     assert question is not None
-    assert question.direct_flow_across_boundary is False
+    assert "directFlowAcrossBoundary" not in json.dumps(question.to_prompt_payload())
 
 
 def test_build_gate_question_skips_gate_already_removed_by_merge() -> None:
@@ -133,7 +130,7 @@ def test_build_gate_question_skips_gate_already_removed_by_merge() -> None:
     gate = UnresolvedGate("validate-reserve", "validate", "reserve", 0.4)
     analysis = MethodAnalysis("entry", (Phase(nodes=["validate", "reserve"]),))
 
-    assert build_gate_question(gate, method, analysis, frozenset()) is None
+    assert build_gate_question(gate, method, analysis) is None
 
 
 def test_build_gate_questions_collects_current_gates_across_methods() -> None:
@@ -148,11 +145,10 @@ def test_build_gate_questions_collects_current_gates_across_methods() -> None:
     questions = build_gate_questions(
         {"entry": method},
         {"entry": analysis},
-        frozenset(),
     )
 
     assert [question.to_prompt_payload() for question in questions] == [
-        _expected_prompt_payload(direct_flow=False)
+        _expected_prompt_payload()
     ]
 
 
@@ -167,16 +163,31 @@ def test_resolve_uncertain_gates_merges_and_removes_answered_gate() -> None:
         )
     }
 
+    decisions = []
     resolved = resolve_uncertain_gates(
         {"entry": method},
         analyses,
-        frozenset(),
         lambda questions: {
             questions[0].id: ("MERGE", 0.9, ("llm:same responsibility",))
         },
+        decision_sink=decisions,
     )
 
     assert resolved == 1
+    assert [decision.to_dict() for decision in decisions] == [{
+        "question_id": "question:entry:validate-reserve",
+        "gate_id": "validate-reserve",
+        "method_entry_id": "entry",
+        "method_full_name": "Checkout.submit",
+        "left_id": "validate",
+        "right_id": "reserve",
+        "boundary_kind": "operation-boundary",
+        "reason_code": "INSUFFICIENT_EVIDENCE",
+        "action": "MERGE",
+        "confidence": 0.9,
+        "evidence": ("llm:same responsibility",),
+        "systematic_confidence": 0.4,
+    }]
     assert method_analysis_snapshot(analyses["entry"]) == method_analysis_snapshot(
         MethodAnalysis("entry", (Phase(nodes=["validate", "reserve"]),))
     )
@@ -196,7 +207,6 @@ def test_resolve_uncertain_gates_split_removes_gate_without_merging() -> None:
     resolve_uncertain_gates(
         {"entry": method},
         analyses,
-        frozenset(),
         lambda questions: {
             questions[0].id: ("SPLIT", 0.9, ("llm:separate responsibilities",))
         },
@@ -218,7 +228,7 @@ def test_phase_service_resolves_compact_gate_questions() -> None:
         (Phase(nodes=["validate"]), Phase(nodes=["reserve"])),
         unresolved_gates=(gate,),
     )
-    question = build_gate_question(gate, method, analysis, frozenset())
+    question = build_gate_question(gate, method, analysis)
     assert question is not None
     client = MagicMock()
     client.complete.return_value = json.dumps({
@@ -234,7 +244,7 @@ def test_phase_service_resolves_compact_gate_questions() -> None:
     }
     payload = json.loads(client.complete.call_args.kwargs["user"])
     system_prompt = client.complete.call_args.kwargs["system"]
-    expected_question = _expected_prompt_payload(direct_flow=False)
+    expected_question = _expected_prompt_payload()
     expected_question = {"id": question.id, **expected_question}
     assert payload == {
         "questions": [expected_question]
@@ -255,7 +265,7 @@ def test_phase_service_reports_split_and_invalid_results(capsys) -> None:
         (Phase(nodes=["validate"]), Phase(nodes=["reserve"])),
         unresolved_gates=(gate,),
     )
-    question = build_gate_question(gate, method, analysis, frozenset())
+    question = build_gate_question(gate, method, analysis)
     assert question is not None
     invalid_question = replace(question, id="question:invalid")
     client = MagicMock()
@@ -291,7 +301,7 @@ def test_phase_service_reports_invalid_json_after_retries(capsys) -> None:
         (Phase(nodes=["validate"]), Phase(nodes=["reserve"])),
         unresolved_gates=(gate,),
     )
-    question = build_gate_question(gate, method, analysis, frozenset())
+    question = build_gate_question(gate, method, analysis)
     assert question is not None
     client = MagicMock()
     client.complete.return_value = "{truncated"
@@ -312,7 +322,7 @@ def test_phase_service_retries_only_malformed_json_line() -> None:
         (Phase(nodes=["validate"]), Phase(nodes=["reserve"])),
         unresolved_gates=(gate,),
     )
-    first = build_gate_question(gate, method, analysis, frozenset())
+    first = build_gate_question(gate, method, analysis)
     assert first is not None
     second = replace(first, id="question:second")
     client = MagicMock()
@@ -345,15 +355,16 @@ def test_gate_question_marks_conflicting_systematic_evidence() -> None:
         unresolved_gates=(gate,),
     )
 
-    question = build_gate_question(gate, method, analysis, frozenset())
+    question = build_gate_question(gate, method, analysis)
 
     assert question is not None
-    expected = _expected_prompt_payload(direct_flow=False)
+    expected = _expected_prompt_payload()
     expected["boundaryKind"] = "structure-boundary"
     expected["systematicAssessment"].update({
-        "reasonCode": "CONFLICTING_EVIDENCE",
-        "confidence": 1.0,
-        "positiveEvidence": ["direct-data-flow"],
-        "contradictoryEvidence": ["complete-core-identity-disjoint"],
+        "status": "conflicting evidence",
+        "supportingEvidence": [
+            "Data flows directly from the left group to the right group"
+        ],
+        "coreIdentityFullyObservedAndDisjoint": True,
     })
     assert question.to_prompt_payload() == expected

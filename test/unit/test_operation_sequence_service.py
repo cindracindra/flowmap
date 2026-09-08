@@ -279,7 +279,7 @@ class OpseqLabelConcurrencyTests(unittest.TestCase):
         request = client.complete.call_args.kwargs
         self.assertNotIn("json_object", request)
         self.assertEqual(request["max_tokens"], 2048)
-        self.assertIn("unique within this request", request["system"])
+        self.assertIn("unique within this response", request["system"])
 
     def test_legacy_line_response_is_rejected(self):
         client = MagicMock()
@@ -362,7 +362,7 @@ class OpseqLabelConcurrencyTests(unittest.TestCase):
 
         self.assertEqual(result, {"first": None, "second": None, "m123": None})
         system = client.complete.call_args.kwargs["system"]
-        self.assertIn("OUTPUT FORMAT IS A STRICT CONTRACT", system)
+        self.assertIn("HARD OUTPUT CONTRACT", system)
         self.assertIn('"id":"exact-operation-id"', system)
         self.assertIn("JSON Lines", system)
         self.assertIn("malformed, duplicate, or missing", stderr.getvalue())
@@ -405,7 +405,7 @@ class OpseqLabelConcurrencyTests(unittest.TestCase):
             "first": "Create Account", "second": "Close Account",
         })
         retry = json.loads(client.complete.call_args_list[1].kwargs["user"])
-        self.assertEqual(retry["reservedLabels"], {"first": "Create Account"})
+        self.assertEqual(retry["reservedLabels"], ["Create Account"])
         self.assertEqual([item["id"] for item in retry["operations"]], ["second"])
         self.assertIn("left 1 operation(s) unresolved", stderr.getvalue())
         self.assertIn("retrying", stderr.getvalue())

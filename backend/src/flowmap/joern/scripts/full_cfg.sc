@@ -253,12 +253,23 @@ def buildFullCodebaseCfg(): ujson.Obj = {
     val bodyAstIds = bodyRoots.flatMap(_.start.ast.l.map(_.id)).toSet
     val guardIds = structure.condition.headOption.toList
       .flatMap(_.start.ast.l.map(_.id)).toSet
-    val initializerIds = blocks.dropRight(1)
+    // The Java frontend represents a traditional FOR with three BLOCK
+    // children: initializer, update, and body (empty clauses still have an
+    // empty block).  Treating every block before the body as initialization
+    // misclassifies the update block, so its calls lose loop ownership and
+    // can be mistaken for the statement after the loop.
+    val isTraditionalFor = structure.controlStructureType == "FOR"
+    val initializerRoots =
+      if (isTraditionalFor) blocks.headOption.toList else Nil
+    val updateRoots =
+      if (isTraditionalFor) blocks.slice(1, math.max(1, blocks.size - 1))
+      else Nil
+    val initializerIds = initializerRoots
       .flatMap(_.start.ast.l.map(_.id)).toSet
     val structuralIds = bodyAstIds ++ guardIds ++ initializerIds + structure.id
-    val updateIds = structure.astChildren.l
+    val updateIds = (updateRoots.flatMap(_.start.ast.l) ++ structure.astChildren.l
       .filterNot(child => structuralIds.contains(child.id))
-      .flatMap(_.start.ast.l.map(_.id)).toSet
+      .flatMap(_.start.ast.l)).map(_.id).toSet
     val continuationIds = allAstNodes.collect { case node: CfgNode => node }
       .flatMap(_.start.cfgNext.l)
       .filterNot(next => loopAstIds.contains(next.id))

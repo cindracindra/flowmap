@@ -48,6 +48,7 @@ from domain.topic_discovery import (
     discover_topics_with_centroids,
     extract_readme_documents,
     flowmap_config_for_preset,
+    summarize_topic_coverage,
 )
 from domain.cfg_slicing import filter_and_classify_roots_and_orphans
 from domain.operation_sequence import (
@@ -226,6 +227,7 @@ def parse_args() -> argparse.Namespace:
 _ARTIFACT_NAMES = {
     "raw_cfg.json", "full_cfg.json", "graph_bundle.json", "topic_cluster.json",
     "opseq_topic_assignment.json", "opseq_labels.json", "topic_operations.json",
+    "phase_gate_decisions.json",
 }
 
 
@@ -504,16 +506,14 @@ if __name__ == "__main__":
             force_whole_corpus=args.whole_corpus_topics,
         )
         topic_clusters = topic_discovery.clusters
-        noise_classes = sum(
-            len(cluster.member_full_names)
-            for cluster in topic_clusters if cluster.label == -1
-        )
+        topic_coverage = summarize_topic_coverage(class_docs, topic_clusters)
         topic_output_stats.update(
             topics=sum(cluster.label != -1 for cluster in topic_clusters),
-            noise_classes=noise_classes,
-            coverage=(
-                0.0 if not class_docs else (len(class_docs) - noise_classes) / len(class_docs)
-            ),
+            topic_document_classes=topic_coverage.represented_classes,
+            clustered_classes=topic_coverage.clustered_classes,
+            noise_classes=topic_coverage.noise_classes,
+            omitted_classes=topic_coverage.omitted_classes,
+            coverage=topic_coverage.coverage,
             whole_corpus_fallback=any(cluster.fallback for cluster in topic_clusters),
         )
 
@@ -528,6 +528,13 @@ if __name__ == "__main__":
     with timed(
         "Method-level phase analysis", recorder, output_stats=phase_output_stats
     ):
+        def report_method_progress(completed: int, total: int) -> None:
+            if completed % 100 == 0 or completed == total:
+                print(
+                    f"[method-phase] analysed {completed}/{total} methods",
+                    flush=True,
+                )
+
         phase_gate_resolver = functools.partial(
             resolve_execution_phase_gate_batch, client
         )
@@ -535,6 +542,7 @@ if __name__ == "__main__":
             filtered_cfg,
             methods_by_entry_id,
             phase_gate_resolver,
+            progress_callback=report_method_progress,
         )
         analyses = tuple(phase_analysis.analyses_by_entry_id.values())
         phase_output_stats.update(
@@ -547,6 +555,15 @@ if __name__ == "__main__":
             unresolved_gates=sum(len(analysis.unresolved_gates) for analysis in analyses),
             unresolved_gate_questions=len(phase_analysis.unresolved_gate_questions),
             excluded_operations=len(phase_analysis.excluded),
+            llm_gate_decisions=len(phase_analysis.resolved_gate_decisions),
+            llm_gate_merges=sum(
+                decision.action == "MERGE"
+                for decision in phase_analysis.resolved_gate_decisions
+            ),
+            llm_gate_splits=sum(
+                decision.action == "SPLIT"
+                for decision in phase_analysis.resolved_gate_decisions
+            ),
         )
 
     with timed("Method-level phase labelling", recorder):
@@ -629,6 +646,13 @@ if __name__ == "__main__":
                 opseq_labels,
                 root_methods,
             ),
+        )
+        export_to_json(
+            Path(OUTPUT_DIR) / "phase_gate_decisions.json",
+            [
+                decision.to_dict()
+                for decision in phase_analysis.resolved_gate_decisions
+            ],
         )
 
     if recorder is not None:

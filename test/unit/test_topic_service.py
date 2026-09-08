@@ -367,17 +367,56 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(len(result[0].member_full_names), 3)
 
-    def test_drops_hallucinated_class_name_not_in_corpus(self):
-        content = (
+    def test_retries_hallucinated_class_name_not_in_corpus(self):
+        invalid = (
             '{"groups": [{"label": "Account Mgmt", "member_full_names": '
             '["com.bank.account.AccountService", "com.bank.nonexistent.Fake"]}]}'
         )
         client = MagicMock()
-        client.complete.return_value = content
+        client.complete.side_effect = [
+            invalid,
+            '{"groups":[{"label":"Account Mgmt","member_full_names":'
+            '["com.bank.account.AccountService"]}]}',
+        ]
 
         result = topic.discover_topics_whole_corpus(client, self.docs)
         members = [name for cluster in result for name in cluster.member_full_names]
         self.assertNotIn("com.bank.nonexistent.Fake", members)
+        self.assertEqual(client.complete.call_count, 2)
+
+    def test_retries_invalid_whole_corpus_group_contracts(self):
+        valid = (
+            '{"groups":[{"label":"Account Mgmt","member_full_names":'
+            '["com.bank.account.AccountService"]}]}'
+        )
+        invalid_responses = [
+            # Additional top-level and group keys violate the exact contract.
+            '{"groups":[],"extra":true}',
+            '{"groups":[{"label":"Accounts","member_full_names":'
+            '["com.bank.account.AccountService"],"extra":true}]}',
+            # Labels and class membership must be non-empty and unique.
+            '{"groups":[{"label":" ","member_full_names":'
+            '["com.bank.account.AccountService"]}]}',
+            '{"groups":[{"label":"Accounts","member_full_names":[]}]}',
+            '{"groups":[{"label":"Accounts","member_full_names":'
+            '["com.bank.account.AccountService","com.bank.account.AccountService"]}]}',
+            '{"groups":[{"label":"Accounts","member_full_names":'
+            '["com.bank.account.AccountService"]},{"label":"accounts",'
+            '"member_full_names":["com.bank.payment.PaymentService"]}]}',
+            '{"groups":[{"label":"Accounts","member_full_names":'
+            '["com.bank.account.AccountService"]},{"label":"Payments",'
+            '"member_full_names":["com.bank.account.AccountService"]}]}',
+        ]
+
+        for invalid in invalid_responses:
+            with self.subTest(invalid=invalid):
+                client = MagicMock()
+                client.complete.side_effect = [invalid, valid]
+
+                result = topic.discover_topics_whole_corpus(client, self.docs)
+
+                self.assertEqual(client.complete.call_count, 2)
+                self.assertEqual(result[0].llm_label, "Account Mgmt")
 
     def test_includes_readme_context_in_prompt(self):
         readmes = [ReadmeDocument(path="README.md", package="com.bank.account", text="Docs")]

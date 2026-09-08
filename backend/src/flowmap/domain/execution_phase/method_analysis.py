@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 from domain.execution_phase.structure import (
     BranchStructure,
@@ -109,6 +110,9 @@ def effective_phase_count(
     analyses_by_entry_id: dict[str, MethodAnalysis],
     callee_entries_by_call_id: dict[str, tuple[str, ...]],
     _counting: set[str] | None = None,
+    _memo: dict[str, int | None] | None = None,
+    _cyclic: set[str] | None = None,
+    _incomplete: set[str] | None = None,
 ) -> int | None:
     """Return a resolved method's local plus retained effective phase count.
 
@@ -116,33 +120,58 @@ def effective_phase_count(
     indeterminate. A retained polymorphic call contributes the maximum count
     among its possible resolved targets.
     """
+    memo = _memo if _memo is not None else {}
+    cyclic = _cyclic if _cyclic is not None else set()
+    incomplete = _incomplete if _incomplete is not None else set()
+    if entry_id in memo:
+        if memo[entry_id] is None:
+            cyclic.add(entry_id)
+        return memo[entry_id]
+
     analysis = analyses_by_entry_id.get(entry_id)
     if analysis is None:
         return None
 
     counting = _counting if _counting is not None else set()
     if entry_id in counting:
+        cyclic.update(counting)
+        cyclic.add(entry_id)
         return None
     counting.add(entry_id)
     try:
         retained_count = 0
         for call_id in analysis.retained_call_ids:
-            target_counts = [
-                count
-                for target_entry_id in callee_entries_by_call_id.get(call_id, ())
-                if (
-                    count := effective_phase_count(
-                        target_entry_id,
-                        analyses_by_entry_id,
-                        callee_entries_by_call_id,
-                        counting,
-                    )
+            target_counts = []
+            for target_entry_id in callee_entries_by_call_id.get(call_id, ()):
+                count = effective_phase_count(
+                    target_entry_id,
+                    analyses_by_entry_id,
+                    callee_entries_by_call_id,
+                    counting,
+                    memo,
+                    cyclic,
+                    incomplete,
                 )
-                is not None
-            ]
+                if count is not None:
+                    target_counts.append(count)
+                elif target_entry_id in cyclic:
+                    cyclic.add(entry_id)
+                else:
+                    incomplete.add(entry_id)
             if target_counts:
                 retained_count += max(target_counts)
-        return len(analysis.phases) + retained_count
+        if entry_id in cyclic:
+            # Recursive expansion has no finite, order-independent effective
+            # phase count.  Keep the call retained instead of caching a number
+            # produced by whichever member of the cycle happened to run first.
+            memo[entry_id] = None
+            return None
+        result = len(analysis.phases) + retained_count
+        # A not-yet-resolved target may become available later in bottom-up
+        # resolution, so only complete acyclic counts are safe to memoise.
+        if entry_id not in incomplete:
+            memo[entry_id] = result
+        return result
     finally:
         counting.remove(entry_id)
 
@@ -151,15 +180,18 @@ def call_effective_phase_count(
     call_id: str,
     analyses_by_entry_id: dict[str, MethodAnalysis],
     callee_entries_by_call_id: dict[str, tuple[str, ...]],
+    _memo: dict[str, int | None] | None = None,
 ) -> int | None:
     targets = callee_entries_by_call_id.get(call_id, ())
     if not targets:
         return 0
+    memo = _memo if _memo is not None else {}
     counts = [
         effective_phase_count(
             target_entry_id,
             analyses_by_entry_id,
             callee_entries_by_call_id,
+            _memo=memo,
         )
         for target_entry_id in targets
     ]
@@ -177,6 +209,8 @@ def resolve(
     direct_flow_pairs: frozenset[tuple[str, str]],
     analyses_by_entry_id: dict[str, MethodAnalysis],
     resolving_entry_ids: set[str],
+    progress_callback: Callable[[int], None] | None = None,
+    effective_count_memo: dict[str, int | None] | None = None,
 ) -> MethodAnalysis | None:
     """Resolve one method after its non-recursive internal callees.
 
@@ -184,6 +218,7 @@ def resolve(
     on the active stack is recursive and remains conservatively unresolved for
     this first pass; its call site is therefore retained.
     """
+    memo = effective_count_memo if effective_count_memo is not None else {}
     if entry_id in analyses_by_entry_id:
         return analyses_by_entry_id[entry_id]
     if entry_id in resolving_entry_ids:
@@ -207,6 +242,8 @@ def resolve(
                     direct_flow_pairs=direct_flow_pairs,
                     analyses_by_entry_id=analyses_by_entry_id,
                     resolving_entry_ids=resolving_entry_ids,
+                    progress_callback=progress_callback,
+                    effective_count_memo=memo,
                 )
 
         retained_call_ids = frozenset(
@@ -217,6 +254,7 @@ def resolve(
                     call_id,
                     analyses_by_entry_id,
                     callee_entries_by_call_id,
+                    memo,
                 ))
                 is None
                 or count > 1
@@ -234,6 +272,8 @@ def resolve(
                 f"{result.method_entry_id!r}"
             )
         analyses_by_entry_id[entry_id] = result
+        if progress_callback is not None:
+            progress_callback(len(analyses_by_entry_id))
         return result
     finally:
         resolving_entry_ids.remove(entry_id)

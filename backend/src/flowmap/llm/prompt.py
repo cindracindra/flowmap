@@ -44,11 +44,14 @@ _WHOLE_CORPUS_SYSTEM_PROMPT = (
     "leaving a class out of every group is the correct way to exclude it.\n\n"
     "Group the remaining, genuinely feature-bearing classes by shared "
     "purpose; a class that doesn't clearly belong with others may still "
-    "be its own group if it represents a real distinct feature. HARD OUTPUT "
+    "be its own group if it represents a real distinct feature. Copy every "
+    "member_full_names value exactly from a supplied Class value. Do not place "
+    "one class in more than one group, do not repeat a class within a group, "
+    "and use a different non-empty label for every non-empty group. HARD OUTPUT "
     "CONTRACT: the complete response must be exactly one valid JSON object with "
     "no Markdown, commentary, or additional keys. It must match this shape: "
-    '{"groups": [{"label": "short label", '
-    '"member_full_names": ["fully.qualified.Name", ...]}]}'
+    '{"groups":[{"label":"Account Management",'
+    '"member_full_names":["com.example.AccountService"]}]}'
 )
 _WHOLE_CORPUS_RETRY_PROMPT = (
     _WHOLE_CORPUS_SYSTEM_PROMPT
@@ -72,7 +75,8 @@ _CLASSIFY_OPERATION_SYSTEM_PROMPT = (
     "HARD OUTPUT CONTRACT: return JSON Lines with exactly one complete object "
     "per operation and no surrounding array, Markdown, commentary, blank lines, "
     "or additional keys. Each non-empty line must match exactly: "
-    '{"id":"exact-operation-id","group_id":<integer topic id or null>}. '
+    '{"id":"operation-1","group_id":2}. Use null as group_id when no topic '
+    "fits. "
     "Return every supplied ID exactly once and do not invent IDs."
 )
 _CLASSIFY_OPERATION_RETRY_PROMPT = (
@@ -82,36 +86,24 @@ _CLASSIFY_OPERATION_RETRY_PROMPT = (
 )
 
 _LABEL_OPSEQ_BATCH_SYSTEM_PROMPT = (
-    "You are naming EVERY specific operation assigned to ONE feature topic. "
-    "Each operation is a single call chain through a Java codebase, rooted at "
-    "one entry point. Give every supplied operation ID a short 2-6 word "
-    "operational label (e.g. 'Fund Transfer', 'Password Reset', 'Order Checkout "
-    "via API', 'Create Bank Object').\n\n"
-    "Every operation contains its initiating entryPoint and an ordered "
-    "subsequentMethods list, both using compact Class.method names. Treat the "
-    "entryPoint as the primary indication of the operation's initiating intent. "
-    "Use subsequentMethods, in their supplied order, to refine the label with "
-    "the concrete action, domain object, channel, or outcome. Do not rely only "
-    "on a generic entry point when subsequent methods provide more specific "
-    "evidence. Shared subsequent methods give topic context but must not, by "
-    "themselves, be used to distinguish labels. You may also be given the "
-    "broader feature topic that all operations "
-    "in this request were assigned to. It uses the same id, label, "
-    "representativeTerms, and memberClasses shape as operation-to-topic "
-    "assignment. Treat the entry point and subsequent methods as the primary "
-    "evidence for "
-    "what each operation actually does.\n\n"
-    "If a topic IS given: its label names the broader feature area. Every "
-    "operation label must be MORE SPECIFIC than the topic label and must never "
-    "merely repeat or rephrase it. If NO topic is given: name each operation "
-    "solely from its own method evidence.\n\n"
-    "Labels must be unique within this request, compared case-insensitively. "
-    "When operations are similar, distinguish them using an evidenced difference "
-    "in their concrete action, object, channel, direction, or outcome. Never "
-    "invent an unsupported detail just to make two labels different.\n\n"
-    "OUTPUT FORMAT IS A STRICT CONTRACT. Return JSON Lines: exactly one complete "
+    "Give EVERY supplied Java operation a specific 2-6 word operational label. "
+    "The payload contains an optional broader topic, reservedLabels already "
+    "accepted for that topic, and the operations to label. Each operation has "
+    "an id, its initiating entryPoint, and an ordered subsequentMethods list; "
+    "method names use the compact Class.method form.\n\n"
+    "Infer each operation's intent primarily from entryPoint. Use "
+    "subsequentMethods to refine the concrete action, domain object, channel, "
+    "direction, or outcome. Treat topic as context only: when present, each "
+    "operation label must be more specific than the topic label and must not "
+    "repeat or rephrase it. When topic is null, use only the operation's method "
+    "evidence. Do not invent details that are not supported by the payload.\n\n"
+    "reservedLabels is a list of labels accepted from earlier batches for the "
+    "same topic. New labels must not repeat or rephrase a reserved label. They "
+    "must also be unique within this response, compared case-insensitively.\n\n"
+    "HARD OUTPUT CONTRACT: return JSON Lines with exactly one complete "
     "JSON object per operation and no surrounding array, Markdown, header, or "
-    "explanation or additional keys. Each non-empty line must match exactly: "
+    "explanation, blank lines, or additional keys. Each non-empty line must "
+    "match exactly: "
     "{\"id\":\"exact-operation-id\",\"label\":\"2-6 word label\"}. "
     "Return every supplied ID exactly once and do not invent IDs. Keeping records "
     "on independent lines allows valid records to be retained if another record "
@@ -121,8 +113,8 @@ _LABEL_OPSEQ_BATCH_SYSTEM_PROMPT = (
 _LABEL_OPSEQ_BATCH_RETRY_PROMPT = (
     _LABEL_OPSEQ_BATCH_SYSTEM_PROMPT
     + " This corrective request contains only unresolved operation IDs. Existing "
-      "reservedLabels belong to accepted results and must not be repeated or "
-      "rephrased. Return one valid JSON object line for every requested ID."
+      "valid results are retained. Return one valid JSON object line for every "
+      "requested ID."
 )
 
 _PHASE_GATE_SYSTEM_PROMPT = (
@@ -134,17 +126,16 @@ _PHASE_GATE_SYSTEM_PROMPT = (
     "Each question contains leftGroup and rightGroup. Both groups contain a "
     "coreSignature and an ordered list of operations. The question also contains "
     "a systematicAssessment explaining why deterministic analysis could not "
-    "resolve the boundary, together with its supporting, contradictory, and "
-    "missing evidence.\n\n"
+    "resolve the boundary. Its observedSemanticOverlap values range from 0.0 "
+    "to 1.0, where larger values indicate more shared semantic evidence. "
+    "coreIdentityFullyObservedAndDisjoint indicates whether the observed core "
+    "identities do not overlap. supportingEvidence contains plain-language "
+    "relationships, and missingObservations identifies unavailable evidence.\n\n"
     "The names leftGroup and rightGroup describe the input structure only. They "
     "do not imply that the groups should remain separate.\n\n"
     "Return MERGE when leftGroup and rightGroup collectively perform one coherent "
     "subprocess. Return SPLIT when they perform genuinely different operational "
     "responsibilities or represent a clear handoff between responsibilities.\n\n"
-    "systematicAssessment.directFlowAcrossBoundary indicates that data produced "
-    "by leftGroup is consumed by rightGroup. Treat this as evidence of "
-    "computational continuity supporting MERGE, unless the semantic evidence "
-    "clearly indicates a handoff between different responsibilities.\n\n"
     "Use boundaryKind only as control-flow context. Do not treat the existence of "
     "a structural or operation boundary as evidence that the groups must be "
     "split. Answer every supplied question exactly once.\n\n"
@@ -257,7 +248,9 @@ def operation_label_payload(
     }
     return {
         "topic": topic_context_payload(cluster) if cluster is not None else None,
-        "reservedLabels": dict(reserved_labels),
+        # Only the accepted label text constrains later batches. Omitting the
+        # operation IDs keeps this cumulative topic context compact.
+        "reservedLabels": list(reserved_labels.values()),
         "operations": [
             {
                 "id": operation_id,

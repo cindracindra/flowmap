@@ -336,6 +336,19 @@ public class OperationalChains {
         doX();
     }
 
+    private void forLoopWithTwoUpdatesAndBreakShape(
+            String expected, String actual, int prefix) {
+        int expectedSuffix = expected.length() - 1;
+        int actualSuffix = actual.length() - 1;
+        for (; actualSuffix >= prefix && expectedSuffix >= prefix;
+                actualSuffix--, expectedSuffix--) {
+            if (expected.charAt(expectedSuffix) != actual.charAt(actualSuffix)) {
+                break;
+            }
+        }
+        doX();
+    }
+
     private int advance(int value) {
         return value + 1;
     }

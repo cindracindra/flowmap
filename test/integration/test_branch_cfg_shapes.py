@@ -772,6 +772,48 @@ class BranchCfgShapeTests(unittest.TestCase):
             for edge in edges
         ))
 
+    def test_for_loop_with_two_updates_does_not_use_update_as_continuation(self):
+        method = self.method_name(
+            "forLoopWithTwoUpdatesAndBreakShape",
+            "java.lang.String,java.lang.String,int",
+        )
+        nodes = [
+            node for node in self.raw.nodes
+            if node.callerMethod == method or node.calleeFullName == method
+        ]
+        node_ids = {node.id for node in nodes}
+        loop = next(loop for loop in self.raw.loopGroups if loop.method == method)
+        updates = {
+            node.id for node in nodes
+            if node.type == "call"
+            and node.code in {"actualSuffix--", "expectedSuffix--"}
+        }
+        after = next(
+            node for node in nodes
+            if node.type == "call" and node.code == "this.doX()"
+        )
+        edges = [
+            edge for edge in self.raw.edges
+            if edge.type == "sequence"
+            and edge.source in node_ids
+            and edge.target in node_ids
+        ]
+
+        self.assertEqual(len(updates), 2)
+        self.assertTrue(all(loop.id in node.loopIds for node in nodes if node.id in updates))
+        self.assertTrue(any(
+            edge.source in updates and edge.target == loop.exitNodeId
+            for edge in edges
+        ))
+        self.assertTrue(any(
+            edge.source == loop.exitNodeId and edge.target == after.id
+            for edge in edges
+        ))
+        self.assertFalse(any(
+            edge.source == loop.exitNodeId and edge.target in updates
+            for edge in edges
+        ))
+
     def test_branch_followed_by_loop_body_work_converges_before_that_work(self):
         method = self.method_name(
             "loopWithBranchThenWorkShape", "boolean,boolean"

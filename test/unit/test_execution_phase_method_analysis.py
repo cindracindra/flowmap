@@ -9,6 +9,7 @@ sys.path.insert(0, str(FLOWMAP_SRC))
 from domain.execution_phase.method_analysis import (  # noqa: E402
     MethodAnalysis,
     analyse_method,
+    call_effective_phase_count,
     effective_phase_count,
     resolve,
 )
@@ -351,6 +352,82 @@ def test_effective_phase_count_includes_retained_callee_phases() -> None:
     assert effective_phase_count(
         "outer", analyses, {"call-inner": ("inner",)}
     ) == 3
+
+
+def test_effective_phase_count_covers_atomic_and_transparent_shapes() -> None:
+    analyses = {
+        "atomic": MethodAnalysis(
+            "atomic", (Phase(nodes=["work"]),), frozenset()
+        ),
+        "transparent": MethodAnalysis(
+            "transparent", (), frozenset({"delegate"})
+        ),
+    }
+    callees = {"delegate": ("atomic",)}
+    memo: dict[str, int | None] = {}
+
+    assert effective_phase_count("atomic", analyses, callees, _memo=memo) == 1
+    assert effective_phase_count("transparent", analyses, callees, _memo=memo) == 1
+    assert memo == {"atomic": 1, "transparent": 1}
+
+
+def test_effective_phase_count_uses_largest_polymorphic_target() -> None:
+    analyses = {
+        "caller": MethodAnalysis(
+            "caller", (Phase(nodes=["prepare"]),), frozenset({"dispatch"})
+        ),
+        "small": MethodAnalysis("small", (Phase(nodes=["one"]),)),
+        "large": MethodAnalysis(
+            "large", (Phase(nodes=["one"]), Phase(nodes=["two"]))
+        ),
+    }
+    callees = {"dispatch": ("small", "large")}
+
+    assert call_effective_phase_count("dispatch", analyses, callees) == 2
+    assert effective_phase_count("caller", analyses, callees) == 3
+
+
+def test_unresolved_target_is_not_cached_before_it_becomes_available() -> None:
+    analyses = {
+        "delegate": MethodAnalysis(
+            "delegate", (Phase(nodes=["local"]),), frozenset({"call-later"})
+        ),
+    }
+    callees = {"call-later": ("later",)}
+    memo: dict[str, int | None] = {}
+
+    assert effective_phase_count("delegate", analyses, callees, _memo=memo) == 1
+    assert "delegate" not in memo
+
+    analyses["later"] = MethodAnalysis(
+        "later", (Phase(nodes=["a"]), Phase(nodes=["b"]))
+    )
+    assert effective_phase_count("delegate", analyses, callees, _memo=memo) == 3
+
+
+def test_recursive_effective_counts_are_indeterminate_and_order_independent() -> None:
+    analyses = {
+        "left": MethodAnalysis(
+            "left", (Phase(nodes=["left-work"]),), frozenset({"call-right"})
+        ),
+        "right": MethodAnalysis(
+            "right",
+            (Phase(nodes=["right-a"]), Phase(nodes=["right-b"])),
+            frozenset({"call-left"}),
+        ),
+    }
+    callees = {
+        "call-right": ("right",),
+        "call-left": ("left",),
+    }
+
+    for first, second in (("left", "right"), ("right", "left")):
+        memo: dict[str, int | None] = {}
+        assert effective_phase_count(first, analyses, callees, _memo=memo) is None
+        assert effective_phase_count(second, analyses, callees, _memo=memo) is None
+        assert call_effective_phase_count(
+            f"call-{second}", analyses, callees, memo
+        ) is None
 
 
 def test_recursive_reentry_is_retained_without_recursing_forever() -> None:

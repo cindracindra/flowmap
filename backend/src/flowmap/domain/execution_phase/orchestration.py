@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
+from typing import Callable
 
 from domain.execution_phase.exclusion import ExclusionReason, find_excluded_operations
 from domain.execution_phase.method_analysis import MethodAnalysis, resolve
@@ -17,6 +18,7 @@ from domain.execution_phase.retained_call_analysis import recheck_retained_calls
 from domain.execution_phase.resolution import (
     BatchGateResolver,
     UnresolvedGateQuestion,
+    ResolvedGateDecision,
     build_gate_questions,
     resolve_uncertain_gates,
 )
@@ -35,6 +37,7 @@ class ExecutionPhaseAnalysis:
     direct_flow_pairs: frozenset[tuple[str, str]]
     analyses_by_entry_id: dict[str, MethodAnalysis]
     unresolved_gate_questions: tuple[UnresolvedGateQuestion, ...]
+    resolved_gate_decisions: tuple[ResolvedGateDecision, ...] = ()
 
 
 def build_callee_index(
@@ -76,6 +79,7 @@ def execution_phase_analysis(
     filtered_graph: Graph,
     methods_by_entry_id: dict[str, MethodDefinition],
     gate_resolver: BatchGateResolver | None = None,
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> ExecutionPhaseAnalysis:
     """Build and systematically resolve phase-specific codebase structures.
 
@@ -92,6 +96,13 @@ def execution_phase_analysis(
 
     analyses_by_entry_id: dict[str, MethodAnalysis] = {}
     resolving_entry_ids: set[str] = set()
+    effective_count_memo: dict[str, int | None] = {}
+    total_methods = len(structures)
+
+    def report_progress(completed: int) -> None:
+        if progress_callback is not None:
+            progress_callback(completed, total_methods)
+
     for entry_id in methods_by_entry_id:
         if entry_id not in structures:
             continue
@@ -103,20 +114,22 @@ def execution_phase_analysis(
             direct_flow_pairs=direct_flow_pairs,
             analyses_by_entry_id=analyses_by_entry_id,
             resolving_entry_ids=resolving_entry_ids,
+            progress_callback=report_progress,
+            effective_count_memo=effective_count_memo,
         )
     
     unresolved_gate_questions = build_gate_questions(
         methods_by_entry_id,
         analyses_by_entry_id,
-        direct_flow_pairs,
     )
 
+    resolved_gate_decisions: list[ResolvedGateDecision] = []
     if gate_resolver is not None:
         resolve_uncertain_gates(
             methods_by_entry_id,
             analyses_by_entry_id,
-            direct_flow_pairs,
             gate_resolver,
+            decision_sink=resolved_gate_decisions,
         )
         recheck_retained_calls(
             methods_by_entry_id,
@@ -127,7 +140,6 @@ def execution_phase_analysis(
         unresolved_gate_questions = build_gate_questions(
             methods_by_entry_id,
             analyses_by_entry_id,
-            direct_flow_pairs,
         )
 
     return ExecutionPhaseAnalysis(
@@ -138,4 +150,5 @@ def execution_phase_analysis(
         direct_flow_pairs=direct_flow_pairs,
         analyses_by_entry_id=analyses_by_entry_id,
         unresolved_gate_questions=unresolved_gate_questions,
+        resolved_gate_decisions=tuple(resolved_gate_decisions),
     )

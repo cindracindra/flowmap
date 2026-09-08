@@ -138,19 +138,47 @@ def discover_topics_whole_corpus(
 
     def parse_groups(raw: str) -> dict | None:
         parsed = parse_json_object(raw)
-        if parsed is None or not isinstance(parsed.get("groups"), list):
+        if (
+            parsed is None
+            or set(parsed) != {"groups"}
+            or not isinstance(parsed["groups"], list)
+        ):
             return None
+        labels: set[str] = set()
+        assigned_members: set[str] = set()
+        validated_groups: list[dict[str, object]] = []
         for group in parsed["groups"]:
             if (
                 not isinstance(group, dict)
-                or not isinstance(group.get("label"), str)
-                or not isinstance(group.get("member_full_names"), list)
+                or set(group) != {"label", "member_full_names"}
+                or not isinstance(group["label"], str)
+                or not isinstance(group["member_full_names"], list)
                 or not all(
-                    isinstance(name, str) for name in group["member_full_names"]
+                    isinstance(name, str)
+                    for name in group["member_full_names"]
                 )
             ):
                 return None
-        return parsed
+            label = group["label"].strip()
+            members = group["member_full_names"]
+            normalized_label = label.casefold()
+            member_set = set(members)
+            if (
+                not label
+                or normalized_label in labels
+                or not members
+                or len(member_set) != len(members)
+                or not member_set.issubset(all_full_names)
+                or member_set & assigned_members
+            ):
+                return None
+            labels.add(normalized_label)
+            assigned_members.update(member_set)
+            validated_groups.append({
+                "label": label,
+                "member_full_names": list(members),
+            })
+        return {"groups": validated_groups}
 
     issues: list[str] = []
     parsed = run_query(
@@ -179,11 +207,7 @@ def discover_topics_whole_corpus(
     clusters: list[TopicCluster] = []
     assigned: set[str] = set()
     for index, group in enumerate(parsed.get("groups", [])):
-        members = [
-            name
-            for name in group.get("member_full_names", [])
-            if name in all_full_names
-        ]
+        members = list(group["member_full_names"])
         assigned.update(members)
         clusters.append(
             TopicCluster(

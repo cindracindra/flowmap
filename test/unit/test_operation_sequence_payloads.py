@@ -147,7 +147,7 @@ def test_label_payload_contains_only_topic_reserved_labels_and_operations() -> N
 
     assert payload == {
         "topic": topic_context_payload(cluster),
-        "reservedLabels": {"existing": "Existing Label"},
+        "reservedLabels": ["Existing Label"],
         "operations": [
             {
                 "id": "first",

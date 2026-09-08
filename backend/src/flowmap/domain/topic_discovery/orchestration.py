@@ -34,6 +34,53 @@ class TopicDiscoveryResult:
     centroids: dict[int, np.ndarray] = field(default_factory=dict)
 
 
+@dataclass(frozen=True, slots=True)
+class TopicCoverage:
+    """Coverage of the extracted class corpus by final topic assignments."""
+
+    total_classes: int
+    represented_classes: int
+    clustered_classes: int
+    noise_classes: int
+    omitted_classes: int
+    coverage: float
+
+
+def summarize_topic_coverage(
+    class_documents: list[ClassDocument],
+    clusters: list[TopicCluster],
+) -> TopicCoverage:
+    """Count unique final assignments, including preprocessing omissions.
+
+    A class whose evidence becomes empty during preprocessing is absent from
+    every cluster.  It is omitted, not covered, and must remain in the
+    denominator reported by evaluation telemetry.
+    """
+    all_classes = {document.fullName for document in class_documents}
+    noise_classes = {
+        full_name
+        for cluster in clusters
+        if cluster.label == -1
+        for full_name in cluster.member_full_names
+    } & all_classes
+    clustered_classes = {
+        full_name
+        for cluster in clusters
+        if cluster.label != -1
+        for full_name in cluster.member_full_names
+    } & all_classes
+    represented_classes = noise_classes | clustered_classes
+    total = len(all_classes)
+    return TopicCoverage(
+        total_classes=total,
+        represented_classes=len(represented_classes),
+        clustered_classes=len(clustered_classes),
+        noise_classes=len(noise_classes),
+        omitted_classes=len(all_classes - represented_classes),
+        coverage=0.0 if total == 0 else len(clustered_classes) / total,
+    )
+
+
 def is_degenerate(clusters: list[TopicCluster], n_classes: int) -> bool:
     """Return whether local clustering should use whole-corpus fallback."""
     if n_classes < _MIN_CLASSES_FOR_CLUSTERING:

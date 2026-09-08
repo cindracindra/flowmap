@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Any, Callable, Literal, Mapping
 
 from domain.execution_phase.method_analysis import MethodAnalysis
@@ -13,6 +13,28 @@ from model import MethodDefinition, Node, NodeSemanticFeatures, Phase, Unresolve
 UnresolvedReason = Literal["INSUFFICIENT_EVIDENCE", "CONFLICTING_EVIDENCE"]
 ResolvedGateAction = Literal["MERGE", "SPLIT"]
 GateAnswer = tuple[ResolvedGateAction, float, tuple[str, ...]]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedGateDecision:
+    """One accepted LLM decision, retained for repeated-run evaluation."""
+
+    question_id: str
+    gate_id: str
+    method_entry_id: str
+    method_full_name: str
+    left_id: str
+    right_id: str
+    boundary_kind: str
+    reason_code: UnresolvedReason
+    action: ResolvedGateAction
+    confidence: float
+    evidence: tuple[str, ...]
+    systematic_confidence: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
 
 @dataclass(frozen=True, slots=True)
 class UnresolvedGateQuestion:
@@ -29,35 +51,50 @@ class UnresolvedGateQuestion:
     right_operations: tuple[Mapping[str, Any], ...]
     left_missing_observations: tuple[str, ...]
     right_missing_observations: tuple[str, ...]
-    direct_flow_across_boundary: bool = False
 
     def to_prompt_payload(self) -> dict[str, Any]:
         """Serialize only information needed for the semantic decision."""
-        contradictory = tuple(
-            item
-            for item in self.gate.evidence
-            if item == "complete-core-identity-disjoint"
-        )
-        positive = tuple(
-            item
-            for item in self.gate.evidence
-            if not item.startswith(("observation:", "missing:"))
-            and item not in contradictory
-        )
+        observed_overlap: dict[str, float] = {}
+        supporting_evidence: list[str] = []
+        evidence_descriptions = {
+            "direct-data-flow": "Data flows directly from the left group to the right group",
+            "directional-write-read": (
+                "The left group writes a field that the right group reads"
+            ),
+        }
+        for item in self.gate.evidence:
+            dimension, separator, raw_score = item.partition(":")
+            if separator and dimension in _SIGNATURE_PAYLOAD_NAMES:
+                try:
+                    observed_overlap[_SIGNATURE_PAYLOAD_NAMES[dimension]] = float(
+                        raw_score
+                    )
+                    continue
+                except ValueError:
+                    pass
+            if item in evidence_descriptions:
+                supporting_evidence.append(evidence_descriptions[item])
         return {
             "gateId": self.gate.id,
             "method": self.method_full_name,
             "boundaryKind": self.gate.kind,
             "systematicAssessment": {
-                "reasonCode": self.reason_code,
-                "confidence": self.gate.confidence,
-                "positiveEvidence": list(positive),
-                "contradictoryEvidence": list(contradictory),
+                "status": self.reason_code.replace("_", " ").lower(),
+                "observedSemanticOverlap": observed_overlap,
+                "supportingEvidence": supporting_evidence,
+                "coreIdentityFullyObservedAndDisjoint": (
+                    "complete-core-identity-disjoint" in self.gate.evidence
+                ),
                 "missingObservations": {
-                    "left": list(self.left_missing_observations),
-                    "right": list(self.right_missing_observations),
+                    "left": [
+                        _SIGNATURE_PAYLOAD_NAMES[item]
+                        for item in self.left_missing_observations
+                    ],
+                    "right": [
+                        _SIGNATURE_PAYLOAD_NAMES[item]
+                        for item in self.right_missing_observations
+                    ],
                 },
-                "directFlowAcrossBoundary": self.direct_flow_across_boundary,
             },
             "leftGroup": {
                 "coreSignature": signature_payload(self.left_signature),
@@ -89,22 +126,24 @@ def _phase_signature(method: MethodDefinition, phase: Phase) -> SemanticSignatur
     )
 
 
+_SIGNATURE_PAYLOAD_NAMES = {
+    "receivers": "receivers",
+    "inputs": "inputs",
+    "arguments": "arguments",
+    "fields_read": "fieldsRead",
+    "fields_written": "fieldsWritten",
+    "domain_types": "domainTypes",
+    "method_terms": "methodTerms",
+    "output_types": "outputTypes",
+}
+
+
 def signature_payload(signature: SemanticSignature) -> dict[str, list[str]]:
     """Return the canonical compact signature used by phase LLM payloads."""
-    names = {
-        "receivers": "receivers",
-        "inputs": "inputs",
-        "arguments": "arguments",
-        "fields_read": "fieldsRead",
-        "fields_written": "fieldsWritten",
-        "domain_types": "domainTypes",
-        "method_terms": "methodTerms",
-        "output_types": "outputTypes",
-    }
     dimensions = signature.dimensions()
     return {
         output_name: sorted(dimensions[input_name])
-        for input_name, output_name in names.items()
+        for input_name, output_name in _SIGNATURE_PAYLOAD_NAMES.items()
         if dimensions[input_name]
     }
 
@@ -137,7 +176,6 @@ def build_gate_question(
     gate: UnresolvedGate,
     method: MethodDefinition,
     analysis: MethodAnalysis,
-    direct_flow_pairs: frozenset[tuple[str, str]],
 ) -> UnresolvedGateQuestion | None:
     """Build fresh context for a gate that still separates two phases."""
     if analysis.method_entry_id != method.entryId:
@@ -153,8 +191,6 @@ def build_gate_question(
 
     left_signature = _phase_signature(method, left_phase)
     right_signature = _phase_signature(method, right_phase)
-    has_direct_flow = (gate.left_id, gate.right_id) in direct_flow_pairs
-
     return UnresolvedGateQuestion(
         id=f"question:{method.entryId}:{gate.id}",
         method_entry_id=method.entryId,
@@ -177,14 +213,12 @@ def build_gate_question(
         ),
         left_missing_observations=_missing_observations(left_signature),
         right_missing_observations=_missing_observations(right_signature),
-        direct_flow_across_boundary=has_direct_flow,
     )
 
 
 def build_gate_questions(
     methods_by_entry_id: dict[str, MethodDefinition],
     analyses_by_entry_id: dict[str, MethodAnalysis],
-    direct_flow_pairs: frozenset[tuple[str, str]],
 ) -> tuple[UnresolvedGateQuestion, ...]:
     """Collect all still-relevant first-pass gates in method order."""
     questions: list[UnresolvedGateQuestion] = []
@@ -197,7 +231,6 @@ def build_gate_questions(
                 gate,
                 method,
                 analysis,
-                direct_flow_pairs,
             )
             if gate_context is not None:
                 questions.append(gate_context)
@@ -252,10 +285,10 @@ def _remove_gate(
 def resolve_uncertain_gates(
     methods_by_entry_id: dict[str, MethodDefinition],
     analyses_by_entry_id: dict[str, MethodAnalysis],
-    direct_flow_pairs: frozenset[tuple[str, str]],
     resolver: BatchGateResolver,
     *,
     batch_size: int | None = None,
+    decision_sink: list[ResolvedGateDecision] | None = None,
 ) -> int:
     """Resolve valid LLM answers and retain every unanswered boundary."""
     if batch_size is not None and batch_size < 1:
@@ -264,7 +297,6 @@ def resolve_uncertain_gates(
     questions = build_gate_questions(
         methods_by_entry_id,
         analyses_by_entry_id,
-        direct_flow_pairs,
     )
     resolved_count = 0
     effective_batch_size = batch_size or max(1, len(questions))
@@ -296,13 +328,28 @@ def resolve_uncertain_gates(
                 gate,
                 method,
                 analysis,
-                direct_flow_pairs,
             )
             if current_question is None:
                 analyses_by_entry_id[question.method_entry_id] = _remove_gate(
                     analysis, gate.id
                 )
                 continue
+
+            if decision_sink is not None:
+                decision_sink.append(ResolvedGateDecision(
+                    question_id=current_question.id,
+                    gate_id=gate.id,
+                    method_entry_id=current_question.method_entry_id,
+                    method_full_name=current_question.method_full_name,
+                    left_id=gate.left_id,
+                    right_id=gate.right_id,
+                    boundary_kind=gate.kind,
+                    reason_code=current_question.reason_code,
+                    action=action,
+                    confidence=float(confidence),
+                    evidence=evidence,
+                    systematic_confidence=gate.confidence,
+                ))
 
             if action == "MERGE":
                 analysis = _merge_gate_phases(analysis, gate)

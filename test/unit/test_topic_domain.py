@@ -30,6 +30,7 @@ from backend.src.flowmap.domain.topic_discovery import (  # noqa: E402
     is_degenerate,
     extract_top_terms_by_cluster,
     reduce_embeddings,
+    summarize_topic_coverage,
 )
 from backend.src.flowmap.domain.topic_discovery import (  # noqa: E402
     embed_documents,
@@ -238,6 +239,28 @@ class ClusterDocumentsTests(unittest.TestCase):
     def test_empty_input_is_noise_not_an_error(self):
         labels = cluster_documents(np.empty((0, 3)), min_cluster_size=2)
         self.assertEqual(list(labels), [])
+
+
+class TopicCoverageTests(unittest.TestCase):
+    def test_omitted_preprocessing_documents_are_not_reported_as_covered(self):
+        documents = [
+            ClassDocument("Covered", "pkg.Covered", "pkg", "Covered.java"),
+            ClassDocument("Noise", "pkg.Noise", "pkg", "Noise.java"),
+            ClassDocument("<init>", "pkg.Omitted", "pkg", "Omitted.java"),
+        ]
+        clusters = [
+            TopicCluster(0, ["pkg.Covered"]),
+            TopicCluster(-1, ["pkg.Noise"]),
+        ]
+
+        result = summarize_topic_coverage(documents, clusters)
+
+        self.assertEqual(result.total_classes, 3)
+        self.assertEqual(result.represented_classes, 2)
+        self.assertEqual(result.clustered_classes, 1)
+        self.assertEqual(result.noise_classes, 1)
+        self.assertEqual(result.omitted_classes, 1)
+        self.assertEqual(result.coverage, 1 / 3)
 
 
 class FlowMapConfigurationTests(unittest.TestCase):

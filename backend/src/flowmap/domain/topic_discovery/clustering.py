@@ -50,6 +50,7 @@ def reduce_embeddings(
     *,
     n_components: int,
     n_neighbors: int,
+    min_dist: float = DEFAULT_FLOWMAP_CONFIG["umap_min_dist"],
     random_state: int = DEFAULT_FLOWMAP_CONFIG["umap_random_state"],
 ) -> np.ndarray:
     """Apply deterministic cosine UMAP using the evaluation methodology."""
@@ -67,7 +68,7 @@ def reduce_embeddings(
     return UMAP(
         n_components=n_components,
         n_neighbors=n_neighbors,
-        min_dist=DEFAULT_FLOWMAP_CONFIG["umap_min_dist"],
+        min_dist=min_dist,
         metric="cosine",
         random_state=random_state,
     ).fit_transform(embeddings)

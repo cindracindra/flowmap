@@ -123,6 +123,66 @@ def test_preparation_builds_exclusions_structures_and_callee_index() -> None:
     )
 
 
+def test_analysis_reports_each_completed_method_against_stable_total() -> None:
+    graph = _interprocedural_graph()
+    methods = build_method_definitions(graph)
+    progress = []
+
+    result = execution_phase_analysis(
+        graph,
+        methods,
+        progress_callback=lambda completed, total: progress.append(
+            (completed, total)
+        ),
+    )
+
+    assert len(result.analyses_by_entry_id) == 3
+    assert progress == [(1, 3), (2, 3), (3, 3)]
+
+
+def test_multi_phase_call_inside_loop_remains_retained() -> None:
+    graph = Graph.from_dict({
+        "roots": ["outer-entry"],
+        "nodes": [
+            {"id": "outer-entry", "type": "entry", "calleeFullName": "Outer.run"},
+            {"id": "loop-entry", "type": "structure", "callerMethod": "Outer.run",
+             "structureGroupId": "loop", "structureRole": "entry"},
+            {"id": "call-inner", "type": "call", "callerMethod": "Outer.run",
+             "loopIds": ["loop"]},
+            {"id": "loop-exit", "type": "structure", "callerMethod": "Outer.run",
+             "structureGroupId": "loop", "structureRole": "exit"},
+            {"id": "outer-exit", "type": "exit", "callerMethod": "Outer.run",
+             "exitKind": "fallthrough"},
+            {"id": "inner-entry", "type": "entry", "calleeFullName": "Inner.run"},
+            {"id": "inner-a", "type": "call", "callerMethod": "Inner.run"},
+            {"id": "inner-b", "type": "call", "callerMethod": "Inner.run"},
+            {"id": "inner-exit", "type": "exit", "callerMethod": "Inner.run",
+             "exitKind": "fallthrough"},
+        ],
+        "edges": [
+            {"from": "outer-entry", "to": "loop-entry", "type": "sequence"},
+            {"from": "loop-entry", "to": "call-inner", "type": "sequence"},
+            {"from": "call-inner", "to": "loop-exit", "type": "sequence"},
+            {"from": "loop-exit", "to": "outer-exit", "type": "sequence"},
+            {"from": "call-inner", "to": "inner-entry", "type": "invoke"},
+            {"from": "inner-entry", "to": "inner-a", "type": "sequence"},
+            {"from": "inner-a", "to": "inner-b", "type": "sequence"},
+            {"from": "inner-b", "to": "inner-exit", "type": "sequence"},
+        ],
+        "loopGroups": [{
+            "id": "loop", "kind": "WHILE", "method": "Outer.run",
+            "entryNodeId": "loop-entry", "exitNodeId": "loop-exit",
+        }],
+    })
+    methods = build_method_definitions(graph)
+
+    result = execution_phase_analysis(graph, methods)
+
+    assert result.analyses_by_entry_id["outer-entry"].retained_call_ids == {
+        "call-inner"
+    }
+
+
 def test_direct_flow_index_contains_only_directional_call_data_edges() -> None:
     graph = _interprocedural_graph()
     graph.edges.extend([
@@ -206,15 +266,14 @@ def test_preparation_resolves_uncertain_gate_and_refreshes_queue() -> None:
             "method": "Example.run",
             "boundaryKind": "operation-boundary",
             "systematicAssessment": {
-                "reasonCode": "INSUFFICIENT_EVIDENCE",
-                "confidence": 0.0,
-                "positiveEvidence": [],
-                "contradictoryEvidence": [],
+                "status": "insufficient evidence",
+                "observedSemanticOverlap": {},
+                "supportingEvidence": [],
+                "coreIdentityFullyObservedAndDisjoint": False,
                 "missingObservations": {
-                    "left": ["arguments", "domain_types", "fields_read", "fields_written", "inputs", "method_terms", "output_types", "receivers"],
-                    "right": ["arguments", "domain_types", "fields_read", "fields_written", "inputs", "method_terms", "output_types", "receivers"],
+                    "left": ["arguments", "domainTypes", "fieldsRead", "fieldsWritten", "inputs", "methodTerms", "outputTypes", "receivers"],
+                    "right": ["arguments", "domainTypes", "fieldsRead", "fieldsWritten", "inputs", "methodTerms", "outputTypes", "receivers"],
                 },
-                "directFlowAcrossBoundary": False,
             },
             "leftGroup": {"coreSignature": {}, "operations": [{}]},
             "rightGroup": {"coreSignature": {}, "operations": [{}]},
