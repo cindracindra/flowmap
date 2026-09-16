@@ -1,14 +1,7 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from llm.parsing import correlate_records  # noqa: E402
-from llm.policy import estimate_tokens, token_bounded_batches  # noqa: E402
+from llm.parsing import correlate_records
+from llm.policy import estimate_tokens, token_bounded_batches
 
 
 def test_token_bounded_batches_measure_the_rendered_payload() -> None:

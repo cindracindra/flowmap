@@ -1,28 +1,22 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from domain.execution_phase.method_analysis import (  # noqa: E402
+from domain.execution_phase.method_analysis import (
     MethodAnalysis,
     analyse_method,
     call_effective_phase_count,
     effective_phase_count,
     resolve,
 )
-from domain.execution_phase.structure import LinearStructure, MethodStructure  # noqa: E402
-from domain.execution_phase.structure_analysis import (  # noqa: E402
+from domain.execution_phase.structure import LinearStructure, MethodStructure
+from domain.execution_phase.structure_analysis import (
     StraightStructureAnalysis,
 )
-from domain.execution_phase.orchestration import (  # noqa: E402
+from domain.execution_phase.orchestration import (
     execution_phase_analysis,
 )
-from domain.method_scoping import build_method_definitions  # noqa: E402
-from execution_phase_test_support import method_analysis_snapshot  # noqa: E402
-from model import (  # noqa: E402
+from domain.method_scoping import build_method_definitions
+from execution_phase_test_support import method_analysis_snapshot
+from model import (
     Graph,
     MethodDefinition,
     Node,

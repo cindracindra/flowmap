@@ -1,24 +1,15 @@
-"""Unit tests for topic extraction, labelling, and whole-corpus fallback."""
-
 from __future__ import annotations
 
 import json
 import io
-import sys
 import unittest
 from contextlib import redirect_stderr
-from pathlib import Path
 from unittest.mock import MagicMock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap")
-)
+from llm.client import LLMError
 
-from llm.client import LLMError  # noqa: E402
-
-from backend.src.flowmap.service import topic  # noqa: E402
-from backend.src.flowmap.model import (  # noqa: E402
+from backend.src.flowmap.service import topic
+from backend.src.flowmap.model import (
     ClassDocument, ReadmeDocument, TopicCluster,
 )
 
@@ -103,7 +94,6 @@ class ClusterPromptTests(unittest.TestCase):
             payload["clusters"][0]["members"][0]["class"],
             "com.bank.account.AccountService",
         )
-
 
     def test_whole_corpus_prompt_uses_class_document_evidence(self):
         doc = ClassDocument(
@@ -390,11 +380,11 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
             '["com.bank.account.AccountService"]}]}'
         )
         invalid_responses = [
-            # Additional top-level and group keys violate the exact contract.
+
             '{"groups":[],"extra":true}',
             '{"groups":[{"label":"Accounts","member_full_names":'
             '["com.bank.account.AccountService"],"extra":true}]}',
-            # Labels and class membership must be non-empty and unique.
+
             '{"groups":[{"label":" ","member_full_names":'
             '["com.bank.account.AccountService"]}]}',
             '{"groups":[{"label":"Accounts","member_full_names":[]}]}',
@@ -484,7 +474,6 @@ class DiscoverTopicsWholeCorpusTests(unittest.TestCase):
             topic.discover_topics_whole_corpus(client, self.docs)
 
         self.assertEqual(client.complete.call_count, 3)
-
 
 if __name__ == "__main__":
     unittest.main()

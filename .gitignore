@@ -80,6 +80,7 @@ pnpm-debug.log*
 workspace/
 *.cpg
 *.odb
+/test/integration/test_output/
 
 # ===========================================================================
 # Editors & OS

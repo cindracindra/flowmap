@@ -1,23 +1,15 @@
-"""Real-Joern contract tests for structural branch extraction shapes."""
-
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from fixture import SOURCE_DIR, start_fixture_session
 
-from fixture import SOURCE_DIR, start_fixture_session  # noqa: E402
-
-from backend.src.flowmap.domain.cfg_filtering import filter_noise_cfg  # noqa: E402
-from backend.src.flowmap.domain.method_scoping import build_method_definitions  # noqa: E402
-from backend.src.flowmap.domain.method_structure_validation import (  # noqa: E402
+from backend.src.flowmap.domain.cfg_filtering import filter_noise_cfg
+from backend.src.flowmap.domain.method_scoping import build_method_definitions
+from backend.src.flowmap.domain.method_structure_validation import (
     validate_all_method_structures,
 )
-from backend.src.flowmap.service.cfg import extract_cfg_structure  # noqa: E402
-
+from backend.src.flowmap.service.cfg import extract_cfg_structure
 
 CLASS = "com.flowmap.fixture.OperationalChains"
 
@@ -78,12 +70,6 @@ class BranchCfgShapeTests(unittest.TestCase):
         ]
 
     def assert_complete_method_topology(self, method):
-        """Validate the complete normalized route contract independently.
-
-        Shape-specific tests still describe intended source semantics. This
-        assertion prevents them from passing while an uninspected predecessor,
-        child, sibling arm, loop boundary, or continuation remains malformed.
-        """
         nodes = {
             method.entry.id: method.entry,
             **{node.id: node for node in method.nodes},
@@ -97,8 +83,6 @@ class BranchCfgShapeTests(unittest.TestCase):
             outgoing.setdefault(edge.source, []).append(edge)
             incoming.setdefault(edge.target, []).append(edge)
 
-        # The complete serialized method, including anchors and terminal
-        # transfers, must be reachable from its entry.
         reached = set()
         pending = [method.entry.id]
         while pending:
@@ -183,8 +167,6 @@ class BranchCfgShapeTests(unittest.TestCase):
             internal_ids = decision_ids | condition_ids | owned_ids
             region_ids = internal_ids | {group.entryNodeId}
 
-            # No external route may enter a decision, condition, arm body, or
-            # nested content except through the group's entry anchor.
             illegal_ingress = [
                 edge for edge in sequence
                 if edge.target in internal_ids
@@ -212,9 +194,7 @@ class BranchCfgShapeTests(unittest.TestCase):
                         for item in node.branchArms
                     )
                 }
-                # An arm-owned normal route may remain in the arm or converge
-                # through its own exit. It may never jump to a sibling arm or
-                # directly to a parent/method continuation.
+
                 illegal_egress = []
                 for source in arm_ids:
                     for edge in outgoing.get(source, ()):
@@ -966,8 +946,7 @@ class BranchCfgShapeTests(unittest.TestCase):
             pending.extend(outgoing.get(node_id, ()))
 
         self.assertEqual(len(loops), 1)
-        # Joern lowers enhanced-for over an array to an indexed FOR. The
-        # important contract here is topology, not recovery of the lost colon.
+
         self.assertEqual(loops[0].kind, "FOR")
         self.assertIn(loops[0].id, body.loopIds)
         self.assertIn(body.id, reached)
@@ -1920,7 +1899,6 @@ class BranchCfgShapeTests(unittest.TestCase):
                     self.assertEqual(
                         outgoing.get(node.id, []), [target_loop.exitNodeId]
                     )
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,17 +1,10 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from domain.execution_phase.exclusion import find_excluded_operations  # noqa: E402
-from model import Graph  # noqa: E402
+from domain.execution_phase.exclusion import find_excluded_operations
+from model import Graph
 
 
 def _guard_graph(*, compensating_work: bool = False) -> Graph:
-    """`if (bad) { [freeze();] throw new IllegalArgumentException(...); } commit();`"""
     nodes = [
         {"id": "entry", "type": "entry", "calleeFullName": "run"},
         {"id": "check", "type": "call", "calleeFullName": "Validator.check", "callerMethod": "run"},
@@ -53,7 +46,7 @@ def _guard_graph(*, compensating_work: bool = False) -> Graph:
 
 
 def test_exception_constructor_in_a_throwing_arm_is_excluded_as_a_mechanic() -> None:
-    # Both rules select it; the more specific reason wins.
+
     assert find_excluded_operations(_guard_graph()) == {
         "exception": "exception-mechanic"
     }
@@ -62,14 +55,11 @@ def test_exception_constructor_in_a_throwing_arm_is_excluded_as_a_mechanic() -> 
 def test_operations_outside_the_throwing_arm_are_untouched() -> None:
     excluded = find_excluded_operations(_guard_graph())
 
-    # The condition and post-branch commit stay ordinary operations.
     assert excluded == {"exception": "exception-mechanic"}
 
 
 def test_compensating_work_in_a_throwing_arm_is_excluded_by_the_blanket_rule() -> None:
-    # Deliberate, knowingly accepted trade: "refund, then throw" loses the refund
-    # from the phase view. The old name-heuristic rule kept `freeze` purposeful;
-    # the arm rule does not, in exchange for needing no data-flow test.
+
     excluded = find_excluded_operations(_guard_graph(compensating_work=True))
 
     assert excluded == {
@@ -95,7 +85,7 @@ def test_unconditional_throw_without_an_arm_is_not_inferred_from_dead_end() -> N
 
 
 def test_exception_object_that_is_not_a_dead_end_is_kept() -> None:
-    # Constructed, stored, thrown later or not at all -- ordinary work.
+
     graph = Graph.from_dict({
         "nodes": [{
             "id": "exception", "type": "call",
@@ -109,8 +99,7 @@ def test_exception_object_that_is_not_a_dead_end_is_kept() -> None:
 
 
 def test_real_work_immediately_before_a_throw_is_kept() -> None:
-    # `audit(o); throw e;` -- audit's only next call is the throw operator, so it
-    # is a dead end, but it is not constructing the exception and sits in no arm.
+
     graph = Graph.from_dict({
         "nodes": [
             {"id": "entry", "type": "entry", "calleeFullName": "fail"},

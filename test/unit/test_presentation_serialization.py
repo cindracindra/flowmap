@@ -1,8 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
 from model import (
     ArmConditionStage,
     ArmExit,
@@ -15,7 +10,6 @@ from model import (
     Node,
 )
 from presentation.serialization import _serialize_leaf, _serialize_method
-
 
 METHOD = "Example.run:void()"
 

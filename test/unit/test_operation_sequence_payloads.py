@@ -1,9 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
 from backend.src.flowmap.domain.operation_sequence import (
     build_method_embedding_document,
     build_operation_document,
@@ -83,6 +77,7 @@ def test_operation_embedding_deduplicates_categories_across_methods() -> None:
         "Comments: Find customer\n"
         "Messages: Account found"
     )
+
 
 def test_assignment_payload_separates_entry_point_and_subsequent_methods() -> None:
     cluster = TopicCluster(

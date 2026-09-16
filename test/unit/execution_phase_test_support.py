@@ -1,5 +1,3 @@
-"""Canonical whole-result snapshots for execution-phase tests."""
-
 from __future__ import annotations
 
 from typing import Any
@@ -90,7 +88,6 @@ def method_analysis_snapshot(result: MethodAnalysis) -> dict[str, Any]:
 
 
 def analysis_snapshot(result: ExecutionPhaseAnalysis) -> dict[str, Any]:
-    """Capture every phase-specific field; the graph is checked by identity."""
     return {
         "excluded": dict(result.excluded),
         "structures_by_entry_id": {

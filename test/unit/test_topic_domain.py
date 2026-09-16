@@ -9,14 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-# Repo root -- test/unit/ is two levels below it (see test_cfg.py's own
-# note on this same insertion).
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap")
-)
-
-from backend.src.flowmap.domain.topic_discovery import (  # noqa: E402
+from backend.src.flowmap.domain.topic_discovery import (
     FLOWMAP_PRESETS,
     FlowMapConfig,
     attach_readme_context,
@@ -32,14 +25,14 @@ from backend.src.flowmap.domain.topic_discovery import (  # noqa: E402
     reduce_embeddings,
     summarize_topic_coverage,
 )
-from backend.src.flowmap.domain.topic_discovery import (  # noqa: E402
+from backend.src.flowmap.domain.topic_discovery import (
     embed_documents,
     get_embedding_model,
     preprocess_document,
     split_identifier,
 )
-from backend.src.flowmap.domain.util import is_noise  # noqa: E402
-from backend.src.flowmap.model import ClassDocument, ReadmeDocument, TopicCluster  # noqa: E402
+from backend.src.flowmap.domain.util import is_noise
+from backend.src.flowmap.model import ClassDocument, ReadmeDocument, TopicCluster
 
 
 class SplitIdentifierTests(unittest.TestCase):
@@ -47,10 +40,7 @@ class SplitIdentifierTests(unittest.TestCase):
         self.assertEqual(split_identifier("getUserById"), ["get", "user", "by", "id"])
 
     def test_non_dictionary_identifier_wordninja_used_to_mishandle(self):
-        # The exact case class_document.sc's old wordninja pipeline is
-        # documented to mis-split (-> [bank, account, service, i, mpl]) --
-        # the regex splitter is casing-driven, not dictionary-driven, so
-        # it doesn't need "impl" to be a known English word.
+
         self.assertEqual(
             split_identifier("BankAccountServiceImpl"),
             ["bank", "account", "service", "impl"],
@@ -74,8 +64,7 @@ class SplitIdentifierTests(unittest.TestCase):
 
 class PreprocessDocumentTests(unittest.TestCase):
     def test_drops_stopwords_and_short_tokens(self):
-        # "do" is an English stopword, "a" is under the length floor --
-        # both should vanish, leaving only "process"/"two".
+
         doc = preprocess_document(["doProcessTwo", "doA"])
         self.assertEqual(doc, "process two")
 
@@ -181,7 +170,6 @@ class ExtractTopTermsByClusterTests(unittest.TestCase):
 
         scores = calculate_ctfidf_scores(counts)
 
-        # Cluster lengths are 4 and 3, so BERTopic truncates A=3.5 to A=3.
         expected_term_frequency = np.array([[3 / 4, 1 / 4], [1 / 3, 2 / 3]])
         expected_inverse_frequency = np.log(1 + 3 / np.array([4, 3]))
         np.testing.assert_allclose(
@@ -190,10 +178,7 @@ class ExtractTopTermsByClusterTests(unittest.TestCase):
         )
 
     def test_cluster_specific_terms_outrank_shared_terms(self):
-        # "account" appears in every doc across both clusters -- max_df
-        # would drop it outright; c-TF-IDF's own idf weighting should
-        # ALSO rank each cluster's distinctive term above whatever shared
-        # vocabulary survives max_df.
+
         docs = [
             "account create balance",
             "account create balance",
@@ -217,10 +202,7 @@ class ExtractTopTermsByClusterTests(unittest.TestCase):
         self.assertIn(0, result)
 
     def test_single_cluster_does_not_raise_on_low_max_df(self):
-        # CountVectorizer rejects max_df < 1 document as unsatisfiable
-        # with only one document to count against -- a single-cluster
-        # corpus (e.g. everything landed in HDBSCAN's noise bucket) must
-        # still produce a label, not crash on the default max_df=0.85.
+
         result = extract_top_terms_by_cluster(
             ["foo bar baz"], [-1], max_df=0.85
         )
@@ -230,9 +212,7 @@ class ExtractTopTermsByClusterTests(unittest.TestCase):
 
 class ClusterDocumentsTests(unittest.TestCase):
     def test_single_sample_is_noise_not_an_error(self):
-        # sklearn's HDBSCAN raises on n_samples < 2 unconditionally -- a
-        # one-class corpus (or a single surviving doc after
-        # preprocess_document drops empty ones) must not crash topic discovery.
+
         labels = cluster_documents(np.array([[0.1, 0.2, 0.3]]), min_cluster_size=2)
         self.assertEqual(list(labels), [-1])
 
@@ -391,8 +371,7 @@ class ExtractReadmeDocumentsTests(unittest.TestCase):
 
 class IsDegenerateTests(unittest.TestCase):
     def test_too_few_classes_is_degenerate_regardless_of_clusters(self):
-        # Below _MIN_CLASSES_FOR_CLUSTERING -- degenerate even with a
-        # clean-looking single cluster and zero noise.
+
         clusters = [TopicCluster(label=0, member_full_names=["a", "b", "c"])]
         self.assertTrue(is_degenerate(clusters, n_classes=5))
 
@@ -424,16 +403,6 @@ class IsDegenerateTests(unittest.TestCase):
 
 
 class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
-    """
-    embed_documents/cluster_documents are mocked throughout -- these tests
-    are about the unconditional whole_corpus_fn fallback BRANCHING logic in
-    discover_topics_with_centroids, not about real embedding/clustering
-    behaviour (already
-    covered elsewhere), so they stay fast/hermetic (no real model download
-    or HTTP call). The automatic fallback fires whenever whole_corpus_fn is
-    supplied AND is_degenerate says so; force_whole_corpus bypasses that
-    decision and always uses the supplied grouping function.
-    """
 
     def _class_documents(self, n, prefix="C", methods=("methodOne", "methodTwo")):
         return [
@@ -451,7 +420,7 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
     @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
     @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
     def test_falls_back_to_whole_corpus_when_degenerate(self, mock_embed, _mock_reduce, mock_cluster):
-        classes = self._class_documents(5)  # below the floor -- always degenerate
+        classes = self._class_documents(5)
         mock_embed.return_value = np.zeros((5, 3))
         mock_cluster.return_value = np.array([0, 0, 0, 0, 0])
 
@@ -474,9 +443,7 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
     @patch("backend.src.flowmap.domain.topic_discovery.clustering.reduce_embeddings", side_effect=lambda vectors, **_: vectors)
     @patch("backend.src.flowmap.domain.topic_discovery.clustering.embed_documents")
     def test_keeps_clustering_result_when_not_degenerate(self, mock_embed, _mock_reduce, mock_cluster):
-        # Two real, distinctly-worded groups, no noise -- genuinely not
-        # degenerate, so whole_corpus_fn must NOT be consulted at all even
-        # though it was supplied.
+
         group_a = self._class_documents(
             20, prefix="A", methods=("accountService", "createAccount")
         )
@@ -541,8 +508,7 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
     def test_omitting_whole_corpus_fn_keeps_clustering_result_even_if_degenerate(
         self, mock_embed, _mock_reduce, mock_cluster
     ):
-        # The only opt-out: don't pass whole_corpus_fn. Even a fully
-        # degenerate (all-noise) result is returned as-is, untouched.
+
         classes = self._class_documents(5)
         mock_embed.return_value = np.zeros((5, 3))
         mock_cluster.return_value = np.array([-1, -1, -1, -1, -1])
@@ -589,7 +555,6 @@ class DiscoverTopicsWholeCorpusFallbackTests(unittest.TestCase):
         mock_embed.assert_called_once()
         np.testing.assert_allclose(result.centroids[0], [1.0, 0.0])
         np.testing.assert_allclose(result.centroids[1], [0.0, 1.0])
-
 
 if __name__ == "__main__":
     unittest.main()

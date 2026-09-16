@@ -1,20 +1,14 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from domain.execution_phase.retained_call_analysis import (  # noqa: E402
+from domain.execution_phase.retained_call_analysis import (
     _related_to_restored_call,
     retained_call_frontiers,
 )
-from domain.execution_phase.structure import LinearStructure  # noqa: E402
-from domain.execution_phase.structure_analysis import (  # noqa: E402
+from domain.execution_phase.structure import LinearStructure
+from domain.execution_phase.structure_analysis import (
     StraightStructureAnalysis,
 )
-from model import MethodDefinition, Node, NodeSemanticFeatures, Phase  # noqa: E402
+from model import MethodDefinition, Node, NodeSemanticFeatures, Phase
 
 
 def _straight(*node_ids: str) -> StraightStructureAnalysis:

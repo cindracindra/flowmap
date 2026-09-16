@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
-from domain.phase_data_flow import build_phase_data_flow_questions  # noqa: E402
-from model import Edge, Graph, Node  # noqa: E402
+from domain.phase_data_flow import build_phase_data_flow_questions
+from model import Edge, Graph, Node
 
 
 def _graph(edges: list[Edge]) -> Graph:

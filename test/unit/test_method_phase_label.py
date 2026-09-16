@@ -1,19 +1,14 @@
 from __future__ import annotations
 
-import sys
 from dataclasses import replace
-from pathlib import Path
 
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from domain.method_phase_label import (  # noqa: E402
+from domain.method_phase_label import (
     build_label_subjects,
     label_method_analysis,
 )
-from domain.execution_phase.orchestration import execution_phase_analysis  # noqa: E402
-from domain.method_scoping import build_method_definitions  # noqa: E402
-from model import Graph  # noqa: E402
+from domain.execution_phase.orchestration import execution_phase_analysis
+from domain.method_scoping import build_method_definitions
+from model import Graph
 
 
 def analyse(graph: Graph):
@@ -122,7 +117,7 @@ def test_does_not_group_a_call_that_joined_other_caller_operations() -> None:
     })
 
     analysis = analyse(graph)
-    # Make the caller-side result explicit: both calls resolved into one phase.
+
     caller = analysis.analyses_by_entry_id["caller-entry"]
     caller.phases[0].nodes = ["prepare", "delegate"]
     analysis.analyses_by_entry_id["caller-entry"] = replace(

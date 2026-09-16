@@ -1,13 +1,9 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
-from model import Edge, Graph, Node, NodeSemanticFeatures  # noqa: E402
-from service.cfg import (  # noqa: E402
+from model import Edge, Graph, Node, NodeSemanticFeatures
+from service.cfg import (
     attach_targeted_data_edges,
     extract_targeted_ddg_edges,
 )
@@ -51,8 +47,7 @@ def test_large_targeted_request_uses_bounded_scala_string_constants():
     script = session.query_script_json.call_args.args[0]
     assert "ujson.read(List(" in script
     assert ").mkString)" in script
-    # The complete request is larger than the JVM's single-string limit, but
-    # no individual generated source line/string fragment approaches it.
+
     assert len(script) > 65_535
     assert max(map(len, script.splitlines())) < 20_000
 

@@ -1,29 +1,24 @@
 from __future__ import annotations
 
 import json
-import sys
 from dataclasses import replace
-from pathlib import Path
 from unittest.mock import MagicMock
 
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from domain.execution_phase.method_analysis import MethodAnalysis  # noqa: E402
-from domain.execution_phase.resolution import (  # noqa: E402
+from domain.execution_phase.method_analysis import MethodAnalysis
+from domain.execution_phase.resolution import (
     build_gate_question,
     build_gate_questions,
     resolve_uncertain_gates,
 )
-from model import (  # noqa: E402
+from model import (
     MethodDefinition,
     Node,
     NodeSemanticFeatures,
     Phase,
     UnresolvedGate,
 )
-from service.phase import resolve_execution_phase_gate_batch  # noqa: E402
-from execution_phase_test_support import method_analysis_snapshot  # noqa: E402
+from service.phase import resolve_execution_phase_gate_batch
+from execution_phase_test_support import method_analysis_snapshot
 
 
 def _expected_prompt_payload() -> dict:

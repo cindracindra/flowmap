@@ -3,13 +3,9 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
-from model import Edge, Graph, Node  # noqa: E402
+from model import Edge, Graph, Node
 from data.code_eval import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
 
 
@@ -65,7 +61,6 @@ class StatsTests(unittest.TestCase):
         self.assertEqual(payload["totals"]["llm_retry_items"], 2)
         self.assertIn("process_cpu_seconds", payload["stages"][0])
         self.assertIn("peak_process_tree_rss_bytes", payload["stages"][0])
-
 
 if __name__ == "__main__":
     unittest.main()

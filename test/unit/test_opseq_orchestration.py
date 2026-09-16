@@ -1,11 +1,4 @@
-import sys
-from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap")
-)
 
 import numpy as np
 
@@ -143,7 +136,3 @@ def test_label_orchestration_supplies_each_assigned_topic() -> None:
 
     assert result == {"op": "Order Checkout"}
     assert labeler.call_args.args == ({"op": (operation, cluster)},)
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))

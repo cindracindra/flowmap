@@ -1,11 +1,5 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
 from domain.method_scoping import build_method_definitions
 from model import ArmExit, BranchArm, BranchGroup, Edge, Graph, LoopGroup, Node
-
 
 ROOT = "Example.root:void()"
 CALLEE = "Example.callee:void()"

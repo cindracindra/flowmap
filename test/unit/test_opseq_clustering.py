@@ -1,22 +1,15 @@
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap")
-)
-
-from backend.src.flowmap.domain.operation_sequence import (  # noqa: E402
+from backend.src.flowmap.domain.operation_sequence import (
     assign_operation_topics,
     build_operation_document,
 )
-from backend.src.flowmap.model import Graph, MethodDocument, Node, TopicCluster  # noqa: E402
+from backend.src.flowmap.model import Graph, MethodDocument, Node, TopicCluster
 
 
 def _operation(operation_id: str, method_name: str) -> Graph:
@@ -96,7 +89,6 @@ class BatchAssignmentTests(unittest.TestCase):
 
         self.assertEqual(result, {"op": []})
         mock_embed.assert_not_called()
-
 
 if __name__ == "__main__":
     unittest.main()

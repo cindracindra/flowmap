@@ -1,19 +1,13 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from domain.execution_phase.structure import (  # noqa: E402
+from domain.execution_phase.structure import (
     BranchStructure,
     LinearStructure,
     MethodStructure,
     build_method_structures as build_structures_from_definitions,
 )
-from domain.method_scoping import build_method_definitions  # noqa: E402
-from model import Graph  # noqa: E402
+from domain.method_scoping import build_method_definitions
+from model import Graph
 
 
 def build_method_structures(

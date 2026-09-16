@@ -1,9 +1,4 @@
-import sys
-from pathlib import Path
-
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
 
 from domain.method_structure_validation import validate_method_structures
 from model import (
@@ -17,7 +12,6 @@ from model import (
     MethodDefinition,
     Node,
 )
-
 
 METHOD = "Example.run:void()"
 

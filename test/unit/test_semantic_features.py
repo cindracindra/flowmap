@@ -1,11 +1,5 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
 from domain.cfg_filtering import filter_noise_cfg
 from domain.cfg_slicing import slice_from_root
 from model import Graph, NodeSemanticFeatures, Phase, UnresolvedGate

@@ -1,8 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
 from domain.cfg_filtering import _bridge_edges, filter_noise_cfg
 from model import (
     ArmExit,
@@ -15,7 +10,6 @@ from model import (
     LoopGroup,
     Node,
 )
-
 
 METHOD = "Example.run:void()"
 
@@ -163,7 +157,7 @@ def test_filter_removes_condition_and_exposes_empty_continuing_route() -> None:
     filtered = filter_noise_cfg(graph)
 
     assert "condition" not in {node.id for node in filtered.nodes}
-    # Filtering does not infer ordering metadata.
+
     assert filtered.branchGroups[0].arms[1].empty is True
     _edge_by_requirements(filtered.edges, "entry", "if_work", {("g1", "if")})
     _edge_by_requirements(filtered.edges, "entry", "after", {("g1", "else")})
@@ -263,7 +257,6 @@ def test_consecutive_empty_terminal_branches_keep_only_reachable_routes() -> Non
 
 
 def test_structural_decisions_isolate_consecutive_empty_branch_routes() -> None:
-    """Later empty guards must never contaminate an earlier operation edge."""
     graph = Graph(
         entryPoint=METHOD,
         nodes=[
@@ -372,9 +365,7 @@ def test_structural_decisions_isolate_consecutive_empty_branch_routes() -> None:
 
     assert {group.id for group in filtered.branchGroups} == {"outer", "inner", "later"}
     groups = {group.id: group for group in filtered.branchGroups}
-    # Removed compatibility targets are cleared, never reconstructed by
-    # filtering. Anchored production artifacts point continuing exits at the
-    # surviving structure exit instead.
+
     assert groups["outer"].arms[1].exits[0].destinationNodeId is None
     assert groups["inner"].arms[1].exits[0].destinationNodeId is None
     assert groups["later"].arms[1].exits[0].destinationNodeId == "after"
@@ -583,8 +574,7 @@ def test_later_sibling_membership_does_not_control_earlier_throw_route() -> None
                 "entry",
                 "first_throw",
                 "sequence",
-                # Extraction requirements come from the source route. A later
-                # sibling guard has not been selected on this terminal edge.
+
                 branchRequirements=[BranchRequirement("g1", "if")],
             ),
                 Edge(

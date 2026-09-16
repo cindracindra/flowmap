@@ -1,11 +1,5 @@
-import sys
-from pathlib import Path
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from domain.cfg_slicing import classify_roots_and_orphans  # noqa: E402
-from model import Graph  # noqa: E402
+from domain.cfg_slicing import classify_roots_and_orphans
+from model import Graph
 
 
 def test_structural_branch_without_calls_is_an_orphan() -> None:

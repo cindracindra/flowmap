@@ -2,17 +2,10 @@ from __future__ import annotations
 
 import io
 import json
-import sys
 import threading
 import unittest
 from contextlib import redirect_stderr
-from pathlib import Path
 from unittest.mock import MagicMock
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap")
-)
 
 from llm.client import LLMError
 

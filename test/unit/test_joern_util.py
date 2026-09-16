@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 import unittest
-from pathlib import Path
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-
-from backend.src.flowmap.joern import util  # noqa: E402
+from backend.src.flowmap.joern import util
 
 
 class PidOnPortTests(unittest.TestCase):
@@ -27,7 +23,6 @@ class PidOnPortTests(unittest.TestCase):
         check_output.side_effect = subprocess.CalledProcessError(1, "lsof")
 
         self.assertIsNone(util.pid_on_port(8080))
-
 
 if __name__ == "__main__":
     unittest.main()

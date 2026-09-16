@@ -90,4 +90,3 @@ def test_loop_anchor_schema_round_trips() -> None:
 def test_legacy_branch_node_is_rejected() -> None:
     with pytest.raises(ValueError, match="Unsupported node type"):
         Node.from_dict({"id": "decision", "type": "branch"})
-

@@ -1,16 +1,11 @@
 from __future__ import annotations
 
 import json
-import sys
 import threading
-from pathlib import Path
 from unittest.mock import MagicMock
 
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
-
-from service.method_phase_label import label_method_phases  # noqa: E402
-from service.phase_label_format import valid_phase_label  # noqa: E402
+from service.method_phase_label import label_method_phases
+from service.phase_label_format import valid_phase_label
 
 
 def _subject(subject_id: str, phase_id: str) -> dict:

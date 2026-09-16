@@ -1,11 +1,5 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"))
-
 from domain.phase_topology import graph_call_sequence_pairs
 from model import Edge, Graph, Node
-
 
 METHOD = "Example.run:void()"
 

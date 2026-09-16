@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
 import pytest
-
-FLOWMAP_SRC = Path(__file__).resolve().parents[2] / "backend" / "src" / "flowmap"
-sys.path.insert(0, str(FLOWMAP_SRC))
 
 from domain.execution_phase.cohesion import (
     CohesionDecision,
@@ -18,7 +12,6 @@ from domain.execution_phase.cohesion import (
 )
 from domain.execution_phase.semantic import SemanticSignature, build_core_signature
 from model import NodeSemanticFeatures
-
 
 OBSERVED = frozenset({"receivers", "inputs", "arguments", "fields_read"})
 
@@ -41,7 +34,6 @@ def test_similarity_uses_weighted_overlap_coefficient() -> None:
         left, right, weights={"inputs": 0.75, "arguments": 0.65}
     )
 
-    # inputs=1/1 and arguments=1/2, then weighted and normalised.
     assert result == SimilarityScore(
         score=pytest.approx((0.75 + 0.65 * 0.5) / 1.4),
         numerator=1.075,

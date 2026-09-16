@@ -1,14 +1,10 @@
 from __future__ import annotations
 
 import os
-import sys
 import unittest
-from pathlib import Path
 from unittest.mock import MagicMock
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-
-from backend.src.flowmap.llm import client as llm_client  # noqa: E402
+from backend.src.flowmap.llm import client as llm_client
 
 
 class GetClientTests(unittest.TestCase):
@@ -106,7 +102,6 @@ class CompleteTests(unittest.TestCase):
         self.assertEqual(events[0]["output_tokens"], 4)
         self.assertNotIn("system", events[0])
         self.assertNotIn("user", events[0])
-
 
 if __name__ == "__main__":
     unittest.main()
