@@ -1,23 +1,18 @@
 import { Box, Flex, Text } from "@radix-ui/themes";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { opseqLabel } from "../../data/operationLabels";
-import { layoutFilteredGraph, visibleNodeLabel, type PhaseGeometry } from "../../lib/filteredGraphLayout";
+import { layoutFilteredGraph, type PhaseGeometry } from "../../lib/filteredGraphLayout";
 import type {
   BranchInstanceId,
   VisibleGraphProjection,
   VisibleNode,
 } from "../../lib/filteredGraphProjection";
 import { shortLabel } from "../../lib/graph";
-import { nodeVisualStyle } from "../../lib/nodeStyles";
 import { MONO } from "../../lib/ui";
 import type { GraphBundle } from "../../types/filteredGraph";
 import FilteredGraphSvg from "./FilteredGraphSvg";
-
-function fullLabel(node: VisibleNode): string {
-  return node.node.code ?? node.node.calleeFullName ?? node.definitionNodeId;
-}
 
 export interface FilteredGraphCanvasProps {
   projection: VisibleGraphProjection;
@@ -43,11 +38,9 @@ export default function FilteredGraphCanvas({
   onSelectOperation,
 }: FilteredGraphCanvasProps) {
   const [openSummary, setOpenSummary] = useState<"callers" | "operations" | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<VisibleNode | null>(null);
   const [graphScrollTop, setGraphScrollTop] = useState(0);
   const graphScrollRef = useRef<HTMLDivElement | null>(null);
   const layout = useMemo(() => layoutFilteredGraph(projection), [projection]);
-  const handleHoverNode = useCallback((node: VisibleNode | null) => setHoveredNode(node), []);
   const currentMethod = currentMethodEntryId ? bundle.methodsByEntryId[currentMethodEntryId] : undefined;
   const callerIds = currentMethodEntryId ? bundle.callersByEntryId[currentMethodEntryId] ?? [] : [];
   const operationIds = currentMethodEntryId ? bundle.operationIdsByMethodEntryId[currentMethodEntryId] ?? [] : [];
@@ -112,8 +105,7 @@ export default function FilteredGraphCanvas({
           onScroll={(event) => setGraphScrollTop(event.currentTarget.scrollTop)}>
           <FilteredGraphSvg projection={projection} layout={layout} selectedNodeId={selectedNodeId}
             onSelectNode={onSelectNode} onToggleCall={onToggleCall}
-            onSelectBranchArm={onSelectBranchArm} onHoverNode={handleHoverNode} bundle={bundle} />
-          {hoveredNode && <NodeTooltip node={hoveredNode} layout={layout} />}
+            onSelectBranchArm={onSelectBranchArm} bundle={bundle} />
         </Box>
       </Flex>
     </Flex>
@@ -146,25 +138,6 @@ function PhaseLane({ phases, scrollTop, onReveal }: {
           </button>
         );
       })}
-    </Box>
-  );
-}
-
-function NodeTooltip({ node, layout }: { node: VisibleNode; layout: ReturnType<typeof layoutFilteredGraph> }) {
-  const point = layout.positions.get(node.id);
-  if (!point) return null;
-  const style = nodeVisualStyle(node.node);
-  return (
-    <Box role="tooltip" style={{ position: "absolute", left: point.x + style.radius + 14,
-      top: point.y + 14, zIndex: 8, maxWidth: 360, padding: "7px 9px", pointerEvents: "none",
-      border: "1px solid var(--gray-a6)", borderRadius: 5, background: "var(--color-panel-solid)",
-      boxShadow: "0 5px 18px var(--gray-a5)" }}>
-      <Text size="1" weight="bold" as="div" style={{ fontFamily: MONO, overflowWrap: "anywhere" }}>
-        {node.node.type === "entry" || node.node.exitKind === "fallthrough" ? visibleNodeLabel(node) : fullLabel(node)}
-      </Text>
-      <Text size="1" color="gray" as="div" mt="1" style={{ fontFamily: MONO }}>
-        {style.label}{node.node.sourceFile ? ` · ${node.node.sourceFile}${node.node.line ? `:${node.node.line}` : ""}` : ""}
-      </Text>
     </Box>
   );
 }

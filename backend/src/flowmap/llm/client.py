@@ -27,8 +27,8 @@ _MODELS: dict[Provider, dict[Role, str]] = {
         "large": "openai/gpt-oss-120b",
     },
     "together": {
-        "small": "openai/gpt-oss-20b",
-        "large": "openai/gpt-oss-120b",
+        "small": "Qwen/Qwen3.5-9B",
+        "large": "Qwen/Qwen3.5-9B",
     },
 }
 
@@ -59,8 +59,8 @@ class LLMClient:
     Both supported providers speak the same chat/completions surface, but
     they disagree on the edges: Groq accepts `max_completion_tokens` and the
     Groq-only `include_reasoning` flag, while Together expects `max_tokens`
-    and rejects `include_reasoning`. `complete` absorbs that difference so
-    the services stay provider-neutral.
+    and uses a provider-specific reasoning toggle. `complete` absorbs that
+    difference so the services stay provider-neutral.
     """
 
     provider: Provider
@@ -98,10 +98,9 @@ class LLMClient:
         }
         if json_object:
             kwargs["response_format"] = {"type": "json_object"}
-        if reasoning_effort is not None:
-            kwargs["reasoning_effort"] = reasoning_effort
-
         if self.provider == "groq":
+            if reasoning_effort is not None:
+                kwargs["reasoning_effort"] = reasoning_effort
             if max_tokens is not None:
                 kwargs["max_completion_tokens"] = max_tokens
             # Groq-only: keeps chain-of-thought out of `content` entirely.
@@ -109,6 +108,9 @@ class LLMClient:
         else:
             if max_tokens is not None:
                 kwargs["max_tokens"] = max_tokens
+            # The OpenAI SDK has no typed Together `reasoning` argument, so
+            # merge the provider-specific field into the JSON request body.
+            kwargs["extra_body"] = {"reasoning": {"enabled": False}}
 
         started = time.perf_counter()
         try:

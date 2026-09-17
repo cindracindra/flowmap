@@ -335,7 +335,7 @@ def _manifest(
         "temperature": 0,
         "reasoning_effort": "low",
         "llm_models": {
-            "small": "openai/gpt-oss-20b",
+            "small": "Qwen/Qwen3.5-9B",
             "large": "openai/gpt-oss-120b",
         },
         "joern_port": args.joern_port,

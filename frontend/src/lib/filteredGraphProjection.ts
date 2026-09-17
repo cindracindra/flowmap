@@ -82,6 +82,8 @@ export interface VisibleBranchGroup {
   conditionStages?: VisibleConditionStage[];
   arms: VisibleBranchArm[];
   selectedArmLabel: string;
+  /** Whether execution can reach this control's decision under current selections. */
+  decisionReachable: boolean;
   enclosingRequirements?: VisibleBranchRequirement[];
   /** Visible topology immediately around the hidden structural anchors. */
   entryPredecessorIds: InstanceNodeId[];
@@ -177,6 +179,7 @@ function instantiateBranchGroups(
         exceptionType: arm.exceptionType,
       })),
       selectedArmLabel: selectedArm?.label ?? "",
+      decisionReachable: false,
       entryNodeId: group.entryNodeId
         ? instanceNodeId(instanceId, group.entryNodeId)
         : undefined,
@@ -476,6 +479,7 @@ export function projectVisibleGraph(
             };
           }),
           selectedArmLabel: selectedTarget,
+          decisionReachable: true,
           entryPredecessorIds: [],
           entrySuccessorIds: [],
           decisionPredecessorIds: [],
@@ -526,6 +530,7 @@ export function projectVisibleGraph(
 
   const rootInstanceId = `operation:${operationId}/root:${projectionRootEntryId}`;
   instantiate(projectionRootEntryId, rootInstanceId, 0, new Set([projectionRootEntryId]));
+  const rootId = instanceNodeId(rootInstanceId, projectionRootEntryId);
   // Edge requirements are the execution contract. Node branch memberships
   // describe containment for branch panels, but must not independently hide
   // a node: an empty arm may continue through an edge whose source is also
@@ -609,10 +614,30 @@ export function projectVisibleGraph(
     return [...outcomesByStructuralSource.entries()]
       .sort((left, right) => right[1].size - left[1].size)[0]?.[0];
   };
+  // Preserve reachability before structural nodes are hidden. Panel
+  // visibility is about whether execution reaches the control decision, not
+  // whether the selected arm happens to retain an ordinary visible node.
+  const structuralOutgoing = new Map<string, string[]>();
+  for (const edge of requirementFilteredEdges) {
+    const targets = structuralOutgoing.get(edge.from);
+    if (targets) targets.push(edge.to);
+    else structuralOutgoing.set(edge.from, [edge.to]);
+  }
+  const structurallyReachableNodeIds = new Set<string>();
+  const structuralPending = [rootId];
+  while (structuralPending.length > 0) {
+    const nodeId = structuralPending.pop()!;
+    if (structurallyReachableNodeIds.has(nodeId) || !emittedNodes.has(nodeId)) continue;
+    structurallyReachableNodeIds.add(nodeId);
+    structuralPending.push(...(structuralOutgoing.get(nodeId) ?? []));
+  }
   const bridgedBranchGroups = branchGroups.map((group) => {
     const decisionNodeId = branchDecisionNodeId(group);
     return {
       ...group,
+      decisionReachable: group.kind === "DISPATCH"
+        ? true
+        : structurallyReachableNodeIds.has(decisionNodeId ?? group.entryNodeId ?? ""),
       entryPredecessorIds: group.entryNodeId
         ? visibleBoundary(group.entryNodeId, incomingByNode)
         : [],
@@ -641,7 +666,6 @@ export function projectVisibleGraph(
     if (targets) targets.push(edge.to);
     else outgoing.set(edge.from, [edge.to]);
   }
-  const rootId = instanceNodeId(rootInstanceId, projectionRootEntryId);
   const reachableNodeIds = new Set<string>();
   const pending = [rootId];
   while (pending.length > 0) {

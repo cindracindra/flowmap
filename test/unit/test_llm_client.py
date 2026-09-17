@@ -51,16 +51,21 @@ class CompleteTests(unittest.TestCase):
         self.assertEqual(kwargs["max_completion_tokens"], 64)
         self.assertIs(kwargs["include_reasoning"], False)
         self.assertNotIn("max_tokens", kwargs)
+        self.assertEqual(kwargs["reasoning_effort"], "low")
         self.assertEqual(kwargs["model"], "openai/gpt-oss-20b")
 
-    def test_together_uses_max_tokens_and_omits_groq_only_flag(self):
+    def test_together_uses_max_tokens_and_disables_reasoning(self):
         client, sdk = self._client("together")
         client.complete(role="large", system="s", user="u", max_tokens=64)
         kwargs = sdk.chat.completions.create.call_args.kwargs
         self.assertEqual(kwargs["max_tokens"], 64)
         self.assertNotIn("include_reasoning", kwargs)
         self.assertNotIn("max_completion_tokens", kwargs)
-        self.assertEqual(kwargs["model"], "openai/gpt-oss-120b")
+        self.assertNotIn("reasoning_effort", kwargs)
+        self.assertEqual(
+            kwargs["extra_body"], {"reasoning": {"enabled": False}}
+        )
+        self.assertEqual(kwargs["model"], "Qwen/Qwen3.5-9B")
 
     def test_json_object_sets_response_format(self):
         client, sdk = self._client("groq")

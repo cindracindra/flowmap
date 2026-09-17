@@ -27,7 +27,6 @@ interface FilteredGraphSvgProps {
   onSelectNode: (node: VisibleNode) => void;
   onToggleCall: (node: VisibleNode) => void;
   onSelectBranchArm: (branchId: BranchInstanceId, armLabel: string, kind: string) => void;
-  onHoverNode: (node: VisibleNode | null) => void;
   bundle: GraphBundle;
 }
 
@@ -39,7 +38,6 @@ function FilteredGraphSvgComponent({
   onSelectNode,
   onToggleCall,
   onSelectBranchArm,
-  onHoverNode,
   bundle,
 }: FilteredGraphSvgProps) {
   const markerScope = useId().replaceAll(":", "");
@@ -133,7 +131,6 @@ function FilteredGraphSvgComponent({
               onSelectNode(node);
               if (node.expandable && !node.recursiveCutoff) onToggleCall(node);
             }}
-            onMouseEnter={() => onHoverNode(node)} onMouseLeave={() => onHoverNode(null)}
             style={{ cursor: node.expandable && !node.recursiveCutoff ? "pointer" : "default" }}>
             <circle className="filtered-graph-node-hover" r={style.radius + 6} fill={style.stroke + "28"}
               opacity={selected ? 1 : 0} style={{ transition: "opacity 80ms" }} />

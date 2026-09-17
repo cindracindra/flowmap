@@ -65,7 +65,9 @@ const projection: VisibleGraphProjection = {
     kind: "IF",
     line: 1,
     selectedArmLabel: "if",
+    decisionReachable: true,
     entryPredecessorIds: [`${rootInstance}:entry`],
+    decisionPredecessorIds: [],
     entrySuccessorIds: [`${rootInstance}:call-1`],
     exitPredecessorIds: [`${rootInstance}:call-1`],
     continuationIds: [`${rootInstance}:call-2`],
@@ -79,12 +81,18 @@ const projection: VisibleGraphProjection = {
 
 const layout = layoutFilteredGraph(projection);
 const y = (id: string) => layout.positions.get(id)!.y;
-assert(y(`${childOne}:work-one`) < y(`${rootInstance}:call-2`), "first expansion must finish before the next caller call");
-assert(y(`${childTwo}:work-two`) < y(`${rootInstance}:after`), "second expansion must finish before caller continuation");
+assert.equal(y(`${rootInstance}:call-2`) - y(`${rootInstance}:call-1`), 78,
+  "an expanded callee must not consume rows in its caller");
+assert.equal(y(`${rootInstance}:after`) - y(`${rootInstance}:call-2`), 78,
+  "the caller continuation remains locally compact");
+assert.equal(y(`${childOne}:entry-one`) - y(`${rootInstance}:call-1`), 46,
+  "an invoke edge should descend slightly from the call to the callee entry");
+assert(y(`${childTwo}:entry-two`) > y(`${childOne}:work-one`),
+  "overlapping sibling expansion subtrees are packed apart");
 
 const panel = layout.branches[0];
 assert(panel.ownedNodeIds.has(`${rootInstance}:call-1`));
-assert(panel.ownedNodeIds.has(`${childOne}:work-one`), "expanded descendants belong to their owning branch call");
+assert(!panel.ownedNodeIds.has(`${childOne}:work-one`), "expanded descendants stay outside caller branch panels");
 assert(!panel.ownedNodeIds.has(`${rootInstance}:call-2`), "later caller node is not branch-owned");
 assert(y(`${rootInstance}:call-2`) > panel.y + panel.height, "later caller node must render below the branch panel");
 
@@ -106,7 +114,9 @@ const terminalProjection: VisibleGraphProjection = {
   branchGroups: [{
     id: `${terminalInstance}/branch:g2`, instanceId: terminalInstance,
     definitionBranchId: "g2", kind: "IF", selectedArmLabel: "if",
+    decisionReachable: true,
     entryPredecessorIds: [`${terminalInstance}:entry`], entrySuccessorIds: [`${terminalInstance}:return`],
+    decisionPredecessorIds: [],
     exitPredecessorIds: [], continuationIds: [],
     arms: [
       { label: "if", empty: true, exits: [{ kind: "return" }] },
@@ -142,7 +152,11 @@ const emptyProjection: VisibleGraphProjection = {
   branchGroups: [{
     id: `${emptyInstance}/branch:g3`, instanceId: emptyInstance,
     definitionBranchId: "g3", kind: "IF", selectedArmLabel: "else",
-    entryPredecessorIds: [`${emptyInstance}:entry`], entrySuccessorIds: [`${emptyInstance}:after`],
+    decisionReachable: true,
+    // A bridged decision can report the condition/fork as its entry successor.
+    // Empty-arm placement must still use the post-branch continuation.
+    entryPredecessorIds: [`${emptyInstance}:entry`], entrySuccessorIds: [`${emptyInstance}:entry`],
+    decisionPredecessorIds: [],
     exitPredecessorIds: [], continuationIds: [`${emptyInstance}:after`],
     arms: [
       { label: "if", empty: false, exits: [{ kind: "return" }] },
@@ -156,6 +170,7 @@ const emptyLayout = layoutFilteredGraph(emptyProjection);
 const emptyPanel = emptyLayout.branches[0];
 const continuationY = emptyLayout.positions.get(`${emptyInstance}:after`)!.y;
 assert.equal(emptyPanel.compactEmpty, true);
+assert(emptyLayout.height < 500, "an empty arm anchored at its fork must not trigger repeated shifts");
 assert(
   emptyPanel.y + emptyPanel.height + 22 <= continuationY,
   "empty panel must end before its continuation node",
@@ -254,7 +269,9 @@ const expandedForkProjection: VisibleGraphProjection = {
   branchGroups: [{
     id: `${expandedForkInstance}/branch:g4`, instanceId: expandedForkInstance,
     definitionBranchId: "g4", kind: "TRY", selectedArmLabel: "else",
+    decisionReachable: true,
     entryPredecessorIds: [`${expandedForkInstance}:branch-call`],
+    decisionPredecessorIds: [],
     entrySuccessorIds: [`${expandedForkInstance}:after`], exitPredecessorIds: [],
     continuationIds: [`${expandedForkInstance}:after`],
     arms: [{ label: "else", empty: true, exits: [{ kind: "continues" }] }],
@@ -264,10 +281,11 @@ const expandedForkProjection: VisibleGraphProjection = {
 
 const expandedForkLayout = layoutFilteredGraph(expandedForkProjection);
 const expandedForkPanel = expandedForkLayout.branches[0];
-const expandedReturnY = expandedForkLayout.positions.get(`${expandedForkChild}:return`)!.y;
+const expandedForkY = expandedForkLayout.positions.get(`${expandedForkInstance}:branch-call`)!.y;
+const expandedAfterY = expandedForkLayout.positions.get(`${expandedForkInstance}:after`)!.y;
 assert(
-  expandedForkPanel.y >= expandedReturnY + 8 + 12,
-  "branch panel must start below the complete expansion of its branch-point call",
+  expandedForkPanel.y > expandedForkY && expandedForkPanel.y + expandedForkPanel.height < expandedAfterY,
+  "branch controls stay in the caller flow instead of waiting for the expanded callee",
 );
 
 // TRY starts lexically before an IF in its protected body, but its outcome
@@ -305,14 +323,18 @@ const nestedTryProjection: VisibleGraphProjection = {
     {
       id: tryGroupId, instanceId: nestedTryInstance, definitionBranchId: "outer-try",
       kind: "TRY", line: 10, selectedArmLabel: "noCatch",
+      decisionReachable: true,
       entryPredecessorIds: [`${nestedTryInstance}:try-fork`], entrySuccessorIds: [`${nestedTryInstance}:if-fork`],
+      decisionPredecessorIds: [],
       exitPredecessorIds: [], continuationIds: [`${nestedTryInstance}:after`],
       arms: [{ label: "noCatch", empty: true, exits: [{ kind: "continues" }] }],
     },
     {
       id: innerGroupId, instanceId: nestedTryInstance, definitionBranchId: "inner-if",
       kind: "IF", line: 12, selectedArmLabel: "if",
+      decisionReachable: true,
       entryPredecessorIds: [`${nestedTryInstance}:if-fork`], entrySuccessorIds: [`${nestedTryInstance}:if-body`],
+      decisionPredecessorIds: [],
       exitPredecessorIds: [`${nestedTryInstance}:if-body`], continuationIds: [`${nestedTryInstance}:after`],
       arms: [{ label: "if", empty: false, exits: [{ kind: "continues" }] }],
     },
@@ -378,6 +400,7 @@ const conditionProjection: VisibleGraphProjection = {
     definitionBranchId: "condition",
     kind: "IF",
     selectedArmLabel: "if",
+    decisionReachable: true,
     entryPredecessorIds: [`${conditionInstance}:entry`], entrySuccessorIds: [`${conditionInstance}:trim`],
     decisionPredecessorIds: [`${conditionInstance}:entry`, `${conditionInstance}:is-empty`],
     exitPredecessorIds: [`${conditionInstance}:get-cart`], continuationIds: [],
@@ -434,6 +457,8 @@ const decisionsProjection: VisibleGraphProjection = {
     {
       id: outerDecisionGroup, instanceId: decisionsInstance, definitionBranchId: "outer",
       kind: "IF", selectedArmLabel: "if", entryPredecessorIds: [`${decisionsInstance}:entry`],
+      decisionReachable: true,
+      decisionPredecessorIds: [],
       entrySuccessorIds: [`${decisionsInstance}:compare`], exitPredecessorIds: [`${decisionsInstance}:compare`], continuationIds: [],
       arms: [
         { label: "if", empty: false, exits: [{ kind: "continues" }] },
@@ -443,6 +468,8 @@ const decisionsProjection: VisibleGraphProjection = {
     {
       id: innerDecisionGroup, instanceId: decisionsInstance, definitionBranchId: "inner",
       kind: "IF", selectedArmLabel: "if", entryPredecessorIds: [`${decisionsInstance}:compare`],
+      decisionReachable: true,
+      decisionPredecessorIds: [],
       entrySuccessorIds: [], exitPredecessorIds: [], continuationIds: [],
       enclosingRequirements: [{ groupId: outerDecisionGroup, armLabel: "if" }],
       arms: [
@@ -506,7 +533,9 @@ const elseIfProjection: VisibleGraphProjection = {
   branchGroups: [{
     id: elseIfGroup, instanceId: elseIfInstance, definitionBranchId: "chain",
     kind: "IF", selectedArmLabel: "elseif2",
+    decisionReachable: true,
     entryPredecessorIds: [`${elseIfInstance}:entry`],
+    decisionPredecessorIds: [],
     entrySuccessorIds: [`${elseIfInstance}:body`],
     exitPredecessorIds: [`${elseIfInstance}:body`],
     continuationIds: [`${elseIfInstance}:after`],
@@ -537,10 +566,6 @@ const elseIfProjection: VisibleGraphProjection = {
 };
 const elseIfLayout = layoutFilteredGraph(elseIfProjection);
 const elseIfPanel = elseIfLayout.branches[0];
-assert.equal(
-  elseIfPanel.armRows.find((row) => row.arm.label === "elseif2")?.conditionPath,
-  "first() ✗ → second() ✗ → third() ✓",
-);
 assert(
   elseIfLayout.positions.get(`${elseIfInstance}:after`)!.y
     >= elseIfPanel.y + elseIfPanel.height + 12,

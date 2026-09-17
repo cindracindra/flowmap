@@ -1,4 +1,4 @@
 {
-  "sourceDir": "../evaluation/codebase/jpetstore-6/src/main",
-  "outputDir": "evaluation/results/jpetstore-6/smoke/run-03"
+  "sourceDir": "../_DEMO/petclinic_extension/src/main",
+  "outputDir": "../_DEMO/output/petclinic_extension"
 }
