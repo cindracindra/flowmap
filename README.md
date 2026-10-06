@@ -6,11 +6,9 @@ FlowMap statically analyses a Java project and turns it into an interactive map:
 
 It was built as my MSc thesis project at Imperial College London.
 
-| Topic → operations | Operation → phased control-flow graph |
-| --- | --- |
-| ![Operations grouped under a topic](docs/topic-operations.jpg) | ![Control-flow graph of one operation, split into execution phases](docs/operation-graph.jpg) |
+![FlowMap demo: from a topic to an operation, then expanding a call and switching branches](docs/demo.gif)
 
-*Screenshots: FlowMap run on [Spring PetClinic](https://github.com/spring-projects/spring-petclinic).*
+*FlowMap running on [Spring PetClinic](https://github.com/spring-projects/spring-petclinic). More screenshots are under [Using the viewer](#using-the-viewer).*
 
 ## How it works
 
@@ -88,11 +86,24 @@ The first run installs the Python and frontend dependencies. Results are saved t
 
 ## Using the viewer
 
-- **Topic discovery** — start here. Pick a topic, then an operation to open its graph.
-- **Expandable graph** — browse every method from the left-hand tree. Click a `+` call node to expand the called method inline.
-- **Execution phases** — coloured bands on the left of the graph summarise what each stretch of code does.
-- **Branches** — `if`/`else`, `try`/`catch` and polymorphic dispatch arms can be toggled to follow one path at a time.
-- **User guide** — the in-app guide (top right) explains every panel and node type.
+**1. Pick a topic.** FlowMap groups the codebase into topics and counts the operations in each.
+
+![Topics discovered in Spring PetClinic](docs/01-topics.png)
+
+**2. Pick an operation.** Each topic lists its operations, each named by the LLM from what the code does.
+
+![Operations in the Owner and Pet Management topic](docs/02-operations.png)
+
+**3. Read the phased graph and expand calls.** The operation opens as a control-flow graph. The coloured bands on the left are *execution phases* that summarise each stretch of code. Click a `+` node to expand the method it calls inline. The callee's own phases slot in between the caller's, and the rest of the caller moves down to make room.
+
+![An expanded call with its own execution phases nested between the caller's](docs/03-expanded-call.png)
+
+| **Switch branches** | **Inspect a node** |
+| --- | --- |
+| `if`/`else`, `try`/`catch` and polymorphic dispatch arms can be toggled to follow one path at a time. | Select any node to see its code, owning method, source file and phase. |
+| ![Branch switched to the else arm inside an expanded callee](docs/04-branch-toggle.png) | ![Node details panel for a selected call](docs/05-node-details.png) |
+
+The **Expandable graph** tab lets you start from any method instead of a topic. The in-app **User guide** (top right) explains every panel and node type.
 
 ## Project structure
 
