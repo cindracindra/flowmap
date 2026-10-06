@@ -180,9 +180,10 @@ function verticalTranslationWithoutCollisions(
 
 /**
  * Lay out each method's own sequence independently. Expanded callees are
- * recursively packed as rectangles to the right of the caller and never
- * consume rows in the caller's sequence. This keeps the local continuation
- * compact while preventing sibling expansion subtrees from overlapping.
+ * recursively packed as rectangles to the right of the caller, and the
+ * caller's continuation resumes below the expanded subtree. Execution phases
+ * share one vertical lane, so a callee's phases must finish before the
+ * caller's next node starts.
  */
 function layoutInstanceBlocks(projection: VisibleGraphProjection): Map<string, GraphPoint> {
   const nodesByInstance = new Map<string, VisibleNode[]>();
@@ -268,28 +269,34 @@ function layoutInstanceBlocks(projection: VisibleGraphProjection): Map<string, G
     const localNodes = orderedNodes(instanceId);
     const positions = new Map<string, GraphPoint>();
     const localRects: CollisionRect[] = [];
-    for (const [row, node] of localNodes.entries()) {
-      const point = { x: 0, y: row * FILTERED_ROW_HEIGHT };
-      positions.set(node.id, point);
-      localRects.push(nodeCollisionRect(node, point));
-      if (dispatchAnchorIds.has(node.id)) {
-        localRects.push({
-          left: point.x,
-          right: point.x + DISPATCH_SELECTOR_WIDTH,
-          top: point.y - 46,
-          bottom: point.y - 8,
-        });
-      }
-    }
-
+    const localRightOf = (node: VisibleNode): number => {
+      const rect = nodeCollisionRect(node, { x: 0, y: 0 });
+      return dispatchAnchorIds.has(node.id)
+        ? Math.max(rect.right, DISPATCH_SELECTOR_WIDTH)
+        : rect.right;
+    };
+    // Children are packed to the right of every local label, so the column
+    // edge must be known before any local row is placed.
     const localRight = Math.max(
       0,
-      ...localRects.map((rect) => rect.right),
+      ...localNodes.map(localRightOf),
       (controlsWidthByInstance.get(instanceId) ?? 0) + BRANCH_REGION_PAD,
     );
     const childRects: CollisionRect[] = [];
+    let nextLocalY = 0;
     for (const node of localNodes) {
-      const callPoint = positions.get(node.id)!;
+      const callPoint = { x: 0, y: nextLocalY };
+      positions.set(node.id, callPoint);
+      localRects.push(nodeCollisionRect(node, callPoint));
+      if (dispatchAnchorIds.has(node.id)) {
+        localRects.push({
+          left: callPoint.x,
+          right: callPoint.x + DISPATCH_SELECTOR_WIDTH,
+          top: callPoint.y - 46,
+          bottom: callPoint.y - 8,
+        });
+      }
+      nextLocalY = callPoint.y + FILTERED_ROW_HEIGHT;
       for (const childInstanceId of childrenByCall.get(node.id) ?? []) {
         const child = buildInstance(childInstanceId);
         const childEntryPoint = child.entryId
@@ -320,6 +327,11 @@ function layoutInstanceBlocks(projection: VisibleGraphProjection): Map<string, G
         }
         childRects.push(...child.collisionRects.map((rect) =>
           translateRect(rect, dx, dy)));
+        // Resume the caller one row below the expanded callee's last node.
+        const childBottom = Math.max(
+          ...[...child.positions.values()].map((point) => point.y + dy),
+        );
+        nextLocalY = Math.max(nextLocalY, childBottom + FILTERED_ROW_HEIGHT);
       }
     }
 
@@ -537,10 +549,21 @@ function shiftDownstream(
 ): void {
   if (amount <= 0 || startIds.length === 0) return;
   const outgoing = new Map<string, string[]>();
+  const sequenceSuccessors = new Map<string, string[]>();
+  const callerByInstance = new Map<string, string>();
+  const instanceByNode = new Map(projection.nodes.map((node) => [node.id, node.instanceId]));
   for (const edge of projection.edges) {
     const targets = outgoing.get(edge.from);
     if (targets) targets.push(edge.to);
     else outgoing.set(edge.from, [edge.to]);
+    if (edge.kind === "sequence") {
+      const successors = sequenceSuccessors.get(edge.from);
+      if (successors) successors.push(edge.to);
+      else sequenceSuccessors.set(edge.from, [edge.to]);
+    } else {
+      const childInstance = instanceByNode.get(edge.to);
+      if (childInstance) callerByInstance.set(childInstance, edge.from);
+    }
   }
   const downstream = new Set<string>();
   const pending = [...startIds];
@@ -549,6 +572,11 @@ function shiftDownstream(
     if (downstream.has(nodeId)) continue;
     downstream.add(nodeId);
     pending.push(...(outgoing.get(nodeId) ?? []));
+    // A growing callee pushes down the caller's continuation, which resumes
+    // below the expanded subtree.
+    const instanceId = instanceByNode.get(nodeId);
+    const caller = instanceId ? callerByInstance.get(instanceId) : undefined;
+    if (caller) pending.push(...(sequenceSuccessors.get(caller) ?? []));
   }
   for (const nodeId of downstream) {
     const point = positions.get(nodeId);

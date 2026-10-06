@@ -81,10 +81,10 @@ const projection: VisibleGraphProjection = {
 
 const layout = layoutFilteredGraph(projection);
 const y = (id: string) => layout.positions.get(id)!.y;
-assert.equal(y(`${rootInstance}:call-2`) - y(`${rootInstance}:call-1`), 78,
-  "an expanded callee must not consume rows in its caller");
-assert.equal(y(`${rootInstance}:after`) - y(`${rootInstance}:call-2`), 78,
-  "the caller continuation remains locally compact");
+assert.equal(y(`${rootInstance}:call-2`), y(`${childOne}:work-one`) + 78,
+  "the caller resumes one row below its expanded callee");
+assert.equal(y(`${rootInstance}:after`), y(`${childTwo}:work-two`) + 78,
+  "each expansion pushes the rest of the caller down");
 assert.equal(y(`${childOne}:entry-one`) - y(`${rootInstance}:call-1`), 46,
   "an invoke edge should descend slightly from the call to the callee entry");
 assert(y(`${childTwo}:entry-two`) > y(`${childOne}:work-one`),
