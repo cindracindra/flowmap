@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 
-import { visibleNodeLoops } from "./src/lib/filteredGraphLoops.ts";
-import type { VisibleNode } from "./src/lib/filteredGraphProjection.ts";
-import type { GraphBundle } from "./src/types/filteredGraph.ts";
+import { visibleNodeLoops } from "../src/lib/filteredGraphLoops.ts";
+import type { VisibleNode } from "../src/lib/filteredGraphProjection.ts";
+import type { GraphBundle } from "../src/types/filteredGraph.ts";
 
 const instanceId = "operation:test/root:method";
 const node = {

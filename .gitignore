@@ -1,5 +1,6 @@
 .env
 .env.*
+!.env.example
 *.env
 .envrc
 
@@ -106,20 +107,12 @@ desktop.ini
 .claude/
 
 # ===========================================================================
-# Superseded / scratch work
+# FlowMap analysis results (written by ./flowmap.sh)
 # ===========================================================================
-# Earlier experiments kept locally for reference, not part of the build.
-/old/
-/data/
-/evaluation/
-/outputs/
+/runs/
 
 # ===========================================================================
 # Misc
 # ===========================================================================
 *.log
 /tmp/
-*.md
-
-
-.test/

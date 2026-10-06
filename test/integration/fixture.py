@@ -7,7 +7,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 from backend.src.flowmap.joern.joern_session import JoernSession
 from backend.src.flowmap.service.cpg import parse_project
 
-SOURCE_DIR = _REPO_ROOT / "test_code" / "full_fixture"
+SOURCE_DIR = _REPO_ROOT / "test" / "fixtures" / "java_fixture"
 OUTPUT_DIR = Path(__file__).resolve().parent / "test_output"
 CPG_PATH = OUTPUT_DIR / "cpg.bin"
 

@@ -4,8 +4,8 @@ import {
   branchInstanceId,
   callInstanceId,
   projectVisibleGraph,
-} from "./src/lib/filteredGraphProjection.ts";
-import type { GraphBundle, MethodDefinition } from "./src/types/filteredGraph.ts";
+} from "../src/lib/filteredGraphProjection.ts";
+import type { GraphBundle, MethodDefinition } from "../src/types/filteredGraph.ts";
 
 const method = (
   entryId: string,
@@ -279,16 +279,16 @@ nested.branchGroups = [
     id: "outer",
     kind: "IF",
     arms: [
-      { label: "if", empty: false },
-      { label: "else", empty: false },
+      { label: "if", empty: false, exits: [] },
+      { label: "else", empty: false, exits: [] },
     ],
   },
   {
     id: "inner",
     kind: "IF",
     arms: [
-      { label: "if", empty: false },
-      { label: "else", empty: false },
+      { label: "if", empty: false, exits: [] },
+      { label: "else", empty: false, exits: [] },
     ],
   },
 ];

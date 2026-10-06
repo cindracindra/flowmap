@@ -1,7 +1,7 @@
 [project]
-name = "flowmap_java"
+name = "flowmap"
 version = "0.1.0"
-description = ""
+description = "Static analysis + LLM pipeline that maps Java codebases into navigable business operations and execution phases."
 authors = [
     {name = "cindra",email = "cc4625@ic.ac.uk"}
 ]
@@ -23,9 +23,15 @@ dependencies = [
 
 
 [tool.poetry]
-packages = [{ include = "processor" }]
+# FlowMap is run as an application (see flowmap.sh), not installed as a library.
+package-mode = false
 
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.1.1,<10.0.0)"
+]

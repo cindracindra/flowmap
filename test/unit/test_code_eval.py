@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from model import Edge, Graph, Node
-from data.code_eval import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
+from telemetry import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
 
 
 class StatsTests(unittest.TestCase):

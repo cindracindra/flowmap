@@ -13,12 +13,7 @@ import sys
 from typing import Any
 from dotenv import load_dotenv
 
-# `main.py` is commonly executed by file path. In that mode Python adds this
-# file's directory, but not the repository root that owns `data.code_eval`.
-# Resolve it from the file rather than depending on the caller's working dir.
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 import time
 from contextlib import contextmanager
@@ -65,14 +60,10 @@ from service.phase import resolve_execution_phase_gate_batch
 from service.method_phase_label import label_method_phases as label_method_phase_batch
 from model import Graph
 from presentation import build_graph_bundle, serialize_graph_bundle
-from data.code_eval import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
+from telemetry import EvaluationRecorder, collect_codebase_stats, collect_graph_stats
 
 
-with (PROJECT_ROOT / "flowmap.config.json").open() as config_file:
-    FLOWMAP_CONFIG = json.load(config_file)
-
-DEFAULT_SOURCE_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["sourceDir"]).resolve()
-DEFAULT_OUTPUT_DIR = (PROJECT_ROOT / FLOWMAP_CONFIG["outputDir"]).resolve()
+DEFAULT_RUNS_DIR = PROJECT_ROOT / "runs"
 
 
 def export_to_json(output_path: Path, content: Any) -> None:
@@ -148,14 +139,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--source-dir",
         type=Path,
-        default=DEFAULT_SOURCE_DIR,
-        help="Java source tree to analyse (default: flowmap.config.json).",
+        required=True,
+        help="Java source tree to analyse.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help="Unique directory for this run's generated artifacts.",
+        help="Unique directory for this run's generated artifacts "
+             "(default: runs/<source-dir name>).",
     )
     parser.add_argument(
         "--run-id",
@@ -233,7 +224,11 @@ _ARTIFACT_NAMES = {
 
 def _prepare_paths(args: argparse.Namespace) -> tuple[Path, Path, Path]:
     source_dir = args.source_dir.expanduser().resolve()
-    output_dir = args.output_dir.expanduser().resolve()
+    output_dir = (
+        args.output_dir.expanduser().resolve()
+        if args.output_dir is not None
+        else DEFAULT_RUNS_DIR / source_dir.name
+    )
     cpg_path = (
         args.cpg_path.expanduser().resolve()
         if args.cpg_path is not None

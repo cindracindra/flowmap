@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 
-import { layoutFilteredGraph } from "./src/lib/filteredGraphLayout.ts";
+import { layoutFilteredGraph } from "../src/lib/filteredGraphLayout.ts";
 import type {
   VisibleGraphProjection,
   VisibleNode,
-} from "./src/lib/filteredGraphProjection.ts";
+} from "../src/lib/filteredGraphProjection.ts";
 
 const rootInstance = "operation:test/root:root";
 const childOne = `${rootInstance}/call:call-1/target:0:child-one`;
