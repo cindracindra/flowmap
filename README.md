@@ -35,7 +35,21 @@ LLM calls are batched, rate-limit aware, retried, and validated against a schema
 
 ## Quick start
 
+### Try the demo
+
+To explore the viewer without installing Joern or getting an API key, open the bundled Spring PetClinic results. Only [Node.js](https://nodejs.org) 20.19+ is needed:
+
+```bash
+git clone https://github.com/cindracindra/flowmap.git
+cd flowmap
+./flowmap.sh --demo
+```
+
+This skips the analysis entirely and serves the pre-computed results in [`demo/petclinic/`](demo/petclinic/). Add `--port N` to use a different port.
+
 ### Prerequisites
+
+To analyse your own project you need:
 
 | Tool | Version | Install |
 | --- | --- | --- |
@@ -74,6 +88,7 @@ The first run installs the Python and frontend dependencies. Results are saved t
 
 | Option | Description |
 | --- | --- |
+| `--demo` | Open the bundled PetClinic results without analysing anything |
 | `-o, --output DIR` | Where results are stored (default: `runs/<project-name>`) |
 | `-p, --provider NAME` | `groq` (default) or `together` |
 | `--preset NAME` | Topic granularity: `fine`, `balanced` (default) or `coarse` |
@@ -108,7 +123,8 @@ The **Expandable graph** tab lets you start from any method instead of a topic. 
 ## Project structure
 
 ```
-flowmap.sh                 One-command launcher (analyse + view)
+flowmap.sh                 One-command launcher (analyse + view, or --demo)
+demo/petclinic/            Pre-computed Spring PetClinic results for --demo
 backend/src/flowmap/
   main.py                  Pipeline entry point
   joern/                   Joern server session and CPG queries (.sc scripts)

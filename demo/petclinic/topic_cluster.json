@@ -1,0 +1,133 @@
+[
+  {
+    "label": -1,
+    "member_full_names": [
+      "org.springframework.samples.petclinic.owner.OwnerRepository"
+    ],
+    "statistical_terms": [
+      "find",
+      "starting",
+      "repository",
+      "last",
+      "name",
+      "owner"
+    ],
+    "fallback": false,
+    "readme_paths": [
+      "README.md"
+    ],
+    "llm_label": "find"
+  },
+  {
+    "label": 0,
+    "member_full_names": [
+      "org.springframework.samples.petclinic.PetClinicApplication",
+      "org.springframework.samples.petclinic.PetClinicRuntimeHints",
+      "org.springframework.samples.petclinic.owner.PetType",
+      "org.springframework.samples.petclinic.owner.PetTypeFormatter",
+      "org.springframework.samples.petclinic.owner.PetTypeRepository",
+      "org.springframework.samples.petclinic.system.CacheConfiguration"
+    ],
+    "statistical_terms": [
+      "type",
+      "pet",
+      "types",
+      "cache",
+      "hints",
+      "clinic",
+      "application",
+      "configuration",
+      "db",
+      "find"
+    ],
+    "fallback": false,
+    "readme_paths": [
+      "README.md"
+    ],
+    "llm_label": "Application Configuration"
+  },
+  {
+    "label": 1,
+    "member_full_names": [
+      "org.springframework.samples.petclinic.vet.Specialty",
+      "org.springframework.samples.petclinic.vet.Vet",
+      "org.springframework.samples.petclinic.vet.VetController",
+      "org.springframework.samples.petclinic.vet.VetRepository",
+      "org.springframework.samples.petclinic.vet.Vets"
+    ],
+    "statistical_terms": [
+      "vet",
+      "vets",
+      "page",
+      "list",
+      "specialties",
+      "specialty",
+      "repository",
+      "show",
+      "paginated",
+      "model"
+    ],
+    "fallback": false,
+    "readme_paths": [
+      "README.md"
+    ],
+    "llm_label": "Vet Management"
+  },
+  {
+    "label": 2,
+    "member_full_names": [
+      "org.springframework.samples.petclinic.owner.Owner",
+      "org.springframework.samples.petclinic.owner.OwnerController",
+      "org.springframework.samples.petclinic.owner.Pet",
+      "org.springframework.samples.petclinic.owner.PetController",
+      "org.springframework.samples.petclinic.owner.PetValidator",
+      "org.springframework.samples.petclinic.owner.Visit",
+      "org.springframework.samples.petclinic.owner.VisitController"
+    ],
+    "statistical_terms": [
+      "owner",
+      "pet",
+      "owners",
+      "id",
+      "form",
+      "date",
+      "visit",
+      "the",
+      "not",
+      "redirect"
+    ],
+    "fallback": false,
+    "readme_paths": [
+      "README.md"
+    ],
+    "llm_label": "Owner and Pet Management"
+  },
+  {
+    "label": 3,
+    "member_full_names": [
+      "org.springframework.samples.petclinic.model.BaseEntity",
+      "org.springframework.samples.petclinic.model.NamedEntity",
+      "org.springframework.samples.petclinic.model.Person",
+      "org.springframework.samples.petclinic.system.CrashController",
+      "org.springframework.samples.petclinic.system.WebConfiguration",
+      "org.springframework.samples.petclinic.system.WelcomeController"
+    ],
+    "statistical_terms": [
+      "name",
+      "first",
+      "last",
+      "welcome",
+      "locale",
+      "set",
+      "controller",
+      "get",
+      "resolver",
+      "interceptor"
+    ],
+    "fallback": false,
+    "readme_paths": [
+      "README.md"
+    ],
+    "llm_label": "Base Entities and Welcome"
+  }
+]

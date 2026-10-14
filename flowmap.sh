@@ -2,23 +2,30 @@
 # FlowMap: analyse a Java project and open the interactive viewer.
 #
 #   ./flowmap.sh <path-to-java-project> [options]
+#   ./flowmap.sh --demo
 #
 # Run with --help for all options.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DEMO_DIR="$REPO_ROOT/demo/petclinic"
 ARTIFACTS=(raw_cfg.json full_cfg.json graph_bundle.json topic_cluster.json
   opseq_topic_assignment.json opseq_labels.json topic_operations.json
   phase_gate_decisions.json)
+# The subset the viewer reads; this is all the bundled demo ships.
+VIEWER_ARTIFACTS=(graph_bundle.json topic_cluster.json topic_operations.json)
 
 usage() {
   cat <<EOF
 Usage: ./flowmap.sh <path-to-java-project> [options]
+       ./flowmap.sh --demo [--port N]
 
 Analyses the Java source tree, then starts the FlowMap viewer in your browser.
 If the project was already analysed, the saved results are reused.
 
 Options:
+      --demo            Open the bundled Spring PetClinic results without
+                        analysing anything (needs only Node.js)
   -o, --output DIR      Where results are stored (default: runs/<project-name>)
   -p, --provider NAME   LLM provider: groq (default) or together
       --preset NAME     Topic granularity: fine, balanced (default) or coarse
@@ -29,6 +36,7 @@ Options:
   -h, --help            Show this help
 
 Examples:
+  ./flowmap.sh --demo
   ./flowmap.sh ~/code/spring-petclinic
   ./flowmap.sh ~/code/spring-petclinic --reanalyse --preset fine
   ./flowmap.sh --view-only -o runs/spring-petclinic
@@ -41,17 +49,18 @@ require() { command -v "$1" >/dev/null 2>&1 || fail "$1 is not installed. $2"; }
 
 # ---------------------------------------------------------------- arguments
 SOURCE_DIR="" OUTPUT_DIR="" PROVIDER="groq" PRESET="balanced" PORT="5173"
-REANALYSE=0 ANALYSE=1 VIEW=1
+REANALYSE=0 ANALYSE=1 VIEW=1 DEMO=0 ANALYSIS_OPTS=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    -o|--output)    OUTPUT_DIR="${2:?missing value for $1}"; shift 2 ;;
-    -p|--provider)  PROVIDER="${2:?missing value for $1}"; shift 2 ;;
-    --preset)       PRESET="${2:?missing value for $1}"; shift 2 ;;
+    -o|--output)    OUTPUT_DIR="${2:?missing value for $1}"; ANALYSIS_OPTS=1; shift 2 ;;
+    -p|--provider)  PROVIDER="${2:?missing value for $1}"; ANALYSIS_OPTS=1; shift 2 ;;
+    --preset)       PRESET="${2:?missing value for $1}"; ANALYSIS_OPTS=1; shift 2 ;;
     --port)         PORT="${2:?missing value for $1}"; shift 2 ;;
-    --reanalyse)    REANALYSE=1; shift ;;
-    --analyse-only) VIEW=0; shift ;;
-    --view-only)    ANALYSE=0; shift ;;
+    --reanalyse)    REANALYSE=1; ANALYSIS_OPTS=1; shift ;;
+    --analyse-only) VIEW=0; ANALYSIS_OPTS=1; shift ;;
+    --view-only)    ANALYSE=0; ANALYSIS_OPTS=1; shift ;;
+    --demo)         DEMO=1; shift ;;
     -h|--help)      usage; exit 0 ;;
     -*)             usage >&2; fail "unknown option: $1" ;;
     *)              [[ -z "$SOURCE_DIR" ]] || fail "only one project path may be given"
@@ -59,7 +68,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -n "$SOURCE_DIR" ]]; then
+if [[ $DEMO -eq 1 ]]; then
+  [[ -z "$SOURCE_DIR" && $ANALYSIS_OPTS -eq 0 ]] \
+    || fail "--demo cannot be combined with a project path or analysis options (only --port)"
+  OUTPUT_DIR="$DEMO_DIR" ANALYSE=0
+  ARTIFACTS=("${VIEWER_ARTIFACTS[@]}")
+  for name in "${ARTIFACTS[@]}"; do
+    [[ -f "$DEMO_DIR/$name" ]] || fail "demo data is missing: $DEMO_DIR/$name"
+  done
+  info "Demo mode: showing bundled Spring PetClinic results (no analysis is run)"
+elif [[ -n "$SOURCE_DIR" ]]; then
   [[ -d "$SOURCE_DIR" ]] || fail "not a directory: $SOURCE_DIR"
   SOURCE_DIR="$(cd "$SOURCE_DIR" && pwd)"
   [[ -n "$OUTPUT_DIR" ]] || OUTPUT_DIR="$REPO_ROOT/runs/$(basename "$SOURCE_DIR")"

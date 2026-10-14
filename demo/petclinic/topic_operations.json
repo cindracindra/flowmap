@@ -1,0 +1,226 @@
+{
+  "0": [
+    {
+      "id": "m107374182497",
+      "label": "Configure cache",
+      "rootMethodFullName": "org.springframework.samples.petclinic.system.CacheConfiguration.<lambda>0:<unresolvedSignature>(1)",
+      "similarity": 0.31311920285224915
+    },
+    {
+      "id": "m107374182463",
+      "label": "Initialize pet binder",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.initPetBinder:void(org.springframework.web.bind.WebDataBinder)",
+      "similarity": 0.5420325398445129
+    },
+    {
+      "id": "m107374182476",
+      "label": "Parse named entity",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetTypeFormatter.parse:org.springframework.samples.petclinic.owner.PetType(java.lang.String,java.util.Locale)",
+      "similarity": 0.7271382808685303
+    },
+    {
+      "id": "m107374182459",
+      "label": "Populate pet types",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.populatePetTypes:java.util.Collection()",
+      "similarity": 0.7378815412521362
+    },
+    {
+      "id": "m107374182475",
+      "label": "Print named entity",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetTypeFormatter.print:java.lang.String(org.springframework.samples.petclinic.owner.PetType,java.util.Locale)",
+      "similarity": 0.6398735642433167
+    },
+    {
+      "id": "m107374182400",
+      "label": "Start application main",
+      "rootMethodFullName": "org.springframework.samples.petclinic.PetClinicApplication.main:void(java.lang.String[])",
+      "similarity": 0.7033460736274719
+    },
+    {
+      "id": "m107374182479",
+      "label": "Support validation",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetValidator.supports:boolean(java.lang.Class)",
+      "similarity": 0.6171141862869263
+    }
+  ],
+  "3": [
+    {
+      "id": "m107374182502",
+      "label": "Add web interceptors",
+      "rootMethodFullName": "org.springframework.samples.petclinic.system.WebConfiguration.addInterceptors:void(org.springframework.web.servlet.config.annotation.InterceptorRegistry)",
+      "similarity": 0.49107661843299866
+    },
+    {
+      "id": "m107374182500",
+      "label": "Configure locale resolver",
+      "rootMethodFullName": "org.springframework.samples.petclinic.system.WebConfiguration.localeResolver:org.springframework.web.servlet.LocaleResolver()",
+      "similarity": 0.3896518051624298
+    },
+    {
+      "id": "m107374182413",
+      "label": "Generate entity string",
+      "rootMethodFullName": "org.springframework.samples.petclinic.model.NamedEntity.toString:java.lang.String()",
+      "similarity": 0.6336932182312012
+    },
+    {
+      "id": "m107374182431",
+      "label": "Generate owner string",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.Owner.toString:java.lang.String()",
+      "similarity": 0.5513595342636108
+    },
+    {
+      "id": "m107374182462",
+      "label": "Initialize owner binder",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.initOwnerBinder:void(org.springframework.web.bind.WebDataBinder)",
+      "similarity": 0.45195239782333374
+    },
+    {
+      "id": "m107374182402",
+      "label": "Register runtime hints",
+      "rootMethodFullName": "org.springframework.samples.petclinic.PetClinicRuntimeHints.registerHints:void(org.springframework.aot.hint.RuntimeHints,java.lang.ClassLoader)",
+      "similarity": 0.46599826216697693
+    },
+    {
+      "id": "m107374182498",
+      "label": "Trigger system exception",
+      "rootMethodFullName": "org.springframework.samples.petclinic.system.CrashController.triggerException:java.lang.String()",
+      "similarity": 0.5581690669059753
+    }
+  ],
+  "2": [
+    {
+      "id": "m107374182490",
+      "label": "Calculate minimum visit date",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.VisitController.minVisitDate:java.time.LocalDate()",
+      "similarity": 0.4066846966743469
+    },
+    {
+      "id": "m107374182435",
+      "label": "Configure allowed input fields",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.OwnerController.setAllowedFields:void(org.springframework.web.bind.WebDataBinder)",
+      "similarity": 0.41033726930618286
+    },
+    {
+      "id": "m107374182488",
+      "label": "Configure visit input fields",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.VisitController.setAllowedFields:void(org.springframework.web.bind.WebDataBinder)",
+      "similarity": 0.41033726930618286
+    },
+    {
+      "id": "m107374182445",
+      "label": "Display owner details page",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.OwnerController.showOwner:org.springframework.web.servlet.ModelAndView(int)",
+      "similarity": 0.3952660858631134
+    },
+    {
+      "id": "m107374182460",
+      "label": "Find owner from pet context",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.findOwner:org.springframework.samples.petclinic.owner.Owner(int)",
+      "similarity": 0.38101455569267273
+    },
+    {
+      "id": "m107374182492",
+      "label": "Handle new visit creation form",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.VisitController.processNewVisitForm:java.lang.String(org.springframework.samples.petclinic.owner.Owner,int,org.springframework.samples.petclinic.owner.Visit,org.springframework.validation.BindingResult,org.springframework.web.servlet.mvc.support.RedirectAttributes)",
+      "similarity": 0.8148550987243652
+    },
+    {
+      "id": "m107374182438",
+      "label": "Handle owner creation form",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.OwnerController.processCreationForm:java.lang.String(org.springframework.samples.petclinic.owner.Owner,org.springframework.validation.BindingResult,org.springframework.web.servlet.mvc.support.RedirectAttributes)",
+      "similarity": 0.5040376782417297
+    },
+    {
+      "id": "m107374182440",
+      "label": "Handle owner search form",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.OwnerController.processFindForm:java.lang.String(int,org.springframework.samples.petclinic.owner.Owner,org.springframework.validation.BindingResult,org.springframework.ui.Model,org.springframework.web.servlet.mvc.support.RedirectAttributes)",
+      "similarity": 0.5219863057136536
+    },
+    {
+      "id": "m107374182444",
+      "label": "Handle owner update form",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.OwnerController.processUpdateOwnerForm:java.lang.String(org.springframework.samples.petclinic.owner.Owner,org.springframework.validation.BindingResult,int,org.springframework.web.servlet.mvc.support.RedirectAttributes)",
+      "similarity": 0.47924676537513733
+    },
+    {
+      "id": "m107374182465",
+      "label": "Handle pet creation form",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.processCreationForm:java.lang.String(org.springframework.samples.petclinic.owner.Owner,org.springframework.samples.petclinic.owner.Pet,org.springframework.validation.BindingResult,org.springframework.web.servlet.mvc.support.RedirectAttributes)",
+      "similarity": 0.7472413778305054
+    },
+    {
+      "id": "m107374182467",
+      "label": "Handle pet update form",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.processUpdateForm:java.lang.String(org.springframework.samples.petclinic.owner.Owner,org.springframework.samples.petclinic.owner.Pet,org.springframework.validation.BindingResult,org.springframework.web.servlet.mvc.support.RedirectAttributes)",
+      "similarity": 0.769457221031189
+    },
+    {
+      "id": "m107374182464",
+      "label": "Initialize pet creation form",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.initCreationForm:java.lang.String(org.springframework.samples.petclinic.owner.Owner,org.springframework.ui.ModelMap)",
+      "similarity": 0.6962382197380066
+    },
+    {
+      "id": "m107374182489",
+      "label": "Load pet with visit history",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.VisitController.loadPetWithVisit:org.springframework.samples.petclinic.owner.Visit(int,int,java.util.Map)",
+      "similarity": 0.8171290159225464
+    },
+    {
+      "id": "m107374182436",
+      "label": "Locate owner by identifier",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.OwnerController.findOwner:org.springframework.samples.petclinic.owner.Owner(java.lang.Integer)",
+      "similarity": 0.3510880768299103
+    },
+    {
+      "id": "m107374182461",
+      "label": "Retrieve single pet by id",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetController.findPet:org.springframework.samples.petclinic.owner.Pet(int,java.lang.Integer)",
+      "similarity": 0.6978346109390259
+    },
+    {
+      "id": "m107374182428",
+      "label": "Retrieve single pet by owner",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.Owner.getPet:org.springframework.samples.petclinic.owner.Pet(java.lang.String)",
+      "similarity": 0.6259073615074158
+    },
+    {
+      "id": "m107374182478",
+      "label": "Validate pet entity data",
+      "rootMethodFullName": "org.springframework.samples.petclinic.owner.PetValidator.validate:void(java.lang.Object,org.springframework.validation.Errors)",
+      "similarity": 0.6968727707862854
+    }
+  ],
+  "1": [
+    {
+      "id": "m107374182510",
+      "label": "Add new specialty",
+      "rootMethodFullName": "org.springframework.samples.petclinic.vet.Vet.addSpecialty:void(org.springframework.samples.petclinic.vet.Specialty)",
+      "similarity": 0.5167308449745178
+    },
+    {
+      "id": "m107374182509",
+      "label": "Count vet specialties",
+      "rootMethodFullName": "org.springframework.samples.petclinic.vet.Vet.getNrOfSpecialties:int()",
+      "similarity": 0.49126869440078735
+    },
+    {
+      "id": "m107374182513",
+      "label": "Display paginated vets",
+      "rootMethodFullName": "org.springframework.samples.petclinic.vet.VetController.showVetList:java.lang.String(int,org.springframework.ui.Model,org.springframework.web.servlet.mvc.support.RedirectAttributes)",
+      "similarity": 0.564411461353302
+    },
+    {
+      "id": "m107374182516",
+      "label": "Fetch vet list data",
+      "rootMethodFullName": "org.springframework.samples.petclinic.vet.VetController.showResourcesVetList:org.springframework.samples.petclinic.vet.Vets()",
+      "similarity": 0.6905421018600464
+    },
+    {
+      "id": "m107374182508",
+      "label": "Retrieve vet specialties",
+      "rootMethodFullName": "org.springframework.samples.petclinic.vet.Vet.getSpecialties:java.util.List()",
+      "similarity": 0.5318535566329956
+    }
+  ]
+}
